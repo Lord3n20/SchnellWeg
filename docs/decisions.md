@@ -158,7 +158,9 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - Neue Endpunkte: `POST /v1/departures` (Halte-IDs → nächste Abfahrten, Server sieht keinen Standort),
   `GET /v1/stops` (alle Halte für die App-Datenbank, ETag = Fahrplanstand). gtfs.de führt kein `trip_headsign`,
   als Fahrtziel gilt der Endhalt.
-- Status: umgesetzt (routing-core 0.1.9).
+- 0.1.9 auf dem Server: Echtzeit-Abruf scheiterte („unknown authority“) – das leere Image hatte keine
+  CA-Zertifikate; ab 0.1.10 aus dem Build-Image kopiert.
+- Status: umgesetzt (routing-core 0.1.9, lauffähig ab 0.1.10).
 
 ## D-16 Adresssuche aus OSM im Kern (Phase 1, 27.10.)
 - Job `geocode` liest den OSM-Stand mit `paulmach/osm` in einem Durchlauf (Knoten der Box sortiert im Speicher,
@@ -169,6 +171,10 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   kurze Zahlen nur als Hausnummer) im RAM: Heap +38 MB, Suche 0,1–3 ms auf dem Laptop (Ziel 30 ms).
   `POST /v1/search` (Text im Body, nie in der URL oder im Protokoll); Wertung ohne Standort, die App sortiert
   nach Entfernung. RWTH-Gebäude kommen über ihre OSM-Namen (SuperC, Audimax …), RWTH Maps bleibt verworfen.
+- Server 27.10. (Box mit NL/BE-Rand): 345 642 Einträge, Laden 1,7 s, Job 20 s / 235 MB. „vaals“ brauchte 63 ms,
+  weil der Ort im Detail Tausender Adressen steht → 0.1.10: Kandidaten zuerst nur aus Namenswörtern (Detail wird
+  nur geprüft), sonst alle mit Obergrenze 5000; Normalize in einem Durchlauf. Laptop danach: üblich < 1 ms,
+  schlimmster Fall („52062“) ~10 ms.
 - Status: umgesetzt (routing-jobs 0.1.7, routing-core 0.1.9).
 
 ## D-17 Offline-Karte: Ausschnitt der Protomaps-Basiskarte (Phase 1, 27.10.)
@@ -179,4 +185,5 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   empfohlen – genau das tut der Job. Kein eigenes Rendern (Planetiler/tilemaker bräuchten GBs RAM).
 - routing-core liefert die Datei unter `GET /v1/map` (Range, Last-Modified); die App lädt sie einmal und danach
   nur bei Änderung. Die Karte kommt so nie von Dritten, der Standort verlässt das Handy nicht.
-- Status: umgesetzt (routing-jobs 0.1.7, routing-core 0.1.9); Größe und Laufzeit werden auf dem Server gemessen.
+- Server 27.10.: Build 20261027, Box StädteRegion bis Zoom 15 → **49 MB**, 25 s, Spitze 109 MB; `pmtiles verify` ok.
+- Status: umgesetzt (routing-jobs 0.1.7, routing-core 0.1.9).

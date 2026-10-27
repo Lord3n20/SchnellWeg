@@ -93,7 +93,7 @@ func TestReal(t *testing.T) {
 	var m1 runtime.MemStats
 	runtime.ReadMemStats(&m1)
 	t.Logf("Index: Heap %d MB", int64(m1.HeapInuse)>>20)
-	for _, q := range []string{"pontstr 5", "superc", "audimax", "elisenbrunnen", "uniklinik", "eilendorf", "boxgraben 2", "aachen arkaden", "kaiserplatz", "s", "super c", "templergraben 57", "studierendensekretariat"} {
+	for _, q := range []string{"pontstr 5", "superc", "audimax", "elisenbrunnen", "uniklinik", "eilendorf", "boxgraben 2", "aachen arkaden", "kaiserplatz", "s", "aachen", "52062", "super c", "templergraben 57", "studierendensekretariat"} {
 		t0 := time.Now()
 		hs := ix.Search(q, 5)
 		d := time.Since(t0)
