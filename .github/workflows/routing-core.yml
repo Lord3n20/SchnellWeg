@@ -1,0 +1,39 @@
+# Baut das routing-core-Image bei einem Tag „routing-core-v<version>“ und legt es als
+# ghcr.io/lord3n20/rwaysth-routing-core:<version> ab (D-03). Actions per Commit-SHA festgelegt.
+name: routing-core-Image
+
+on:
+  push:
+    tags: ["routing-core-v*"]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Tests
+        working-directory: server
+        run: docker run --rm -v "$PWD":/src -w /src golang:1.27.3-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb go test ./...
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Version aus dem Tag
+        id: v
+        run: echo "version=${GITHUB_REF_NAME#routing-core-v}" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        id: build
+        with:
+          context: server
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          tags: ghcr.io/lord3n20/rwaysth-routing-core:${{ steps.v.outputs.version }}
+      - name: Digest
+        run: echo "ghcr.io/lord3n20/rwaysth-routing-core:${{ steps.v.outputs.version }}@${{ steps.build.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"

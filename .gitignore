@@ -1,0 +1,16 @@
+# Persönliche Daten (Adressen, Favoriten, echte Referenzstrecken)
+config/local.yaml
+config/*.local.*
+# Signaturschlüssel, Zugangsdaten
+*.jks
+*.keystore
+key.properties
+.env
+# Daten und Builds
+data/
+build/
+*.pbf
+*.pmtiles
+
+# Lokale Claude-Notizen mit konkreten Zugängen
+CLAUDE.local.md

@@ -1,0 +1,173 @@
+// routing-core lädt den Fahrplan des heutigen Betriebstags und beantwortet Routenanfragen per HTTP.
+// Um Mitternacht lädt er den nächsten Tag im Hintergrund und schaltet ohne Ausfall um.
+//
+//	routing-core -gtfs sr_gtfs.zip,de_rv.zip,de_fv.zip:fern -footpaths footpaths.csv -listen :8090
+//
+// Als HA-Add-on: routing-core -options /data/options.json -dir /config (Optionen heißen wie die Flags).
+//
+// Protokolliert werden nur Ladezeiten, Speicher und Fehlertypen, nie Anfragen.
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"runtime"
+	"runtime/debug"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/Lord3n20/RWaysTH/server/internal/api"
+	"github.com/Lord3n20/RWaysTH/server/internal/raptor"
+	_ "time/tzdata" // Image ohne Zeitzonen-Dateien
+)
+
+// applyOptions übernimmt Werte aus einer JSON-Datei (HA-Add-on-Optionen) für alle Flags, die nicht auf der
+// Kommandozeile stehen.
+func applyOptions(path string) error {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var opts map[string]any
+	if err := json.Unmarshal(b, &opts); err != nil {
+		return err
+	}
+	set := map[string]bool{}
+	flag.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	for k, v := range opts {
+		if set[k] || flag.Lookup(k) == nil {
+			continue
+		}
+		if err := flag.Set(k, fmt.Sprint(v)); err != nil {
+			return fmt.Errorf("Option %s: %w", k, err)
+		}
+	}
+	return nil
+}
+
+func main() {
+	gtfs := flag.String("gtfs", "sr_gtfs.zip", "GTFS-Zip(s), durch Komma getrennt")
+	footpaths := flag.String("footpaths", "", "Valhalla-Fußwege (CSV aus footpaths.py), soweit vorhanden")
+	walk := flag.Float64("walk", 400, "max. Umstiegsfußweg in m (Luftlinie); Valhalla-Wege bis 2×walk")
+	access := flag.Float64("access", 800, "max. Zugangsweg in m (Luftlinie)")
+	listen := flag.String("listen", ":8090", "Adresse der API")
+	par := flag.Int("par", 2, "gleichzeitige Anfragen (je ein Router)")
+	dayS := flag.String("day", "", "Betriebstag fest vorgeben (Test), sonst heute mit Wechsel um Mitternacht")
+	dir := flag.String("dir", "", "Ordner, auf den sich relative Pfade in -gtfs/-footpaths beziehen")
+	options := flag.String("options", "", "JSON-Datei mit Optionen (HA-Add-on: /data/options.json)")
+	flag.Parse()
+	log.SetFlags(0)
+	if *options != "" {
+		if err := applyOptions(*options); err != nil {
+			log.Fatal("Fehler in den Optionen: ", err)
+		}
+	}
+	rel := func(p string) string {
+		if p == "" || filepath.IsAbs(p) {
+			return p
+		}
+		return filepath.Join(*dir, p)
+	}
+	var feeds []string
+	for _, f := range strings.Split(*gtfs, ",") {
+		feeds = append(feeds, rel(strings.TrimSpace(f)))
+	}
+	*footpaths = rel(*footpaths)
+
+	load := func(day time.Time) (*api.Plan, error) {
+		t0 := time.Now()
+		tt, err := raptor.Load(feeds, day, *walk)
+		if err != nil {
+			return nil, err
+		}
+		if *footpaths != "" {
+			f, err := os.Open(*footpaths)
+			if err != nil {
+				return nil, err
+			}
+			_, _, err = tt.ReadFootpaths(f, int(2**walk))
+			f.Close()
+			if err != nil {
+				return nil, err
+			}
+		}
+		p := api.NewPlan(tt, day, *par)
+		runtime.GC()
+		debug.FreeOSMemory()
+		var ms runtime.MemStats
+		runtime.ReadMemStats(&ms)
+		log.Printf("Fahrplan %s geladen in %v: %d Halte, %d Muster, Heap %d MB",
+			day.Format("2006-01-02"), time.Since(t0).Round(time.Millisecond), len(tt.Stops), len(tt.Routes), ms.HeapInuse>>20)
+		return p, nil
+	}
+
+	srv := &api.Server{AccessM: *access, MaxTrips: 6, WaitLimit: 2 * time.Second}
+	today := func() time.Time {
+		y, m, d := time.Now().In(api.Berlin).Date()
+		return time.Date(y, m, d, 0, 0, 0, 0, api.Berlin)
+	}
+	day := today()
+	if *dayS != "" {
+		d, err := time.ParseInLocation("2006-01-02", *dayS, api.Berlin)
+		if err != nil {
+			log.Fatal("Fehler: -day ungültig")
+		}
+		day = d
+	}
+	p, err := load(day)
+	if err != nil {
+		log.Fatal("Fehler beim Laden: ", err)
+	}
+	srv.Swap(p)
+
+	if *dayS == "" {
+		go func() {
+			for {
+				next := today().AddDate(0, 0, 1)
+				time.Sleep(time.Until(next))
+				for try := 0; ; try++ {
+					p, err := load(next)
+					if err == nil {
+						srv.Swap(p) // alter Plan wird frei, sobald die letzte Anfrage darauf fertig ist
+						break
+					}
+					log.Print("Fehler beim Tageswechsel: ", err)
+					if try == 5 {
+						break // alter Tag bleibt; Anfragen bekommen „anderer_betriebstag“
+					}
+					time.Sleep(time.Minute)
+				}
+			}
+		}()
+	}
+
+	hs := &http.Server{
+		Addr:              *listen,
+		Handler:           srv.Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		ErrorLog:          log.New(os.Stderr, "", 0),
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	go func() {
+		<-ctx.Done()
+		c, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		hs.Shutdown(c)
+	}()
+	log.Printf("API auf %s", *listen)
+	if err := hs.ListenAndServe(); err != http.ErrServerClosed {
+		log.Fatal("Fehler: ", err)
+	}
+}
