@@ -19,9 +19,19 @@ type Index struct {
 	nposts  [][]int32 // je Wort die Einträge, in deren Namen es steht (Kandidaten zuerst hieraus)
 }
 
-// Load liest die TSV aus Write.
-func Load(r io.Reader) (*Index, error) {
+// Load liest die TSVs aus Write (Suchliste aus OSM, Gebäudeliste RWTH …) in einen gemeinsamen Index.
+func Load(rs ...io.Reader) (*Index, error) {
 	ix := &Index{}
+	for _, r := range rs {
+		if err := ix.read(r); err != nil {
+			return nil, err
+		}
+	}
+	ix.build()
+	return ix, nil
+}
+
+func (ix *Index) read(r io.Reader) error {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64<<10), 1<<20)
 	for sc.Scan() {
@@ -36,11 +46,7 @@ func Load(r io.Reader) (*Index, error) {
 		}
 		ix.Entries = append(ix.Entries, Entry{Kind: f[0], Name: f[1], Detail: f[2], Lat: lat, Lon: lon})
 	}
-	if err := sc.Err(); err != nil {
-		return nil, err
-	}
-	ix.build()
-	return ix, nil
+	return sc.Err()
 }
 
 func (ix *Index) build() {
@@ -255,6 +261,8 @@ func (ix *Index) score(cand []int32, qw []string) []Hit {
 			continue
 		}
 		switch e.Kind {
+		case "gebaeude": // Hochschulgebäude: gezielt gesucht (Nummer oder Name), vor gleichnamigen Einrichtungen
+			score += 3
 		case "ort":
 			score += 3
 		case "poi":

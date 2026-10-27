@@ -104,3 +104,30 @@ func TestReal(t *testing.T) {
 		t.Logf("%-15q %6.1f ms  %s", q, float64(d.Microseconds())/1000, strings.Join(s, " · "))
 	}
 }
+
+func TestParseRWTH(t *testing.T) {
+	// echte Form der Antwort: ISO-8859-1, lat/lng mal Text, mal Zahl, Extras als Objekte
+	raw := []byte("[ { \"gno\": \"1810\", \"bez\": \"Seminargeb\xe4ude [1810]\", \"adr\": \"W\xfcllnerstr. 5b, 52062 Aachen\"," +
+		" \"defibrillator\": { \"info\": \"<p>x</p>\" }, \"typ\": \"b\", \"lat\": \"50.77921\", \"lng\": \"6.076617\" }," +
+		" { \"gno\": \"1040\", \"bez\": \"SuperC\", \"adr\": \"\", \"lat\": 50.7780, \"lng\": 6.0782 }," +
+		" { \"gno\": \"9999\", \"bez\": \"ohne Ort\", \"lat\": \"\", \"lng\": \"\" } ]")
+	es, err := parseRWTH(latin1(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(es) != 2 || es[0].Name != "Seminargebäude [1810]" || es[0].Detail != "Wüllnerstr. 5b, 52062 Aachen" ||
+		es[1].Name != "SuperC [1040]" || es[1].Lat != 50.778 {
+		t.Fatalf("%+v", es)
+	}
+	var buf strings.Builder
+	Write(&buf, es)
+	ix, err := Load(strings.NewReader("poi\tSeminargebäude Kirche\tplace_of_worship\t50.7\t6.0\n"), strings.NewReader(buf.String()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for q, want := range map[string]string{"1810": "Seminargebäude [1810]", "superc": "SuperC [1040]", "seminargeb": "Seminargebäude [1810]"} {
+		if h := ix.Search(q, 3); len(h) == 0 || h[0].Name != want {
+			t.Errorf("%q → %+v, erwartet %q", q, h, want)
+		}
+	}
+}

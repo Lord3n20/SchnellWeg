@@ -51,7 +51,7 @@ import (
 
 var (
 	dir         = flag.String("dir", "/config", "Ablage (HA: Konfigurationsordner des Job-Add-ons)")
-	jobList     = flag.String("job", "gtfs,osm,valhalla,footpaths,geocode,map", "Jobs, durch Komma getrennt, in dieser Reihenfolge")
+	jobList     = flag.String("job", "gtfs,osm,valhalla,footpaths,geocode,map,rwth", "Jobs, durch Komma getrennt, in dieser Reihenfolge")
 	sources     = flag.String("osm_sources", "", "Geofabrik-Pfade ohne -latest.osm.pbf, durch Komma getrennt")
 	region      = flag.String("region", "/etc/schnellweg/region.geojson", "Regionspolygon (GeoJSON)")
 	maxMem      = flag.Int64("max_mem_mb", 2048, "Speicherspitze je Job in MB (zusätzlich ≤ MemAvailable − 1 GB)")
@@ -62,6 +62,7 @@ var (
 	mapBox      = flag.String("map_box", "5.95,50.48,6.45,50.93", "Kartenausschnitt (minlon,minlat,maxlon,maxlat)")
 	mapZoom     = flag.Int("map_zoom", 15, "höchste Zoomstufe der Karte")
 	osmDays     = flag.Int("osm_tage", 7, "OSM + Valhalla erst neu bauen, wenn der Stand so alt ist (0 = immer prüfen)")
+	rwthURL     = flag.String("rwth_url", "https://maps.rwth-aachen.de/navigator/libraries/rwth/ajax/getBuildings.asp?lang=de&mode=type&q=b", "RWTH-Gebäudeliste (D-18), leer = Job rwth aus")
 	options     = flag.String("options", "", "JSON-Datei mit Optionen (HA-Add-on: /data/options.json)")
 )
 
@@ -89,7 +90,7 @@ func main() {
 	for _, name := range strings.Split(*jobList, ",") {
 		name = strings.TrimSpace(name)
 		run, ok := map[string]func(context.Context, *jobs.Watch) (string, error){
-			"gtfs": jobGTFS, "osm": jobOSM, "valhalla": jobValhalla, "footpaths": jobFootpaths, "geocode": jobGeocode, "map": jobMap,
+			"gtfs": jobGTFS, "osm": jobOSM, "valhalla": jobValhalla, "footpaths": jobFootpaths, "geocode": jobGeocode, "map": jobMap, "rwth": jobRWTH,
 		}[name]
 		if !ok {
 			log.Fatalf("Fehler: unbekannter Job %q", name)

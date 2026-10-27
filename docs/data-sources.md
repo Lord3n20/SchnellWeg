@@ -22,7 +22,7 @@ Status: ✅ freigegeben · ⏳ in Prüfung · ❓ Rückfrage an den Betreiber ·
 | Protomaps-Build (PMTiles) | Protomaps (Brandon Liu), Community/kommerziell | **ODbL Produced Work**, OSM-Namensnennung (docs.protomaps.com/basemaps/downloads, geprüft 27.10.; eigene Kopien statt Verlinken empfohlen) | nein | IP, HTTP-Range-Abrufe, wöchentlich | ✅ D-17 |
 | Autobahn-API (verkehr.autobahn.de) | Autobahn GmbH des Bundes | **beim Betreiber nichts gefunden**, nur bund.dev (Dritte) | nein | IP | ❓ Grenzfall (Phase 7) |
 | Mobilithek / Straßen.NRW DATEX II | BMDV, öffentlich | je Angebot | **ja** | Account, IP | ❓ (Phase 7) |
-| RWTH Maps (maps.rwth-aachen.de) | RWTH, öffentlich | **keine Lizenz/Schnittstelle genannt**, Karte auf Google Maps API | – | – | ❌ (geprüft 27.10.) |
+| RWTH Maps (maps.rwth-aachen.de), `getBuildings.asp` | RWTH, öffentlich, interne Schnittstelle | **keine Lizenz/Schnittstelle genannt**, Karte auf Google Maps API | nein | Server: IP, 1×/Tag; App: IP + Suchtext (kein Standort) | ⚠️ Abweichung D-18 (vom Betreiber gewollt) |
 | RWTH-Gebäude aus OSM | OSM | ODbL | nein | – (im OSM-Extrakt) | ✅ teilweise: 57 Objekte mit Uni-Bezug im Zentrum, 54 mit Name, keine Gebäudenummern |
 | NDW Open Data (NL) | Rijkswaterstaat/NDW, öffentlich | CC0 erwartet | nein | IP | ⏳ (Phase 7) |
 

@@ -187,3 +187,19 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   nur bei Änderung. Die Karte kommt so nie von Dritten, der Standort verlässt das Handy nicht.
 - Server 27.10.: Build 20261027, Box StädteRegion bis Zoom 15 → **49 MB**, 25 s, Spitze 109 MB; `pmtiles verify` ok.
 - Status: umgesetzt (routing-jobs 0.1.7, routing-core 0.1.9).
+
+## D-18 RWTH-Gebäudenummern über die interne Schnittstelle von RWTH Maps (Abweichung, 27.10.)
+- **Abweichung** von „nur offene Quellen, keine inoffiziellen Schnittstellen“ (CLAUDE.md), vom Betreiber
+  ausdrücklich so gewollt: Gebäudenummern (z. B. 1010, 2350) sind in Aachen das übliche Ziel, OSM hat sie nicht
+  (keine `ref` mit Gebäudenummer), RWTH Maps nennt weder Lizenz noch offene Schnittstelle.
+- Schnittstelle: `maps.rwth-aachen.de/navigator/libraries/rwth/ajax/getBuildings.asp?lang=de&q=…` (Suche nach
+  Text oder Nummer) bzw. `&mode=type&q=b` (alle Gebäude, ~360, 245 KB). JSON in ISO-8859-1, kein Schlüssel.
+- **App fragt live** (Betreiber: „live aus der App“): Der Suchtext geht dabei direkt an die RWTH (IP, Suchtext,
+  kein Standort), parallel zu `/v1/search`. Bewusst in Kauf genommen; nur Text, nie Koordinaten.
+- **Rückfall auf dem Server:** Job `rwth` holt bei jedem Lauf die ganze Liste → `rwth/current/gebaeude.tsv`
+  (Art `gebaeude`, Name mit `[Nummer]`, Adresse als Detail), Prüfung ≥ 200 Gebäude und kein Einbruch > 10 %,
+  neue Version nur bei Änderung (SHA-256). routing-core lädt sie mit der OSM-Suchliste in einen Index
+  (`-geocode` mit Komma), `/v1/search` findet Gebäude nach Nummer und Name. Fällt RWTH Maps aus oder ändert sich
+  die Schnittstelle, bleibt der letzte Stand; die App zeigt dann die Server-Treffer.
+- Lokal 27.10.: 359 Gebäude mit Koordinate, 2 s; Live-Suche ~0,4 s.
+- Status: umgesetzt (routing-jobs 0.1.8, routing-core 0.1.11, App).

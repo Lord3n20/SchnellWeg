@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -67,7 +68,7 @@ func main() {
 	rtURL := flag.String("rt", "https://realtime.gtfs.de/realtime-free.pb", "GTFS-RT-Feed (leer = nur Fahrplan); Abruf nur bei Anfragen, höchstens alle 30 s")
 	rtWait := flag.Duration("rt_wait", 6*time.Second, "so lange wartet eine Anfrage höchstens auf den Echtzeit-Abruf")
 	mapPath := flag.String("map", "", "Kartenausschnitt (PMTiles, Job map) für /v1/map; Glob erlaubt, wird beim Start aufgelöst")
-	geo := flag.String("geocode", "", "Suchliste (TSV, Job geocode) für /v1/search; Glob erlaubt, ohne Treffer keine Suche")
+	geo := flag.String("geocode", "", "Suchlisten (TSV, Jobs geocode und rwth) für /v1/search, durch Komma getrennt; Globs erlaubt, ohne Treffer keine Suche")
 	listen := flag.String("listen", ":8090", "Adresse der API")
 	par := flag.Int("par", 2, "gleichzeitige Anfragen (je ein Router)")
 	dayS := flag.String("day", "", "Betriebstag fest vorgeben (Test), sonst heute mit Wechsel um Mitternacht")
@@ -141,19 +142,27 @@ func main() {
 	}
 
 	var geoIx *geocode.Index
-	if m, _ := filepath.Glob(rel(*geo)); *geo != "" && len(m) > 0 {
-		t0 := time.Now()
+	var geoFiles []io.Reader
+	for _, g := range strings.Split(*geo, ",") {
+		m, _ := filepath.Glob(rel(strings.TrimSpace(g)))
+		if g == "" || len(m) == 0 {
+			continue
+		}
 		f, err := os.Open(m[0])
 		if err != nil {
 			log.Fatal("Fehler beim Laden der Suchliste: ", err)
 		}
-		ix, err := geocode.Load(f)
-		f.Close()
+		defer f.Close()
+		geoFiles = append(geoFiles, f)
+	}
+	if len(geoFiles) > 0 {
+		t0 := time.Now()
+		ix, err := geocode.Load(geoFiles...)
 		if err != nil {
 			log.Fatal("Fehler beim Laden der Suchliste: ", err)
 		}
 		geoIx = ix
-		log.Printf("Suchliste geladen in %v: %d Einträge", time.Since(t0).Round(time.Millisecond), len(ix.Entries))
+		log.Printf("Suchliste geladen in %v: %d Einträge aus %d Dateien", time.Since(t0).Round(time.Millisecond), len(ix.Entries), len(geoFiles))
 	} else if *geo != "" {
 		log.Print("Keine Suchliste gefunden, /v1/search ist aus")
 	}

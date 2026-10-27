@@ -1,5 +1,5 @@
 // Ziel wählen: Haltestellen sucht das Handy in der eigenen SQLite, Adressen und Orte fragt es bei /v1/search
-// (Suchtext nur im Body). Beides läuft parallel; die Haltestellen stehen oben, weil sie sofort da sind.
+// (Suchtext nur im Body), RWTH-Gebäude live bei RWTH Maps (D-18). Alles parallel; Haltestellen oben, weil sofort da.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'api.dart';
 import 'halte_db.dart';
 import 'namen.dart';
+import 'rwth.dart';
 
 const _warten = Duration(milliseconds: 250);
 final _osmTag = RegExp(r'^[a-z_]+$'); // Orte ohne Adresse tragen als Detail nur ihren OSM-Typ („charging_station“)
@@ -24,7 +25,7 @@ class _ZielSucheState extends State<ZielSuche> {
   final _feld = TextEditingController();
   Timer? _timer;
   int _nr = 0; // verwirft Antworten auf veraltete Eingaben
-  List<Ort> _halte = [], _orte = [];
+  List<Ort> _halte = [], _orte = [], _gebaeude = [];
   String? _fehler;
   bool _laeuft = false;
 
@@ -46,6 +47,7 @@ class _ZielSucheState extends State<ZielSuche> {
       return setState(() {
         _halte = [];
         _orte = [];
+        _gebaeude = [];
         _fehler = null;
       });
     }
@@ -53,6 +55,9 @@ class _ZielSucheState extends State<ZielSuche> {
     final halte = await widget.db.suchen(q);
     if (nr != _nr || !mounted) return;
     setState(() => _halte = _zusammenfassen(halte));
+    rwthSuche(q).then((g) {
+      if (nr == _nr && mounted) setState(() => _gebaeude = g);
+    });
     try {
       final orte = await widget.api.suche(q);
       if (nr != _nr || !mounted) return;
@@ -82,6 +87,7 @@ class _ZielSucheState extends State<ZielSuche> {
 
   static IconData _icon(String art) => switch (art) {
         'halt' => Icons.directions_bus,
+        'gebaeude' => Icons.school_outlined,
         'adresse' => Icons.home_outlined,
         'strasse' => Icons.add_road,
         'ort' => Icons.location_city,
@@ -90,7 +96,11 @@ class _ZielSucheState extends State<ZielSuche> {
 
   @override
   Widget build(BuildContext context) {
-    final treffer = [..._halte, ..._orte];
+    // Gebäude vom Server nur, wenn die Live-Abfrage sie nicht schon hat (oder ausgefallen ist)
+    final live = {for (final g in _gebaeude) g.name};
+    final orte = _orte.where((o) => o.art != 'gebaeude' || !live.contains(o.name));
+    final nachNr = RegExp(r'^\d{3,4}[a-zA-Z]?$').hasMatch(_feld.text.trim()); // „1010“: Gebäude zuerst
+    final treffer = nachNr ? [..._gebaeude, ..._halte, ...orte] : [..._halte, ..._gebaeude, ...orte];
     return Scaffold(
       appBar: AppBar(
         title: TextField(
