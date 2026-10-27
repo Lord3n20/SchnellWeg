@@ -155,12 +155,13 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
       });
 
   /// Verbindung [i] als Linien für die Karte: Halte aus der SQLite, Start/Ziel aus Standort und Suchtreffer.
-  /// Ohne Linienverlauf vom Server vorerst gerade Stücke zwischen den Halten.
+  /// Fußwege folgen der Wegform vom Server (sonst gerade), Fahrten verbinden ihre Halte der Reihe nach
+  /// (Linienverlauf liefert keiner der Feeds).
   Future<void> _waehlen(int i) async {
     final v = _verbindungen, ziel = _ziel, pos = _pos;
     if (v == null || i >= v.length || ziel == null || pos == null) return;
     final halte = await _db!.holen([
-      for (final a in v[i].abschnitte) ...[?a.von?.id, ?a.nach?.id]
+      for (final a in v[i].abschnitte) ...[?a.von?.id, ?a.nach?.id, ...a.halte]
     ]);
     LatLng? punkt(HaltRef? h, LatLng sonst) {
       if (h == null) return sonst;
@@ -173,7 +174,15 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
     for (final a in v[i].abschnitte) {
       final von = punkt(a.von, start), nach = punkt(a.nach, ende);
       if (von == null || nach == null || von == nach) continue;
-      strecken.add(Strecke([von, nach], !a.fahrt, a.linie));
+      if (a.fahrt) {
+        final unterwegs = [for (final id in a.halte) ?halte[id]].map((h) => LatLng(h.lat, h.lon)).toList();
+        final punkte = unterwegs.length >= 2 ? unterwegs : [von, nach];
+        strecken.add(Strecke(punkte, false, a.linie,
+            zwischen: punkte.length > 2 ? punkte.sublist(1, punkte.length - 1) : const []));
+      } else {
+        final form = [for (final (lat, lon) in polyline(a.form)) LatLng(lat, lon)];
+        strecken.add(Strecke([von, ...form, nach], true, ''));
+      }
     }
     if (!mounted || _ziel != ziel) return;
     setState(() {

@@ -60,6 +60,8 @@ type Server struct {
 	LiveWait  time.Duration  // so lange wartet eine Anfrage höchstens auf einen Echtzeit-Abruf
 	Geocode   *geocode.Index // Adresssuche, nil = aus
 	MapPath   string         // Kartenausschnitt (PMTiles), "" = aus
+	DirectM   float64        // reiner Fußweg als Vergleich bis zu dieser Luftlinie, 0 = aus
+	DirectMax time.Duration  // … und höchstens so lange (beim gewählten Tempo)
 }
 
 // Swap setzt einen neuen Plan; laufende Anfragen rechnen auf dem alten zu Ende.
@@ -131,8 +133,10 @@ type legOut struct {
 	Line     string    `json:"line,omitempty"`
 	Headsign string    `json:"headsign,omitempty"`
 	TripID   string    `json:"trip_id,omitempty"`
-	Fern     bool      `json:"fern,omitempty"` // nicht im Deutschlandticket
-	Risk     bool      `json:"risk,omitempty"` // Anschluss an diese Fahrt laut Prognose gefährdet
+	Fern     bool      `json:"fern,omitempty"`  // nicht im Deutschlandticket
+	Risk     bool      `json:"risk,omitempty"`  // Anschluss an diese Fahrt laut Prognose gefährdet
+	Shape    string    `json:"shape,omitempty"` // Fußweg: Wegform (encoded polyline, Genauigkeit 6)
+	Stops    []string  `json:"stops,omitempty"` // Fahrt: Halte-IDs vom Ein- bis zum Ausstieg
 	liveOut
 }
 
@@ -151,6 +155,7 @@ type routeResp struct {
 	Ms       float64       `json:"ms"`           // Rechenzeit RAPTOR
 	WalkMs   float64       `json:"walk_ms"`      // Zugangswege gesamt (Halte-Suche + Valhalla)
 	VhMs     [2]float64    `json:"vh_ms"`        // davon die Valhalla-Aufrufe für Start und Ziel (parallel)
+	ShapeMs  float64       `json:"shape_ms"`     // Wegformen der ausgegebenen Fußabschnitte (Valhalla, parallel)
 	Vh       *[2]WalkTrace `json:"vh,omitempty"` // nur mit "debug": true
 	RT       bool          `json:"rt"`           // Echtzeitstand verfügbar (sonst nur Fahrplan)
 }
@@ -193,9 +198,17 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	}
 	liveC := make(chan *rt.Snapshot, 1) // Echtzeit parallel zu den Zugangswegen holen
 	go func() { liveC <- s.live(r.Context()) }()
+	directC := make(chan *journeyOut, 1) // reiner Fußweg, ebenfalls parallel
+	go func() { directC <- s.directWalk(r.Context(), req.From, req.To, t, scale) }()
 	from, to, vh := s.access(r.Context(), p.TT, req.From, req.To, tr)
 	walkMs := float64(time.Since(tw).Microseconds()) / 1000
 	if len(from) == 0 || len(to) == 0 {
+		if d := <-directC; d != nil { // keine Haltestelle, aber zu Fuß erreichbar
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			json.NewEncoder(w).Encode(routeResp{Journeys: []journeyOut{*d}, WalkMs: walkMs, VhMs: vh, Vh: tr})
+			return
+		}
 		fail(w, http.StatusUnprocessableEntity, "keine_haltestelle_in_reichweite")
 		return
 	}
@@ -226,7 +239,14 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	for _, j := range res.Journeys {
 		jo := convert(p.TT, base, j)
 		p.annotate(snap, j, &jo)
+		rideStops(p.TT, j, &jo)
 		out.Journeys = append(out.Journeys, jo)
+	}
+	ts := time.Now()
+	s.shapes(r.Context(), p.TT, req.From, req.To, res.Journeys, out.Journeys)
+	out.ShapeMs = since(ts)
+	if d := <-directC; d != nil {
+		out.Journeys = append(out.Journeys, *d) // als Vergleich hinten, die App wählt zuerst die erste Verbindung
 	}
 
 	w.Header().Set("Content-Type", "application/json")

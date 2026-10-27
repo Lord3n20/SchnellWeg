@@ -65,6 +65,8 @@ func main() {
 	access := flag.Float64("access", 800, "Suchradius für Zugangshalte in m (Luftlinie); echte Wege bis 2×access")
 	valhalla := flag.String("valhalla", "", "Valhalla-URL für echte Zugangswege (leer = Luftlinie)")
 	kmh := flag.Float64("kmh", 4.3, "Gehtempo für Zugangswege in km/h")
+	direct := flag.Float64("direct", 3000, "reiner Fußweg Start → Ziel als Vergleich bis zu dieser Luftlinie in m (0 = aus)")
+	directMax := flag.Duration("direct_max", time.Hour, "… und höchstens so lange beim gewählten Gehtempo")
 	rtURL := flag.String("rt", "https://realtime.gtfs.de/realtime-free.pb", "GTFS-RT-Feed (leer = nur Fahrplan); Abruf nur bei Anfragen, höchstens alle 30 s")
 	rtWait := flag.Duration("rt_wait", 6*time.Second, "so lange wartet eine Anfrage höchstens auf den Echtzeit-Abruf")
 	mapPath := flag.String("map", "", "Kartenausschnitt (PMTiles, Job map) für /v1/map; Glob erlaubt, wird beim Start aufgelöst")
@@ -173,7 +175,7 @@ func main() {
 		log.Print("Noch keine Karte gefunden, /v1/map antwortet 503")
 		*mapPath = ""
 	}
-	srv := &api.Server{Geocode: geoIx, MapPath: *mapPath, AccessM: *access, MaxTrips: 6, WaitLimit: 2 * time.Second, LiveWait: *rtWait}
+	srv := &api.Server{Geocode: geoIx, MapPath: *mapPath, DirectM: *direct, DirectMax: *directMax, AccessM: *access, MaxTrips: 6, WaitLimit: 2 * time.Second, LiveWait: *rtWait}
 	if *rtURL != "" {
 		// Zeitbudget der Quelle 6 s je Versuch (CLAUDE.md), Stände älter als 5 min gelten nicht mehr
 		srv.Live = &rt.Live{URL: *rtURL, Client: &http.Client{Timeout: 6 * time.Second}, MinAge: 30 * time.Second,

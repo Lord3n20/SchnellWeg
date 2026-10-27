@@ -68,6 +68,8 @@ class Abschnitt {
   final DateTime? abRt, anRt;
   final String linie, ziel;
   final bool fern, risiko, faelltAus, entfaellt;
+  final String form; // Fußweg: Wegform (encoded polyline, Genauigkeit 6), "" = unbekannt
+  final List<String> halte; // Fahrt: Halte-IDs vom Ein- bis zum Ausstieg
 
   Abschnitt.json(Map<String, dynamic> j)
       : fahrt = j['mode'] == 'ride',
@@ -82,7 +84,9 @@ class Abschnitt {
         fern = j['fern'] == true,
         risiko = j['risk'] == true,
         faelltAus = j['canceled'] == true,
-        entfaellt = j['skipped'] == true;
+        entfaellt = j['skipped'] == true,
+        form = (j['shape'] as String?) ?? '',
+        halte = (j['stops'] as List?)?.cast<String>() ?? const [];
 
   /// Verspätung der Abfahrt in ganzen Minuten, null ohne Echtzeit.
   int? get versp => abRt == null ? null : (abRt!.difference(ab).inSeconds / 60).round();
@@ -104,6 +108,32 @@ class Verbindung {
         abschnitte = [for (final l in (j['legs'] as List).cast<Map<String, dynamic>>()) Abschnitt.json(l)];
 
   DateTime get ankunft => anRt ?? an;
+}
+
+/// Dekodiert eine encoded polyline (Valhalla: Genauigkeit 6) zu (lat, lon)-Paaren; kaputte Eingaben → leer.
+List<(double, double)> polyline(String s, {int stellen = 6}) {
+  final teiler = stellen == 6 ? 1e6 : 1e5;
+  final out = <(double, double)>[];
+  var i = 0, lat = 0, lon = 0;
+  int? zahl() {
+    var wert = 0, shift = 0;
+    while (i < s.length) {
+      final b = s.codeUnitAt(i++) - 63;
+      wert |= (b & 0x1f) << shift;
+      shift += 5;
+      if (b < 0x20) return (wert & 1) != 0 ? ~(wert >> 1) : wert >> 1;
+    }
+    return null;
+  }
+
+  while (i < s.length) {
+    final dLat = zahl(), dLon = zahl();
+    if (dLat == null || dLon == null) return const [];
+    lat += dLat;
+    lon += dLon;
+    out.add((lat / teiler, lon / teiler));
+  }
+  return out;
 }
 
 DateTime? _zeit(Object? v) => v == null ? null : DateTime.parse(v as String).toLocal();

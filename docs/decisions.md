@@ -203,3 +203,15 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   die Schnittstelle, bleibt der letzte Stand; die App zeigt dann die Server-Treffer.
 - Lokal 27.10.: 359 Gebäude mit Koordinate, 2 s; Live-Suche ~0,4 s.
 - Status: umgesetzt (routing-jobs 0.1.8, routing-core 0.1.11, App).
+
+## D-19 Wege auf der Karte: Fußwegform von Valhalla, Fahrten Halt für Halt, reiner Fußweg (28.10.)
+- `/v1/route` liefert je Fußabschnitt (Zugang, Umstieg, Abgang) `shape` (encoded polyline, Genauigkeit 6, von
+  Valhalla `/route`, pedestrian) und je Fahrt `stops` (Halte-IDs vom Ein- bis zum Ausstieg). Formen nur für die
+  ausgegebenen Verbindungen, gleiche Wege einmal, alle gleichzeitig; ohne Valhalla oder bei Fehler fehlt `shape`
+  und die App zeichnet gerade.
+- Linienverlauf der Fahrten: keiner der Feeds hat `shapes.txt`; der Betreiber braucht ihn nicht genau → die App
+  verbindet die Halte (Koordinaten aus ihrer SQLite) und markiert Zwischenhalte als kleine Punkte.
+- **Reiner Fußweg** als eigene Verbindung (`trips: 0`, hinten angehängt): eine Valhalla-Route Start → Ziel,
+  parallel zu den Zugangsmatrizen, nur bis 3 km Luftlinie (`-direct`) und höchstens 60 min beim gewählten Tempo
+  (`-direct_max`). Ohne Halt in Reichweite, aber zu Fuß erreichbar, kommt nur der Fußweg statt Fehler 422.
+- Status: umgesetzt (routing-core 0.1.12, App).

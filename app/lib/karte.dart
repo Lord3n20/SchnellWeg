@@ -37,7 +37,8 @@ class Strecke {
   final List<LatLng> punkte;
   final bool fuss;
   final String linie;
-  Strecke(this.punkte, this.fuss, this.linie);
+  final List<LatLng> zwischen; // Fahrt: Zwischenhalte als kleine Punkte
+  Strecke(this.punkte, this.fuss, this.linie, {this.zwischen = const []});
 }
 
 /// Linienfarbe, stabil je Liniennummer.
@@ -180,6 +181,9 @@ class _KarteState extends State<Karte> {
           if (widget.strecken.isEmpty)
             for (final h in widget.halte)
               CircleMarker(point: h, radius: 5, color: farbe.surface, borderColor: farbe.primary, borderStrokeWidth: 2),
+          for (final s in widget.strecken)
+            for (final p in s.zwischen)
+              CircleMarker(point: p, radius: 2.5, color: farbe.surface, borderColor: linienFarbe(s.linie), borderStrokeWidth: 1.5),
           // Umstiege und Ein-/Ausstiege
           for (final s in widget.strecken.where((s) => !s.fuss))
             for (final p in [s.punkte.first, s.punkte.last])

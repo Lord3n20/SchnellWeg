@@ -109,13 +109,22 @@ func TestGehtempo(t *testing.T) {
 // fakeValhalla antwortet auf jede Matrix mit derselben Zeit/Strecke je Zelle; code ≠ 200 simuliert einen Fehler.
 func fakeValhalla(t *testing.T, sec, km float64, code int) *Valhalla {
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req matrixReq
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || r.URL.Path != "/sources_to_targets" {
-			t.Errorf("falsche Anfrage %s: %v", r.URL.Path, err)
-		}
 		if code != 200 {
 			w.WriteHeader(code)
 			return
+		}
+		if r.URL.Path == "/route" { // Fußweg mit Form; Zeit/Strecke wie bei der Matrix
+			var req vhRouteReq
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Locations) != 2 || req.Costing != "pedestrian" {
+				t.Errorf("falsche Routenanfrage: %v", err)
+			}
+			json.NewEncoder(w).Encode(map[string]any{"trip": map[string]any{
+				"legs": []map[string]string{{"shape": "form"}}, "summary": map[string]float64{"time": sec, "length": km}}})
+			return
+		}
+		var req matrixReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || r.URL.Path != "/sources_to_targets" {
+			t.Errorf("falsche Anfrage %s: %v", r.URL.Path, err)
 		}
 		rows := make([][]map[string]float64, len(req.Sources))
 		for i := range rows {
@@ -160,5 +169,54 @@ func TestValhallaZugang(t *testing.T) {
 	s.Valhalla = fakeValhalla(t, 0, 0, 400)
 	if w, r := post(s, body); w.Code != 200 || len(r.Journeys) != 1 {
 		t.Fatalf("Rückfall auf Luftlinie: Code %d, %s", w.Code, w.Body)
+	}
+}
+
+func TestWegformen(t *testing.T) {
+	body := `{"from":{"lat":50.7701,"lon":6.08},"to":{"lat":50.7799,"lon":6.08},"time":"2026-10-28T08:05:00+01:00"}`
+	s := testServer(time.Date(2026, 10, 28, 0, 0, 0, 0, Berlin))
+	s.Valhalla = fakeValhalla(t, 420, 0.5, 200)
+	s.DirectM, s.DirectMax = 3000, time.Hour
+	w, r := post(s, body)
+	if w.Code != 200 || len(r.Journeys) != 2 {
+		t.Fatalf("Code %d, %s", w.Code, w.Body)
+	}
+	l := r.Journeys[0].Legs
+	if l[0].Shape != "form" || l[2].Shape != "form" || l[1].Shape != "" {
+		t.Errorf("Wegformen fehlen: %+v", l)
+	}
+	if fmt.Sprint(l[1].Stops) != "[A B]" {
+		t.Errorf("Halte der Fahrt %v", l[1].Stops)
+	}
+	// Reiner Fußweg hinten: 7 min ab Anfragezeit, mit Form.
+	d := r.Journeys[1]
+	if d.Trips != 0 || len(d.Legs) != 1 || d.Legs[0].Shape != "form" || d.Arr.Sub(d.Dep) != 7*time.Minute ||
+		d.Dep.In(Berlin).Format("15:04") != "08:05" {
+		t.Errorf("Fußweg %+v", d)
+	}
+
+	// Zu lang (Höchstdauer) → kein Fußweg; ohne Valhalla Luftlinie ohne Form.
+	s.DirectMax = 5 * time.Minute
+	if _, r := post(s, body); len(r.Journeys) != 1 {
+		t.Errorf("Fußweg trotz Höchstdauer: %d Verbindungen", len(r.Journeys))
+	}
+	s.Valhalla, s.DirectMax = nil, time.Hour
+	if _, r := post(s, body); len(r.Journeys) != 2 || r.Journeys[1].Legs[0].Shape != "" || r.Journeys[0].Legs[0].Shape != "" {
+		t.Errorf("ohne Valhalla: %+v", r.Journeys)
+	}
+}
+
+func TestNurFussweg(t *testing.T) {
+	// Kein Halt im Umkreis, Ziel 1 km entfernt → nur der Fußweg statt 422.
+	s := testServer(time.Date(2026, 10, 28, 0, 0, 0, 0, Berlin))
+	s.DirectM, s.DirectMax = 3000, time.Hour
+	body := `{"from":{"lat":50.80,"lon":6.10},"to":{"lat":50.809,"lon":6.10},"time":"2026-10-28T08:05:00+01:00"}`
+	w, r := post(s, body)
+	if w.Code != 200 || len(r.Journeys) != 1 || r.Journeys[0].Trips != 0 {
+		t.Fatalf("Code %d, %s", w.Code, w.Body)
+	}
+	s.DirectM = 0
+	if w, _ := post(s, body); w.Code != 422 {
+		t.Fatalf("ohne Fußweg: Code %d", w.Code)
 	}
 }
