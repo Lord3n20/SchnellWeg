@@ -294,6 +294,9 @@ func (tt *Timetable) loadFeed(path, pre string, day time.Time, fern bool) ([]*tr
 		if len(t.st) < 2 {
 			continue
 		}
+		if t.info.Headsign == "" { // gtfs.de führt kein trip_headsign → Endhalt als Fahrtziel
+			t.info.Headsign = tt.Stops[t.st[len(t.st)-1].stop].Name
+		}
 		days := tripOK[id].days
 		if days&1 != 0 {
 			all = append(all, t)

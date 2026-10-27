@@ -8,7 +8,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Lord3n20/RWaysTH/server/internal/geocode"
 	"github.com/Lord3n20/RWaysTH/server/internal/raptor"
+	"github.com/Lord3n20/RWaysTH/server/internal/rt"
 )
 
 // Berlin ist die Zeitzone der Fahrpläne.
@@ -53,11 +55,20 @@ type Server struct {
 	AccessM   float64   // Suchradius für Zugangshalte (Luftlinie)
 	Valhalla  *Valhalla // echte Zugangswege; nil = Luftlinie
 	MaxTrips  int
-	WaitLimit time.Duration // so lange wartet eine Anfrage höchstens auf einen freien Router
+	WaitLimit time.Duration  // so lange wartet eine Anfrage höchstens auf einen freien Router
+	Live      *rt.Live       // Echtzeit-Feed, nil = nur Fahrplan
+	LiveWait  time.Duration  // so lange wartet eine Anfrage höchstens auf einen Echtzeit-Abruf
+	Geocode   *geocode.Index // Adresssuche, nil = aus
+	MapPath   string         // Kartenausschnitt (PMTiles), "" = aus
 }
 
 // Swap setzt einen neuen Plan; laufende Anfragen rechnen auf dem alten zu Ende.
-func (s *Server) Swap(p *Plan) { s.plan.Store(p) }
+func (s *Server) Swap(p *Plan) {
+	if s.Live != nil {
+		s.Live.SetTrips(tripIDs(p.TT))
+	}
+	s.plan.Store(p)
+}
 
 // Current liefert den aktuellen Plan oder nil.
 func (s *Server) Current() *Plan { return s.plan.Load() }
@@ -67,6 +78,10 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/route", s.route)
 	mux.HandleFunc("GET /v1/status", s.status)
+	mux.HandleFunc("POST /v1/departures", s.departures)
+	mux.HandleFunc("GET /v1/stops", s.stops)
+	mux.HandleFunc("POST /v1/search", s.search)
+	mux.HandleFunc("GET /v1/map", s.mapFile)
 	return mux
 }
 
@@ -117,13 +132,18 @@ type legOut struct {
 	Headsign string    `json:"headsign,omitempty"`
 	TripID   string    `json:"trip_id,omitempty"`
 	Fern     bool      `json:"fern,omitempty"` // nicht im Deutschlandticket
+	Risk     bool      `json:"risk,omitempty"` // Anschluss an diese Fahrt laut Prognose gefährdet
+	liveOut
 }
 
 type journeyOut struct {
-	Trips int       `json:"trips"`
-	Dep   time.Time `json:"dep"`
-	Arr   time.Time `json:"arr"`
-	Legs  []legOut  `json:"legs"`
+	Trips int        `json:"trips"`
+	Dep   time.Time  `json:"dep"`
+	Arr   time.Time  `json:"arr"`
+	ArrRT *time.Time `json:"arr_rt,omitempty"` // erwartete Ankunft laut Echtzeit
+	RT    bool       `json:"rt,omitempty"`     // mindestens eine Fahrt mit Echtzeit
+	Risk  string     `json:"risk,omitempty"`   // "anschluss" (Umstieg gefährdet) | "ausfall" (Fahrt/Halt fällt aus)
+	Legs  []legOut   `json:"legs"`
 }
 
 type routeResp struct {
@@ -132,6 +152,7 @@ type routeResp struct {
 	WalkMs   float64       `json:"walk_ms"`      // Zugangswege gesamt (Halte-Suche + Valhalla)
 	VhMs     [2]float64    `json:"vh_ms"`        // davon die Valhalla-Aufrufe für Start und Ziel (parallel)
 	Vh       *[2]WalkTrace `json:"vh,omitempty"` // nur mit "debug": true
+	RT       bool          `json:"rt"`           // Echtzeitstand verfügbar (sonst nur Fahrplan)
 }
 
 func fail(w http.ResponseWriter, code int, kind string) {
@@ -170,6 +191,8 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	if req.Debug {
 		tr = &[2]WalkTrace{}
 	}
+	liveC := make(chan *rt.Snapshot, 1) // Echtzeit parallel zu den Zugangswegen holen
+	go func() { liveC <- s.live(r.Context()) }()
 	from, to, vh := s.access(r.Context(), p.TT, req.From, req.To, tr)
 	walkMs := float64(time.Since(tw).Microseconds()) / 1000
 	if len(from) == 0 || len(to) == 0 {
@@ -197,11 +220,14 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	t0 := time.Now()
 	res := rt.Query(int32(dep/time.Second), from, to, s.MaxTrips)
 	ms := float64(time.Since(t0).Microseconds()) / 1000
-	out := routeResp{Journeys: []journeyOut{}, Ms: ms, WalkMs: walkMs, VhMs: vh, Vh: tr}
-	for _, j := range res.Journeys {
-		out.Journeys = append(out.Journeys, convert(p.TT, base, j))
-	}
 	p.routers <- rt
+	snap := <-liveC
+	out := routeResp{Journeys: []journeyOut{}, Ms: ms, WalkMs: walkMs, VhMs: vh, Vh: tr, RT: snap != nil}
+	for _, j := range res.Journeys {
+		jo := convert(p.TT, base, j)
+		p.annotate(snap, j, &jo)
+		out.Journeys = append(out.Journeys, jo)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
@@ -249,6 +275,6 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewEncoder(w).Encode(map[string]any{
 		"ready": true, "day": p.Day.Format("2006-01-02"), "loaded": p.Loaded.Format(time.RFC3339),
-		"stops": len(p.TT.Stops), "routes": len(p.TT.Routes),
+		"stops": len(p.TT.Stops), "routes": len(p.TT.Routes), "rt": s.liveStatus(),
 	})
 }

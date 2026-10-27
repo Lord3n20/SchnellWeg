@@ -123,10 +123,10 @@ func linkOrCopy(src, dst string) error {
 	return out.Close()
 }
 
-// osmFresh meldet, ob der aktuelle OSM-Stand jünger als osm_tage ist (Release-ID = Bauzeit in UTC).
-// Der tägliche Lauf baut OSM + Valhalla so nur etwa wöchentlich neu (D-14); force baut immer.
-func osmFresh() (string, bool) {
-	cur := jobs.Current(*dir, "osm")
+// fresh meldet, ob der aktuelle Stand einer Komponente jünger als osm_tage ist (Release-ID = Bauzeit in UTC).
+// Der tägliche Lauf baut OSM, Valhalla und Karte so nur etwa wöchentlich neu (D-14); force baut immer.
+func fresh(comp string) (string, bool) {
+	cur := jobs.Current(*dir, comp)
 	if *force || cur == "" || *osmDays <= 0 {
 		return "", false
 	}

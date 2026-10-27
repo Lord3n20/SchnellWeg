@@ -13,8 +13,12 @@
 //	          danach wird das Valhalla-Add-on neu gestartet, falls es läuft
 //	footpaths Umstiegswege zwischen nahen Halten (GTFS-Stand) mit einem kurz gestarteten Valhalla auf dem
 //	          Tile-Stand rechnen (D-12) → footpaths/current/footpaths.csv
+//	geocode   Suchliste (Adressen, Straßen, Orte, Einrichtungen in gtfs_box) aus dem OSM-Stand
+//	          → geocode/current/geocode.tsv
+//	map       Kartenausschnitt (Protomaps-Basiskarte, PMTiles) für die App, höchstens alle osm_tage
+//	          → map/current/region.pmtiles
 //
-// Hat gtfs oder footpaths einen neuen Stand gebracht, wird am Ende routing-core neu gestartet, falls es läuft.
+// Hat gtfs, footpaths oder geocode einen neuen Stand gebracht, wird am Ende routing-core neu gestartet, falls es läuft.
 //
 // Jeder Job prüft vorher freien Speicher und Platz, misst den anonymen Speicher der cgroup, bricht beim
 // Überschreiten des Budgets ab und schaltet erst nach erfolgreicher Prüfung um (vorheriger Stand bleibt).
@@ -47,7 +51,7 @@ import (
 
 var (
 	dir         = flag.String("dir", "/config", "Ablage (HA: Konfigurationsordner des Job-Add-ons)")
-	jobList     = flag.String("job", "gtfs,osm,valhalla,footpaths", "Jobs, durch Komma getrennt, in dieser Reihenfolge")
+	jobList     = flag.String("job", "gtfs,osm,valhalla,footpaths,geocode,map", "Jobs, durch Komma getrennt, in dieser Reihenfolge")
 	sources     = flag.String("osm_sources", "", "Geofabrik-Pfade ohne -latest.osm.pbf, durch Komma getrennt")
 	region      = flag.String("region", "/etc/rwaysth/region.geojson", "Regionspolygon (GeoJSON)")
 	maxMem      = flag.Int64("max_mem_mb", 2048, "Speicherspitze je Job in MB (zusätzlich ≤ MemAvailable − 1 GB)")
@@ -55,6 +59,8 @@ var (
 	minDisk     = flag.Int64("min_free_disk_mb", 6000, "nötiger freier Platz vor dem Start")
 	force       = flag.Bool("force", false, "auch bei unveränderten Eingängen neu bauen")
 	gtfsBox     = flag.String("gtfs_box", "5.95,50.48,6.45,50.93", "Nahverkehr: Fahrten mit Halt in dieser Box (minlon,minlat,maxlon,maxlat)")
+	mapBox      = flag.String("map_box", "5.95,50.48,6.45,50.93", "Kartenausschnitt (minlon,minlat,maxlon,maxlat)")
+	mapZoom     = flag.Int("map_zoom", 15, "höchste Zoomstufe der Karte")
 	osmDays     = flag.Int("osm_tage", 7, "OSM + Valhalla erst neu bauen, wenn der Stand so alt ist (0 = immer prüfen)")
 	options     = flag.String("options", "", "JSON-Datei mit Optionen (HA-Add-on: /data/options.json)")
 )
@@ -83,7 +89,7 @@ func main() {
 	for _, name := range strings.Split(*jobList, ",") {
 		name = strings.TrimSpace(name)
 		run, ok := map[string]func(context.Context, *jobs.Watch) (string, error){
-			"gtfs": jobGTFS, "osm": jobOSM, "valhalla": jobValhalla, "footpaths": jobFootpaths,
+			"gtfs": jobGTFS, "osm": jobOSM, "valhalla": jobValhalla, "footpaths": jobFootpaths, "geocode": jobGeocode, "map": jobMap,
 		}[name]
 		if !ok {
 			log.Fatalf("Fehler: unbekannter Job %q", name)
@@ -98,7 +104,7 @@ func main() {
 		if name == "valhalla" && err == nil {
 			restartSibling(ctx, sup, "valhalla", &report)
 		}
-		coreData = coreData || (err == nil && (name == "gtfs" || name == "footpaths"))
+		coreData = coreData || (err == nil && (name == "gtfs" || name == "footpaths" || name == "geocode"))
 	}
 	if coreData { // einmal am Ende, auch wenn ein späterer Job fehlschlug: der neue Stand ist geprüft
 		restartSibling(ctx, sup, "routing_core", &report)
@@ -176,7 +182,7 @@ func cmd(ctx context.Context, logf, name string, args ...string) error {
 
 // jobOSM lädt die Geofabrik-Ausschnitte und schneidet sie auf das Regionspolygon.
 func jobOSM(ctx context.Context, w *jobs.Watch) (string, error) {
-	if info, fresh := osmFresh(); fresh {
+	if info, fresh := fresh("osm"); fresh {
 		return info, errSkip
 	}
 	var paths []string

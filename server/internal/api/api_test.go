@@ -21,6 +21,7 @@ func testServer(day time.Time) *Server {
 	tt.StopRoutes = [][]int32{{0}, {0}}
 	tt.StopPos = [][]int32{{0}, {1}}
 	tt.Footpaths = [][]raptor.Footpath{nil, nil}
+	tt.StopIndex = map[string]int32{"A": 0, "B": 1}
 	s := &Server{AccessM: 300, MaxTrips: 3, WaitLimit: time.Second}
 	s.Swap(NewPlan(tt, day, 1))
 	return s

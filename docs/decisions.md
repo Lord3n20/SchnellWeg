@@ -144,3 +144,39 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   Lokal mit Valhalla-Ersatz: 3 354 Quellen, 14 027 Paare (27.10.: ~14 000). routing-core liest per Glob
   `/addon_configs/*_routing_jobs/footpaths/current/footpaths.csv`; ohne Treffer Luftlinie. routing-core wird nur
   einmal am Ende neu gestartet, wenn `gtfs` oder `footpaths` einen neuen Stand hatte.
+
+## D-15 Echtzeit im Kern: Overlay auf dem Fahrplan, Abruf nur bei Anfragen (Phase 1, 27.10.)
+- routing-core holt `realtime-free.pb` (gtfs.de, CC BY-SA 4.0) erst, wenn eine Anfrage kommt (D-05): höchstens alle
+  30 s, `If-None-Match`, 6 s Zeitbudget je Versuch, ein Wiederholungsversuch, ein Abruf für alle gleichzeitigen
+  Anfragen; Stände älter als 5 min gelten nicht. Behalten werden nur Fahrten des geladenen Fahrplans (abends
+  27.10.: 5 847 von 39 000), Zuordnung über trip_id + start_date und stop_id, Verspätung gilt bis zur nächsten
+  Angabe weiter (GTFS-RT-Regel). Laptop: erster Abruf 0,66 s, danach 18 ms.
+- Gerechnet wird weiter auf dem **Fahrplan**; die Antwort trägt je Fahrt `dep_rt`/`arr_rt`, `canceled`, `skipped`
+  und je Weg `arr_rt` + `risk` (`anschluss`: prognostizierte Ankunft + Fußweg nach der prognostizierten Abfahrt
+  des Anschlusses; `ausfall`). Grund: RAPTOR mit verschobenen Zeiten bräuchte je Anfrage eine Kopie der
+  Zeitachsen oder verletzt die Sortierung der Fahrten; die Ampel (D-06, Phase 4) baut auf `risk` auf.
+- Neue Endpunkte: `POST /v1/departures` (Halte-IDs → nächste Abfahrten, Server sieht keinen Standort),
+  `GET /v1/stops` (alle Halte für die App-Datenbank, ETag = Fahrplanstand). gtfs.de führt kein `trip_headsign`,
+  als Fahrtziel gilt der Endhalt.
+- Status: umgesetzt (routing-core 0.1.9).
+
+## D-16 Adresssuche aus OSM im Kern (Phase 1, 27.10.)
+- Job `geocode` liest den OSM-Stand mit `paulmach/osm` in einem Durchlauf (Knoten der Box sortiert im Speicher,
+  Wege → Mittelpunkt, Multipolygone → Mittel der Wege) und schreibt Adressen, Straßen (je Name und ~1-km-Zelle),
+  Orte und benannte Einrichtungen in `gtfs_box` als TSV. Laptop (Regbez. Köln): 13 s, 207 000 Einträge
+  (180 000 Adressen), 12 MB.
+- routing-core hält sie mit sortierter Wortliste + Trefferlisten (Wortanfänge, Umlaute gefaltet, „Str.“ → strasse,
+  kurze Zahlen nur als Hausnummer) im RAM: Heap +38 MB, Suche 0,1–3 ms auf dem Laptop (Ziel 30 ms).
+  `POST /v1/search` (Text im Body, nie in der URL oder im Protokoll); Wertung ohne Standort, die App sortiert
+  nach Entfernung. RWTH-Gebäude kommen über ihre OSM-Namen (SuperC, Audimax …), RWTH Maps bleibt verworfen.
+- Status: umgesetzt (routing-jobs 0.1.7, routing-core 0.1.9).
+
+## D-17 Offline-Karte: Ausschnitt der Protomaps-Basiskarte (Phase 1, 27.10.)
+- Job `map` sucht den neuesten Tages-Build auf build.protomaps.com und holt mit `pmtiles extract` (go-pmtiles
+  1.31.2, Prüfsumme im Image) per HTTP-Range nur die Kacheln der Box bis Zoom 15 → `map/current/region.pmtiles`,
+  höchstens alle `osm_tage`. Lizenz beim Betreiber geprüft (docs.protomaps.com/basemaps/downloads, 27.10.):
+  ODbL Produced Work, OSM-Namensnennung, keine Registrierung; direktes Verlinken unerwünscht, eigene Kopien
+  empfohlen – genau das tut der Job. Kein eigenes Rendern (Planetiler/tilemaker bräuchten GBs RAM).
+- routing-core liefert die Datei unter `GET /v1/map` (Range, Last-Modified); die App lädt sie einmal und danach
+  nur bei Änderung. Die Karte kommt so nie von Dritten, der Standort verlässt das Handy nicht.
+- Status: umgesetzt (routing-jobs 0.1.7, routing-core 0.1.9); Größe und Laufzeit werden auf dem Server gemessen.

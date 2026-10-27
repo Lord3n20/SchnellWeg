@@ -9,7 +9,7 @@ Status: ✅ freigegeben · ⏳ in Prüfung · ❓ Rückfrage an den Betreiber ·
 |---|---|---|---|---|---|
 | gtfs.de `de_nv`/`de_rv` (statisch, 277 MB) | gtfs.de, verantwortlich Dr. Patrick Brosi (Impressum, Rechtsform nicht genannt); Daten aus NeTEx von DELFI e.V. | **CC BY 4.0** (Feed-Seite, geprüft 27.10.) | nein | IP, Abruf 1×/Tag mit ETag | ✅ |
 | DELFI GTFS über opendata-oepnv.de | DELFI e.V. (Länder/Verbünde, öffentlich) | prüfen (CC BY 4.0 erwartet) | **ja** | Account-Daten, IP | ❓ F-06 |
-| gtfs.de GTFS-RT `realtime-free.pb` (27 MB) | gtfs.de | **CC BY-SA 4.0** | nein | IP, Abrufmuster (nur „App offen“, keine Routen) | ⏳ ASEAG gemessen 27.10.: 93 % der laufenden Fahrten, 80 % mit Abweichung (messungen/) |
+| gtfs.de GTFS-RT `realtime-free.pb` (27 MB) | gtfs.de | **CC BY-SA 4.0** | nein | IP, Abrufmuster (nur „App offen“, keine Routen) | ✅ D-15 (in routing-core); ASEAG 27.10. mittags 93 % / 80 %, abends 89 % / 57 % (messungen/) |
 | Transitous API | gemeinnütziges Community-Projekt, Server bei spline (FU Berlin) | keine eigene; Quellen-Lizenzen + OSM-Attribution, Link auf transitous.org/sources | nein | IP, URL (bei uns nur Halte-IDs + Zeit), UA; Logs 2 Tage | ❓ F-05 (UA mit Kontakt, Open-Source-Pflicht) |
 | DB Timetables (API Marketplace) | DB InfraGO, Staatskonzern | CC BY 4.0 (laut Dritten, beim Betreiber prüfen) | **ja** (Konto, Client-ID/Secret) | IP, Bahnhofs-EVA + Stunde | ❓ nur bei Bedarf |
 | HAFAS / db-vendo-client | inoffiziell | keine Erlaubnis | – | – | ❌ |
@@ -19,7 +19,7 @@ Status: ✅ freigegeben · ⏳ in Prüfung · ❓ Rückfrage an den Betreiber ·
 | TEC GTFS (BE, Wallonien) | OTW, öffentlich | prüfen | prüfen | IP | ⏳ |
 | OSM-Extrakte (Geofabrik) | Geofabrik GmbH, kommerziell (Downloads frei) | ODbL | nein | IP, 1×/Tag | ⏳ |
 | Höhendaten (Copernicus DEM GLO-30 bzw. Tilezen/Skadi auf AWS Open Data) | ESA/EU bzw. Amazon als Hoster | Copernicus-Lizenz (frei, Attribution) / gemischt | nein | IP, einmalig | ⏳ |
-| Protomaps-Build (PMTiles) | Protomaps (Brandon Liu), Community/kommerziell | ODbL (OSM) + Protomaps-Attribution | nein | IP, HTTP-Range-Abrufe, selten | ⏳ |
+| Protomaps-Build (PMTiles) | Protomaps (Brandon Liu), Community/kommerziell | **ODbL Produced Work**, OSM-Namensnennung (docs.protomaps.com/basemaps/downloads, geprüft 27.10.; eigene Kopien statt Verlinken empfohlen) | nein | IP, HTTP-Range-Abrufe, wöchentlich | ✅ D-17 |
 | Autobahn-API (verkehr.autobahn.de) | Autobahn GmbH des Bundes | **beim Betreiber nichts gefunden**, nur bund.dev (Dritte) | nein | IP | ❓ Grenzfall (Phase 7) |
 | Mobilithek / Straßen.NRW DATEX II | BMDV, öffentlich | je Angebot | **ja** | Account, IP | ❓ (Phase 7) |
 | RWTH Maps (maps.rwth-aachen.de) | RWTH, öffentlich | **keine Lizenz/Schnittstelle genannt**, Karte auf Google Maps API | – | – | ❌ (geprüft 27.10.) |

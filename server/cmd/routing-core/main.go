@@ -27,7 +27,9 @@ import (
 	"time"
 
 	"github.com/Lord3n20/RWaysTH/server/internal/api"
+	"github.com/Lord3n20/RWaysTH/server/internal/geocode"
 	"github.com/Lord3n20/RWaysTH/server/internal/raptor"
+	"github.com/Lord3n20/RWaysTH/server/internal/rt"
 	_ "time/tzdata" // Image ohne Zeitzonen-Dateien
 )
 
@@ -62,6 +64,10 @@ func main() {
 	access := flag.Float64("access", 800, "Suchradius für Zugangshalte in m (Luftlinie); echte Wege bis 2×access")
 	valhalla := flag.String("valhalla", "", "Valhalla-URL für echte Zugangswege (leer = Luftlinie)")
 	kmh := flag.Float64("kmh", 4.3, "Gehtempo für Zugangswege in km/h")
+	rtURL := flag.String("rt", "https://realtime.gtfs.de/realtime-free.pb", "GTFS-RT-Feed (leer = nur Fahrplan); Abruf nur bei Anfragen, höchstens alle 30 s")
+	rtWait := flag.Duration("rt_wait", 6*time.Second, "so lange wartet eine Anfrage höchstens auf den Echtzeit-Abruf")
+	mapPath := flag.String("map", "", "Kartenausschnitt (PMTiles, Job map) für /v1/map; Glob erlaubt, wird beim Start aufgelöst")
+	geo := flag.String("geocode", "", "Suchliste (TSV, Job geocode) für /v1/search; Glob erlaubt, ohne Treffer keine Suche")
 	listen := flag.String("listen", ":8090", "Adresse der API")
 	par := flag.Int("par", 2, "gleichzeitige Anfragen (je ein Router)")
 	dayS := flag.String("day", "", "Betriebstag fest vorgeben (Test), sonst heute mit Wechsel um Mitternacht")
@@ -134,7 +140,36 @@ func main() {
 		return p, nil
 	}
 
-	srv := &api.Server{AccessM: *access, MaxTrips: 6, WaitLimit: 2 * time.Second}
+	var geoIx *geocode.Index
+	if m, _ := filepath.Glob(rel(*geo)); *geo != "" && len(m) > 0 {
+		t0 := time.Now()
+		f, err := os.Open(m[0])
+		if err != nil {
+			log.Fatal("Fehler beim Laden der Suchliste: ", err)
+		}
+		ix, err := geocode.Load(f)
+		f.Close()
+		if err != nil {
+			log.Fatal("Fehler beim Laden der Suchliste: ", err)
+		}
+		geoIx = ix
+		log.Printf("Suchliste geladen in %v: %d Einträge", time.Since(t0).Round(time.Millisecond), len(ix.Entries))
+	} else if *geo != "" {
+		log.Print("Keine Suchliste gefunden, /v1/search ist aus")
+	}
+	if m, _ := filepath.Glob(rel(*mapPath)); *mapPath != "" && len(m) > 0 {
+		*mapPath = m[0]
+	} else if *mapPath != "" && strings.ContainsAny(*mapPath, "*?[") {
+		// Glob ohne Treffer: Karte kommt mit dem nächsten Job-Lauf; Ordner auflösen, sobald er existiert
+		log.Print("Noch keine Karte gefunden, /v1/map antwortet 503")
+		*mapPath = ""
+	}
+	srv := &api.Server{Geocode: geoIx, MapPath: *mapPath, AccessM: *access, MaxTrips: 6, WaitLimit: 2 * time.Second, LiveWait: *rtWait}
+	if *rtURL != "" {
+		// Zeitbudget der Quelle 6 s je Versuch (CLAUDE.md), Stände älter als 5 min gelten nicht mehr
+		srv.Live = &rt.Live{URL: *rtURL, Client: &http.Client{Timeout: 6 * time.Second}, MinAge: 30 * time.Second,
+			MaxAge: 5 * time.Minute, UA: "RWaysTH (+https://github.com/Lord3n20/RWaysTH)"}
+	}
 	if *valhalla != "" {
 		srv.Valhalla = &api.Valhalla{URL: strings.TrimRight(*valhalla, "/"), KMH: *kmh, MaxM: 2 * *access,
 			Timeout: 300 * time.Millisecond, Client: &http.Client{Transport: &http.Transport{DisableKeepAlives: true}}}
