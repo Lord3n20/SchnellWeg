@@ -13,7 +13,7 @@ import (
 )
 
 // UserAgent für alle Downloads (ohne Kontaktangabe, siehe F-05).
-const UserAgent = "RWaysTH-jobs (+https://github.com/Lord3n20/RWaysTH)"
+const UserAgent = "SchnellWeg-jobs (+https://github.com/Lord3n20/SchnellWeg)"
 
 var client = &http.Client{Timeout: 30 * time.Minute}
 

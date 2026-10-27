@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/Lord3n20/RWaysTH/server/internal/jobs"
-	"github.com/Lord3n20/RWaysTH/server/internal/raptor"
+	"github.com/Lord3n20/SchnellWeg/server/internal/jobs"
+	"github.com/Lord3n20/SchnellWeg/server/internal/raptor"
 )
 
 // gtfsFormat ändert sich, wenn der gtfs-Job anders baut; dann wird trotz gleicher Quellen neu gebaut.

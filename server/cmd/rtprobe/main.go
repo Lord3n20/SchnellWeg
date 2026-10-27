@@ -19,10 +19,10 @@ import (
 
 	gtfs "github.com/MobilityData/gtfs-realtime-bindings/golang/gtfs"
 
-	"github.com/Lord3n20/RWaysTH/server/internal/rt"
+	"github.com/Lord3n20/SchnellWeg/server/internal/rt"
 )
 
-const userAgent = "RWaysTH/0.0 (+https://github.com/Lord3n20/RWaysTH)"
+const userAgent = "SchnellWeg/0.0 (+https://github.com/Lord3n20/SchnellWeg)"
 
 func main() {
 	tripsPath := flag.String("trips", "", "Datei mit trip_ids der Region")

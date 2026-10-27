@@ -8,9 +8,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Lord3n20/RWaysTH/server/internal/geocode"
-	"github.com/Lord3n20/RWaysTH/server/internal/raptor"
-	"github.com/Lord3n20/RWaysTH/server/internal/rt"
+	"github.com/Lord3n20/SchnellWeg/server/internal/geocode"
+	"github.com/Lord3n20/SchnellWeg/server/internal/raptor"
+	"github.com/Lord3n20/SchnellWeg/server/internal/rt"
 )
 
 // Berlin ist die Zeitzone der Fahrpläne.

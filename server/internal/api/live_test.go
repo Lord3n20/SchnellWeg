@@ -12,9 +12,9 @@ import (
 	gtfs "github.com/MobilityData/gtfs-realtime-bindings/golang/gtfs"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/Lord3n20/RWaysTH/server/internal/geocode"
-	"github.com/Lord3n20/RWaysTH/server/internal/raptor"
-	"github.com/Lord3n20/RWaysTH/server/internal/rt"
+	"github.com/Lord3n20/SchnellWeg/server/internal/geocode"
+	"github.com/Lord3n20/SchnellWeg/server/internal/raptor"
+	"github.com/Lord3n20/SchnellWeg/server/internal/rt"
 )
 
 // liveFeed: Fahrt trip (Betriebstag date) ist an stop delay Sekunden verspätet.

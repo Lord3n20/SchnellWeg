@@ -88,11 +88,11 @@ func TestCutGTFS(t *testing.T) {
 	}
 }
 
-// Mit echten Daten (lokal): RWAYSTH_DE_NV=../data/raw/de_nv.zip go test ./internal/jobs -run Real -v
+// Mit echten Daten (lokal): SCHNELLWEG_DE_NV=../data/raw/de_nv.zip go test ./internal/jobs -run Real -v
 func TestCutGTFSReal(t *testing.T) {
-	src := os.Getenv("RWAYSTH_DE_NV")
+	src := os.Getenv("SCHNELLWEG_DE_NV")
 	if src == "" {
-		t.Skip("RWAYSTH_DE_NV nicht gesetzt")
+		t.Skip("SCHNELLWEG_DE_NV nicht gesetzt")
 	}
 	box, _ := ParseBox("5.95,50.48,6.45,50.93")
 	st, err := CutGTFS(src, filepath.Join(t.TempDir(), "sr.zip"), box)

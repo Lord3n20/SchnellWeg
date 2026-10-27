@@ -1,5 +1,5 @@
 # Baut das routing-core-Image bei einem Tag „routing-core-v<version>“ und legt es als
-# ghcr.io/lord3n20/rwaysth-routing-core:<version> ab (D-03). Actions per Commit-SHA festgelegt.
+# ghcr.io/lord3n20/schnellweg-routing-core:<version> ab (D-03). Actions per Commit-SHA festgelegt.
 name: routing-core-Image
 
 on:
@@ -34,6 +34,6 @@ jobs:
           platforms: linux/amd64
           push: true
           provenance: false
-          tags: ghcr.io/lord3n20/rwaysth-routing-core:${{ steps.v.outputs.version }}
+          tags: ghcr.io/lord3n20/schnellweg-routing-core:${{ steps.v.outputs.version }}
       - name: Digest
-        run: echo "ghcr.io/lord3n20/rwaysth-routing-core:${{ steps.v.outputs.version }}@${{ steps.build.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"
+        run: echo "ghcr.io/lord3n20/schnellweg-routing-core:${{ steps.v.outputs.version }}@${{ steps.build.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Lord3n20/RWaysTH/server/internal/raptor"
+	"github.com/Lord3n20/SchnellWeg/server/internal/raptor"
 )
 
 // Eine Linie A→B mit zwei Fahrten; die Halte liegen ~1,1 km auseinander.

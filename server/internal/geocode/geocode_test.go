@@ -57,11 +57,11 @@ func TestSearch(t *testing.T) {
 	}
 }
 
-// Mit echten Daten: RWAYSTH_OSM=../data/spike/koeln.osm.pbf go test ./internal/geocode -run Real -v
+// Mit echten Daten: SCHNELLWEG_OSM=../data/spike/koeln.osm.pbf go test ./internal/geocode -run Real -v
 func TestReal(t *testing.T) {
-	p := os.Getenv("RWAYSTH_OSM")
+	p := os.Getenv("SCHNELLWEG_OSM")
 	if p == "" {
-		t.Skip("RWAYSTH_OSM nicht gesetzt")
+		t.Skip("SCHNELLWEG_OSM nicht gesetzt")
 	}
 	f, err := os.Open(p)
 	if err != nil {

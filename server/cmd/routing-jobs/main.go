@@ -46,14 +46,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Lord3n20/RWaysTH/server/internal/jobs"
+	"github.com/Lord3n20/SchnellWeg/server/internal/jobs"
 )
 
 var (
 	dir         = flag.String("dir", "/config", "Ablage (HA: Konfigurationsordner des Job-Add-ons)")
 	jobList     = flag.String("job", "gtfs,osm,valhalla,footpaths,geocode,map", "Jobs, durch Komma getrennt, in dieser Reihenfolge")
 	sources     = flag.String("osm_sources", "", "Geofabrik-Pfade ohne -latest.osm.pbf, durch Komma getrennt")
-	region      = flag.String("region", "/etc/rwaysth/region.geojson", "Regionspolygon (GeoJSON)")
+	region      = flag.String("region", "/etc/schnellweg/region.geojson", "Regionspolygon (GeoJSON)")
 	maxMem      = flag.Int64("max_mem_mb", 2048, "Speicherspitze je Job in MB (zusätzlich ≤ MemAvailable − 1 GB)")
 	concurrency = flag.Int("concurrency", 4, "Threads für den Valhalla-Bau (≤ 4)")
 	minDisk     = flag.Int64("min_free_disk_mb", 6000, "nötiger freier Platz vor dem Start")
@@ -109,11 +109,11 @@ func main() {
 	if coreData { // einmal am Ende, auch wenn ein späterer Job fehlschlug: der neue Stand ist geprüft
 		restartSibling(ctx, sup, "routing_core", &report)
 	}
-	title := "RWaysTH-Daten aktualisiert"
+	title := "SchnellWeg-Daten aktualisiert"
 	if failed {
-		title = "RWaysTH-Datenjob fehlgeschlagen"
+		title = "SchnellWeg-Datenjob fehlgeschlagen"
 	}
-	if err := sup.Notify(ctx, "rwaysth_jobs", title, strings.Join(report, "\n")); err != nil {
+	if err := sup.Notify(ctx, "schnellweg_jobs", title, strings.Join(report, "\n")); err != nil {
 		log.Print("Benachrichtigung fehlgeschlagen: ", err)
 	}
 	if failed {

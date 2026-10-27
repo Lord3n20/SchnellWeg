@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/Lord3n20/RWaysTH/server/internal/jobs"
+	"github.com/Lord3n20/SchnellWeg/server/internal/jobs"
 )
 
 // Protomaps-Basiskarte: tägliche Builds des ganzen Planeten (ODbL Produced Work, OSM-Namensnennung; Betreiber

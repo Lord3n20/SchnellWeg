@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Lord3n20/RWaysTH/server/internal/raptor"
-	"github.com/Lord3n20/RWaysTH/server/internal/rt"
+	"github.com/Lord3n20/SchnellWeg/server/internal/raptor"
+	"github.com/Lord3n20/SchnellWeg/server/internal/rt"
 )
 
 // rawID entfernt das Feed-Präfix ("0:") einer Halte- oder Fahrt-ID; der Echtzeit-Feed kennt nur die rohen IDs.

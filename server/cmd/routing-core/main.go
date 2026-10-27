@@ -26,10 +26,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Lord3n20/RWaysTH/server/internal/api"
-	"github.com/Lord3n20/RWaysTH/server/internal/geocode"
-	"github.com/Lord3n20/RWaysTH/server/internal/raptor"
-	"github.com/Lord3n20/RWaysTH/server/internal/rt"
+	"github.com/Lord3n20/SchnellWeg/server/internal/api"
+	"github.com/Lord3n20/SchnellWeg/server/internal/geocode"
+	"github.com/Lord3n20/SchnellWeg/server/internal/raptor"
+	"github.com/Lord3n20/SchnellWeg/server/internal/rt"
 	_ "time/tzdata" // Image ohne Zeitzonen-Dateien
 )
 
@@ -168,7 +168,7 @@ func main() {
 	if *rtURL != "" {
 		// Zeitbudget der Quelle 6 s je Versuch (CLAUDE.md), Stände älter als 5 min gelten nicht mehr
 		srv.Live = &rt.Live{URL: *rtURL, Client: &http.Client{Timeout: 6 * time.Second}, MinAge: 30 * time.Second,
-			MaxAge: 5 * time.Minute, UA: "RWaysTH (+https://github.com/Lord3n20/RWaysTH)"}
+			MaxAge: 5 * time.Minute, UA: "SchnellWeg (+https://github.com/Lord3n20/SchnellWeg)"}
 	}
 	if *valhalla != "" {
 		srv.Valhalla = &api.Valhalla{URL: strings.TrimRight(*valhalla, "/"), KMH: *kmh, MaxM: 2 * *access,

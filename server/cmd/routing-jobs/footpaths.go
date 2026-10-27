@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Lord3n20/RWaysTH/server/internal/jobs"
-	"github.com/Lord3n20/RWaysTH/server/internal/raptor"
+	"github.com/Lord3n20/SchnellWeg/server/internal/jobs"
+	"github.com/Lord3n20/SchnellWeg/server/internal/raptor"
 )
 
 // D-12: Umstiege vorsichtig mit 4,3 km/h, Kandidaten bis 400 m Luftlinie (routing-core -walk); Wege über 2 × walk

@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/Lord3n20/RWaysTH/server/internal/geocode"
-	"github.com/Lord3n20/RWaysTH/server/internal/jobs"
+	"github.com/Lord3n20/SchnellWeg/server/internal/geocode"
+	"github.com/Lord3n20/SchnellWeg/server/internal/jobs"
 )
 
 // jobGeocode baut aus dem aktuellen OSM-Stand die Suchliste für routing-core (Adressen, Straßen, Orte und benannte

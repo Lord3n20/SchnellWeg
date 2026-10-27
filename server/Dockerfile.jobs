@@ -9,8 +9,8 @@ COPY server/ .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /routing-jobs ./cmd/routing-jobs
 
 FROM ghcr.io/valhalla/valhalla:3.9.1@sha256:4fd114eb1d26b8fc2f43bcb3df234c1b63a0bf13c277405e5943d5361dc575de
-LABEL org.opencontainers.image.source="https://github.com/Lord3n20/RWaysTH" \
-      org.opencontainers.image.description="RWaysTH routing-jobs: OSM-Ausschnitt und Valhalla-Tiles für die Region Aachen"
+LABEL org.opencontainers.image.source="https://github.com/Lord3n20/SchnellWeg" \
+      org.opencontainers.image.description="SchnellWeg routing-jobs: OSM-Ausschnitt und Valhalla-Tiles für die Region Aachen"
 USER root
 # osmctools für osmconvert (D-10), osmium-tool für renumber (D-14)
 RUN apt-get update && apt-get install -y --no-install-recommends osmctools osmium-tool && rm -rf /var/lib/apt/lists/*
@@ -21,6 +21,6 @@ ENV OSMIUM_POOL_THREADS=2 OSMIUM_MAX_INPUT_QUEUE_SIZE=4 OSMIUM_MAX_OSMDATA_QUEUE
 ADD https://github.com/protomaps/go-pmtiles/releases/download/v1.31.2/go-pmtiles_1.31.2_Linux_x86_64.tar.gz /tmp/pmtiles.tgz
 RUN echo "3ed7dbf4ec2e6dfe5e25b6f70d1ffc932729f93c86db353bf514dd71010a312f  /tmp/pmtiles.tgz" | sha256sum -c - \
     && tar -xzf /tmp/pmtiles.tgz -C /usr/local/bin pmtiles && rm /tmp/pmtiles.tgz && pmtiles version
-COPY config/region.geojson /etc/rwaysth/region.geojson
+COPY config/region.geojson /etc/schnellweg/region.geojson
 COPY --from=build /routing-jobs /usr/local/bin/routing-jobs
 ENTRYPOINT ["/usr/local/bin/routing-jobs", "-options", "/data/options.json", "-dir", "/config"]

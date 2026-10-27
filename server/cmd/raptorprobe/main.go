@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Lord3n20/RWaysTH/server/internal/raptor"
+	"github.com/Lord3n20/SchnellWeg/server/internal/raptor"
 )
 
 var places = map[string][2]float64{

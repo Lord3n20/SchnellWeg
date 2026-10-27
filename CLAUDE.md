@@ -1,6 +1,6 @@
 # ÖPNV-Routing Aachen – harte Rahmenbedingungen
 
-Projekt `RWaysTH` (öffentliches Repo Lord3n20/RWaysTH, bis 27.10. „acwegweiser“; Add-ons in server-homeassistant). Antworten und Doku auf Deutsch.
+Projekt `SchnellWeg` (öffentliches Repo Lord3n20/SchnellWeg; bis 27.10. „acwegweiser“, dann „RWaysTH“, seit 27.10. abends SchnellWeg; Add-ons in server-homeassistant). Antworten und Doku auf Deutsch.
 Die volle Spezifikation stammt vom 27.10.2026; diese Datei hält nur das Verbindliche fest.
 Abweichungen nie stillschweigend: begründet in `docs/decisions.md`. Widersprechen sich zwei Vorgaben → Betreiber fragen.
 Konkrete Zugänge, Domain, IPs und private Dienste stehen nur in `CLAUDE.local.md` (gitignored).

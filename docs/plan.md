@@ -163,7 +163,7 @@ Upload per SSH/Samba – nur mit Messwert-Begründung.
 | Frage | Antwort |
 |---|---|
 | Zugang | eigene Subdomain über NPM mit Client-Zertifikat (mTLS), kein WireGuard |
-| Repo | öffentlich, Name **acwegweiser**, am 27.10. umbenannt in **RWaysTH**; Add-ons in `server-homeassistant` |
+| Repo | öffentlich, Name **acwegweiser**, am 27.10. umbenannt in **RWaysTH**, am 27.10. abends in **SchnellWeg** (Image-Namen `schnellweg-*` ab dem nächsten Release); Add-ons in `server-homeassistant` |
 | Ticket | Deutschlandsemesterticket bestätigt |
 | Handy | Android ohne Google-Dienste |
 | Transitous-UA | Link auf das öffentliche Repo als Kontakt |

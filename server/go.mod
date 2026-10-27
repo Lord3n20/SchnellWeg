@@ -1,4 +1,4 @@
-module github.com/Lord3n20/RWaysTH/server
+module github.com/Lord3n20/SchnellWeg/server
 
 go 1.27
 

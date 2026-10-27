@@ -9,7 +9,7 @@ import (
 	"net/http/httptrace"
 	"time"
 
-	"github.com/Lord3n20/RWaysTH/server/internal/raptor"
+	"github.com/Lord3n20/SchnellWeg/server/internal/raptor"
 )
 
 // Valhalla rechnet Zugangs- und Abgangswege (erste/letzte Meile) als echte Fußwege. Die Kandidaten kommen wie

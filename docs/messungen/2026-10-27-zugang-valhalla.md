@@ -43,5 +43,5 @@ Regler `schedutil` bleibt, nur der Mindesttakt wird angehoben (Mittelweg statt `
 | **2,0 GHz (gewählt)** | **31,2 ms** | **37,5 ms** | 2,3 ms |
 | 2,4 GHz | 26,3 ms | 29,4 ms | 2,0 ms |
 
-Gesetzt beim Start des Servers außerhalb der RWaysTH-Add-ons (Host-Einstellung, Ort in der lokalen Betreiber-Doku).
+Gesetzt beim Start des Servers außerhalb der SchnellWeg-Add-ons (Host-Einstellung, Ort in der lokalen Betreiber-Doku).
 Ein eigenes Add-on dafür scheiterte: im geschützten Add-on-Container bleibt `/sys` schreibgeschützt.

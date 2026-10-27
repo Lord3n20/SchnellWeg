@@ -1,5 +1,5 @@
 # Baut bei einem Tag „routing-jobs-v<version>“ bzw. „valhalla-v<version>“ das passende Image und legt es als
-# ghcr.io/lord3n20/rwaysth-<name>:<version> ab (D-03). Kontext = Repo-Wurzel. Actions per Commit-SHA festgelegt.
+# ghcr.io/lord3n20/schnellweg-<name>:<version> ab (D-03). Kontext = Repo-Wurzel. Actions per Commit-SHA festgelegt.
 name: routing-jobs/valhalla-Image
 
 on:
@@ -40,6 +40,6 @@ jobs:
           platforms: linux/amd64
           push: true
           provenance: false
-          tags: ghcr.io/lord3n20/rwaysth-${{ steps.v.outputs.name }}:${{ steps.v.outputs.version }}
+          tags: ghcr.io/lord3n20/schnellweg-${{ steps.v.outputs.name }}:${{ steps.v.outputs.version }}
       - name: Digest
-        run: echo "ghcr.io/lord3n20/rwaysth-${{ steps.v.outputs.name }}:${{ steps.v.outputs.version }}@${{ steps.build.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"
+        run: echo "ghcr.io/lord3n20/schnellweg-${{ steps.v.outputs.name }}:${{ steps.v.outputs.version }}@${{ steps.build.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"

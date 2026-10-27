@@ -9,7 +9,7 @@ if [ -z "$TAR" ]; then
   exit 1
 fi
 STAND=$(basename "$(readlink -f "$(dirname "$TAR")")")
-valhalla_build_config | python3 /usr/local/share/rwaysth/config.py "$TAR" "$CACHE" > /tmp/valhalla.json
+valhalla_build_config | python3 /usr/local/share/schnellweg/config.py "$TAR" "$CACHE" > /tmp/valhalla.json
 echo "Valhalla: Stand $STAND, $(du -m "$(readlink -f "$TAR")" | cut -f1) MB Tiles, $THREADS Threads, Cache $CACHE MB"
 # Protokoll des Dienstes geht nach /dev/null (Datenschutz); stdout/stderr nur für Absturzmeldungen.
 exec valhalla_service /tmp/valhalla.json "$THREADS" > /dev/null
