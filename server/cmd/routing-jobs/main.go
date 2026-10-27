@@ -19,6 +19,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -266,9 +267,9 @@ func inputSig(files []string, extra ...string) string {
 		et, _ := os.ReadFile(f + ".etag")
 		fmt.Fprintf(&b, "%s=%s;", filepath.Base(f), strings.TrimSpace(string(et)))
 	}
-	for _, e := range extra {
-		if st, err := os.Stat(e); err == nil {
-			fmt.Fprintf(&b, "%s@%d/%d;", filepath.Base(e), st.Size(), st.ModTime().Unix())
+	for _, e := range extra { // Inhalt statt Änderungszeit: die ändert sich mit jedem neuen Image
+		if data, err := os.ReadFile(e); err == nil {
+			fmt.Fprintf(&b, "%s@%x;", filepath.Base(e), sha256.Sum256(data))
 		}
 	}
 	return b.String()

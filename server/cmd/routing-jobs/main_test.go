@@ -36,3 +36,19 @@ func TestCheckValhallaBeendetDienst(t *testing.T) {
 		t.Fatal("checkValhalla hängt nach erfolgreicher Prüfung")
 	}
 }
+
+// Die Signatur hängt am Inhalt der Region, nicht an der Änderungszeit (neues Image ≠ neue Region).
+func TestInputSigInhalt(t *testing.T) {
+	dir := t.TempDir()
+	reg := filepath.Join(dir, "region.geojson")
+	os.WriteFile(reg, []byte(`{"a":1}`), 0o644)
+	a := inputSig(nil, reg)
+	os.Chtimes(reg, time.Now().Add(time.Hour), time.Now().Add(time.Hour))
+	if b := inputSig(nil, reg); a != b {
+		t.Fatal("Signatur ändert sich mit der Änderungszeit")
+	}
+	os.WriteFile(reg, []byte(`{"a":2}`), 0o644)
+	if inputSig(nil, reg) == a {
+		t.Fatal("Signatur erkennt geänderte Region nicht")
+	}
+}
