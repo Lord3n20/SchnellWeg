@@ -70,7 +70,8 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - Messung 27.10. (messungen/2026-10-27-rt-abdeckung.md): ASEAG 93 % der laufenden Fahrten im Feed, 80 % mit Abweichung.
 - Verworfen: Öffi-Weg (AVV-HAFAS `auskunft.avv.de/gate`, DB-Navigator-Schnittstelle) – inoffiziell, geheimer
   Schlüssel, Start/Ziel beim Betreiber. Entscheidung 27.10.: beim gewählten Weg bleiben.
-- Status: angenommen. Stichprobe abends/Wochenende/Störung wiederholen.
+- Status: angenommen. Stichprobe abends wiederholt (27.10. 21:40: ASEAG 89 % im Feed, 57 % mit Abweichung);
+  Wochenende/Störung offen.
 
 ## D-10 OSM-Ausschnitt mit osmconvert statt osmium
 - Messung 27.10.: `osmium extract` (smart, complete_ways) OOM bei 2 GB schon für eine Box aus dem 215-MB-Regbez.-
@@ -91,7 +92,8 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   entfallen, mindestens 60 s Umstieg. Außerhalb der Valhalla-Tiles bleibt die Luftlinie.
 - Gehtempo ist eine **App-Einstellung**, Standard „gemütlich“ = 4,3 km/h (27.10.). Umsetzung: Fußwege und
   Zugang werden einmal mit 4,3 km/h gerechnet; der Kern skaliert die Gehzeiten je Anfrage mit 4,3 / Tempo
-  (Mindestumstieg 60 s bleibt), damit kein zweiter Fußweg-Datensatz nötig ist.
+  (Mindestumstieg 60 s bleibt), damit kein zweiter Fußweg-Datensatz nötig ist. **Umgesetzt** in routing-core
+  0.1.8: Anfragefeld `"kmh"` (2–8, sonst 400), skaliert Zugangswege und Umstiege (`Router.WalkScale`).
 - Erste/letzte Meile (27.10., routing-core 0.1.1): Kandidaten wie bisher (Luftlinie ≤ `access`, je Muster der
   nächste Halt), dann eine Valhalla-Matrix je Seite (Start und Ziel gleichzeitig, 4,3 km/h, Zeitgrenze 300 ms).
   Echte Wege über 2 × `access` entfallen. Fehler, Zeitüberschreitung oder Ort außerhalb der Tiles → Luftlinie.

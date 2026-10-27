@@ -79,7 +79,6 @@ func jobFootpaths(ctx context.Context, w *jobs.Watch) (string, error) {
 			r.Abort()
 		}
 	}()
-	logf := filepath.Join(r.Dir, "valhalla.log")
 	conf := filepath.Join(r.Dir, "valhalla.json")
 	out, err := exec.CommandContext(ctx, "valhalla_build_config",
 		"--mjolnir-tile-extract", filepath.Join(vh, "tiles.tar"), "--mjolnir-tile-dir", "/nonexistent",
@@ -92,7 +91,8 @@ func jobFootpaths(ctx context.Context, w *jobs.Watch) (string, error) {
 		return "", err
 	}
 	threads := max(*concurrency/2, 1)
-	stop, err := startValhalla(ctx, conf, logf, threads)
+	// Das Dienstprotokoll (~1 MB je Lauf, eine Zeile je Anfrage) wird nicht gebraucht; Fehler meldet matrix().
+	stop, err := startValhalla(ctx, conf, os.DevNull, threads)
 	if err != nil {
 		return "", err
 	}

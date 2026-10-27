@@ -84,6 +84,27 @@ func TestFern(t *testing.T) {
 	}
 }
 
+func TestGehtempo(t *testing.T) {
+	s := testServer(time.Date(2026, 10, 28, 0, 0, 0, 0, Berlin))
+	// Zugang ~11 m → 60 s Mindestwert. Ab 07:58:30 erreicht man die Fahrt um 08:00 nur mit Grundtempo.
+	body := `{"from":{"lat":50.7701,"lon":6.08},"to":{"lat":50.7799,"lon":6.08},"time":"2026-10-28T07:58:30+01:00"%s}`
+	for extra, want := range map[string]string{"": "t1", `,"kmh":4.3`: "t1", `,"kmh":2.15`: "t2", `,"kmh":6`: "t1"} {
+		w, r := post(s, fmt.Sprintf(body, extra))
+		if w.Code != 200 || len(r.Journeys) != 1 || r.Journeys[0].Legs[1].TripID != want {
+			t.Errorf("%q: Code %d, erwartet %s: %s", extra, w.Code, want, w.Body)
+		}
+	}
+	_, r := post(s, fmt.Sprintf(body, `,"kmh":2.15`))
+	if l := r.Journeys[0].Legs; l[2].Arr.Sub(l[2].Dep) != 2*time.Minute {
+		t.Errorf("Abgang bei halbem Tempo: %v", l[2].Arr.Sub(l[2].Dep))
+	}
+	for _, k := range []string{`,"kmh":0`, `,"kmh":12`, `,"kmh":"x"`} {
+		if w, _ := post(s, fmt.Sprintf(body, k)); w.Code != 400 {
+			t.Errorf("%s: Code %d, erwartet 400", k, w.Code)
+		}
+	}
+}
+
 // fakeValhalla antwortet auf jede Matrix mit derselben Zeit/Strecke je Zelle; code ≠ 200 simuliert einen Fehler.
 func fakeValhalla(t *testing.T, sec, km float64, code int) *Valhalla {
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

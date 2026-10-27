@@ -33,6 +33,18 @@ func TestUmstieg(t *testing.T) {
 	}
 }
 
+func TestWalkScale(t *testing.T) {
+	r := NewRouter(testTT())
+	r.WalkScale = 4 // Umstieg B→B2 240 s statt 60: an B2 640, Anschluss 600 verpasst
+	if res := r.Query(50, []Access{{0, 0}}, []Access{{3, 30}}, 4); res.ArrByTrips[4] != inf {
+		t.Fatalf("langsam: Anschluss müsste verpasst sein, Ankunft %d", res.ArrByTrips[4])
+	}
+	r.WalkScale = 0.5 // schneller, aber der Mindestumstieg von 60 s bleibt
+	if res := r.Query(50, []Access{{0, 0}}, []Access{{3, 30}}, 4); res.ArrByTrips[2] != 1030 || res.Journeys[0].Legs[2].Arr != 460 {
+		t.Fatalf("schnell: %+v", res)
+	}
+}
+
 func TestSpaeterStart(t *testing.T) {
 	r := NewRouter(testTT())
 	res := r.Query(150, []Access{{0, 0}}, []Access{{3, 0}}, 3)

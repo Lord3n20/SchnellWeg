@@ -85,6 +85,21 @@ type routeReq struct {
 	Time  *time.Time `json:"time"`  // Abfahrt frühestens; fehlt sie, gilt jetzt
 	Fern  bool       `json:"fern"`  // Fernverkehr zulassen; sonst nur, was das Deutschlandsemesterticket abdeckt
 	Debug bool       `json:"debug"` // Zeiten der Valhalla-Aufrufe aufschlüsseln (nur Messung, keine Orte)
+	KMH   *float64   `json:"kmh"`   // Gehtempo (App-Einstellung, D-12); fehlt es, gilt BaseKMH
+}
+
+// BaseKMH ist das Tempo, mit dem Fußwege und Zugangswege gerechnet sind (D-12: „gemütlich“).
+const BaseKMH = 4.3
+
+// walkScale liefert den Faktor für die Gehzeiten; ok=false bei unplausiblem Tempo.
+func (q routeReq) walkScale() (float64, bool) {
+	if q.KMH == nil {
+		return 1, true
+	}
+	if k := *q.KMH; k >= 2 && k <= 8 {
+		return BaseKMH / k, true
+	}
+	return 0, false
 }
 
 type stopOut struct {
@@ -134,7 +149,9 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	var req routeReq
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil || !req.From.ok() || !req.To.ok() {
+	err := dec.Decode(&req)
+	scale, okKMH := req.walkScale()
+	if err != nil || !req.From.ok() || !req.To.ok() || !okKMH {
 		fail(w, http.StatusBadRequest, "anfrage_ungueltig")
 		return
 	}
@@ -159,6 +176,13 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusUnprocessableEntity, "keine_haltestelle_in_reichweite")
 		return
 	}
+	if scale != 1 { // Zugangswege kommen mit BaseKMH (Valhalla bzw. Luftlinie)
+		for _, acc := range [][]raptor.Access{from, to} {
+			for i := range acc {
+				acc[i].Sec = int32(float64(acc[i].Sec)*scale + 0.5)
+			}
+		}
+	}
 
 	var rt *raptor.Router
 	select {
@@ -169,7 +193,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	case <-r.Context().Done():
 		return
 	}
-	rt.NoFern = !req.Fern
+	rt.NoFern, rt.WalkScale = !req.Fern, scale
 	t0 := time.Now()
 	res := rt.Query(int32(dep/time.Second), from, to, s.MaxTrips)
 	ms := float64(time.Since(t0).Microseconds()) / 1000

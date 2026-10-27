@@ -28,6 +28,6 @@ Alle Werte auf dem OptiPlex (Server) gemessen, Details in `messungen/`.
 - ~~Ticketfilter~~ erledigt (27.10., Phase 1): `de_fv.zip:fern` markiert den ganzen Feed, in anderen Feeds gelten
   ICE/EC/ECE/ECM/EN/NJ/RJ(X)/THA/TGV/ES(T)/FLX als Fernverkehr. IC17/35/56/87 aus de_rv bleiben (Tarifanerkennung,
   teils nur abschnittsweise). API schließt Fernverkehr aus, außer `"fern": true`; Fahrten tragen `fern` in der Ausgabe.
-- Echtzeit-Stichprobe abends, am Wochenende und bei einer Störung wiederholen.
+- Echtzeit-Stichprobe ~~abends~~ (27.10. erledigt: 89 % / 57 %), am Wochenende und bei einer Störung wiederholen.
 - DELFI-Registrierung: vorher klären, welche Daten verlangt werden.
 - Persönliche Referenzorte in `config/local.yaml` ergänzen (RWTH Maps ist schon abgelehnt, Gebäude aus OSM).

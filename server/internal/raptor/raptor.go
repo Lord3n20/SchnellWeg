@@ -65,6 +65,7 @@ type Router struct {
 	labels            [][]label // [Runde][Halt]
 	labelSet          []int32   // gesetzte Einträge (Runde*n+Halt) zum Zurücksetzen
 	NoFern            bool      // Fernverkehrs-Routen auslassen (Ticketfilter)
+	WalkScale         float64   // Umstiegs-Gehzeiten × Faktor (Gehtempo, D-12); 0 = unverändert, mindestens 60 s bleiben
 }
 
 func (r *Router) setLabel(k int, s int32, l label) {
@@ -194,9 +195,13 @@ func (r *Router) Query(dep int32, from, to []Access, maxTrips int) Result {
 		r.touched = append(r.touched[:0], r.markedList...)
 		for _, s := range r.touched {
 			for _, f := range tt.Footpaths[s] {
-				if a := r.round[s] + f.Sec; a < r.best[f.To] && a < r.round[f.To] {
+				sec := f.Sec
+				if r.WalkScale > 0 && r.WalkScale != 1 {
+					sec = max(60, int32(float64(sec)*r.WalkScale+0.5))
+				}
+				if a := r.round[s] + sec; a < r.best[f.To] && a < r.round[f.To] {
 					r.best[f.To], r.round[f.To] = a, a
-					r.setLabel(k, f.To, label{kind: 2, arr: a, sec: f.Sec, from: s})
+					r.setLabel(k, f.To, label{kind: 2, arr: a, sec: sec, from: s})
 					mark(f.To)
 				}
 			}

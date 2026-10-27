@@ -16,3 +16,20 @@ Eingänge: gtfs.de `nv_free/latest.zip` (Stand 24.10., 277 MB), `realtime-free.p
 - Kosten der Auswertung (Python, Laptop): 52 s, 200 MB RSS – fast alles fürs Durchlesen von stop_times (2,1 GB entpackt).
   Im Betrieb wird nur der RT-Feed dekodiert; Messung auf dem OptiPlex mit Go folgt.
 - Nur eine Stichprobe (Dienstag mittag). Wiederholen: Abend, Wochenende, Störungsfall.
+
+## Wiederholung Dienstag abends (21:40)
+
+`realtime-free.pb` 13,3 MB (mittags 28,2 MB), Zeitstempel 21:40:55, 42 353 TripUpdates.
+
+| Unternehmen (agency_id) | laufend um 21:40 | davon im Feed | davon mit Abweichung ≠ 0 s |
+|---|---|---|---|
+| ASEAG (115) | 70 | 89 % | 57 % |
+| WestVerkehr (261) | 13 | 100 % | 69 % |
+| Rurtalbus (202) | 17 | 88 % | 41 % |
+| AVV Handeingabe (195) | 16 | 0 % | 0 % |
+
+- Abdeckung abends fast wie mittags (89 statt 93 %); weniger Fahrten mit Abweichung (57 statt 80 %) – abends
+  fahren die Busse eher pünktlich, eine Fahrt im Feed ohne Abweichung ist also kein Ausfall der Echtzeit.
+- AVV-Handeingabe (Nachtbusse/Sonderverkehre, abends 16 Fahrten) hat nie Echtzeit → in der App als
+  „nur Fahrplan“ kennzeichnen.
+- Offen: Wochenende, Störungsfall.
