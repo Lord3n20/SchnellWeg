@@ -83,3 +83,60 @@ func TestFern(t *testing.T) {
 		t.Fatalf("mit fern:true erwartet 1 Weg mit Kennzeichen: %+v", r.Journeys)
 	}
 }
+
+// fakeValhalla antwortet auf jede Matrix mit derselben Zeit/Strecke je Zelle; code ≠ 200 simuliert einen Fehler.
+func fakeValhalla(t *testing.T, sec, km float64, code int) *Valhalla {
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req matrixReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || r.URL.Path != "/sources_to_targets" {
+			t.Errorf("falsche Anfrage %s: %v", r.URL.Path, err)
+		}
+		if code != 200 {
+			w.WriteHeader(code)
+			return
+		}
+		rows := make([][]map[string]float64, len(req.Sources))
+		for i := range rows {
+			for range req.Targets {
+				rows[i] = append(rows[i], map[string]float64{"time": sec, "distance": km})
+			}
+		}
+		json.NewEncoder(w).Encode(map[string]any{"sources_to_targets": rows})
+	})
+	ts := httptest.NewServer(h)
+	t.Cleanup(ts.Close)
+	return &Valhalla{URL: ts.URL, KMH: 4.3, MaxM: 600, Timeout: time.Second, Client: ts.Client()}
+}
+
+func TestValhallaZugang(t *testing.T) {
+	body := `{"from":{"lat":50.7701,"lon":6.08},"to":{"lat":50.7799,"lon":6.08},"time":"2026-10-28T08:05:00+01:00"}`
+	day := time.Date(2026, 10, 28, 0, 0, 0, 0, Berlin)
+
+	// Echter Weg 7 min: Zugang dauert 7 min, Abgang ebenso → Ankunft 08:40 + 7 min.
+	s := testServer(day)
+	s.Valhalla = fakeValhalla(t, 420, 0.5, 200)
+	w, r := post(s, body)
+	if w.Code != 200 || len(r.Journeys) != 1 {
+		t.Fatalf("Code %d, %s", w.Code, w.Body)
+	}
+	if l := r.Journeys[0].Legs[0]; l.Arr.Sub(l.Dep) != 7*time.Minute {
+		t.Fatalf("Zugang %v statt 7 min", l.Arr.Sub(l.Dep))
+	}
+	if got := r.Journeys[0].Arr.In(Berlin).Format("15:04"); got != "08:47" {
+		t.Fatalf("Ankunft %s statt 08:47", got)
+	}
+
+	// Echter Weg länger als MaxM (Umweg um Gleise) → kein Halt erreichbar.
+	s = testServer(day)
+	s.Valhalla = fakeValhalla(t, 900, 1.2, 200)
+	if w, _ := post(s, body); w.Code != 422 {
+		t.Fatalf("zu langer Weg: Code %d, %s", w.Code, w.Body)
+	}
+
+	// Valhalla-Fehler (z. B. außerhalb der Tiles) → Luftlinie wie ohne Valhalla.
+	s = testServer(day)
+	s.Valhalla = fakeValhalla(t, 0, 0, 400)
+	if w, r := post(s, body); w.Code != 200 || len(r.Journeys) != 1 {
+		t.Fatalf("Rückfall auf Luftlinie: Code %d, %s", w.Code, w.Body)
+	}
+}

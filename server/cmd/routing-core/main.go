@@ -57,7 +57,9 @@ func main() {
 	gtfs := flag.String("gtfs", "sr_gtfs.zip", "GTFS-Zip(s), durch Komma getrennt")
 	footpaths := flag.String("footpaths", "", "Valhalla-Fußwege (CSV aus footpaths.py), soweit vorhanden")
 	walk := flag.Float64("walk", 400, "max. Umstiegsfußweg in m (Luftlinie); Valhalla-Wege bis 2×walk")
-	access := flag.Float64("access", 800, "max. Zugangsweg in m (Luftlinie)")
+	access := flag.Float64("access", 800, "Suchradius für Zugangshalte in m (Luftlinie); echte Wege bis 2×access")
+	valhalla := flag.String("valhalla", "", "Valhalla-URL für echte Zugangswege (leer = Luftlinie)")
+	kmh := flag.Float64("kmh", 4.3, "Gehtempo für Zugangswege in km/h")
 	listen := flag.String("listen", ":8090", "Adresse der API")
 	par := flag.Int("par", 2, "gleichzeitige Anfragen (je ein Router)")
 	dayS := flag.String("day", "", "Betriebstag fest vorgeben (Test), sonst heute mit Wechsel um Mitternacht")
@@ -110,6 +112,10 @@ func main() {
 	}
 
 	srv := &api.Server{AccessM: *access, MaxTrips: 6, WaitLimit: 2 * time.Second}
+	if *valhalla != "" {
+		srv.Valhalla = &api.Valhalla{URL: strings.TrimRight(*valhalla, "/"), KMH: *kmh, MaxM: 2 * *access,
+			Timeout: 300 * time.Millisecond, Client: &http.Client{}}
+	}
 	today := func() time.Time {
 		y, m, d := time.Now().In(api.Berlin).Date()
 		return time.Date(y, m, d, 0, 0, 0, 0, api.Berlin)

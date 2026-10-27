@@ -92,6 +92,9 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - Gehtempo ist eine **App-Einstellung**, Standard „gemütlich“ = 4,3 km/h (27.10.). Umsetzung: Fußwege und
   Zugang werden einmal mit 4,3 km/h gerechnet; der Kern skaliert die Gehzeiten je Anfrage mit 4,3 / Tempo
   (Mindestumstieg 60 s bleibt), damit kein zweiter Fußweg-Datensatz nötig ist.
+- Erste/letzte Meile (27.10., routing-core 0.1.1): Kandidaten wie bisher (Luftlinie ≤ `access`, je Muster der
+  nächste Halt), dann eine Valhalla-Matrix je Seite (Start und Ziel gleichzeitig, 4,3 km/h, Zeitgrenze 300 ms).
+  Echte Wege über 2 × `access` entfallen. Fehler, Zeitüberschreitung oder Ort außerhalb der Tiles → Luftlinie.
 - Status: **angenommen (27.10.).**
 
 ## D-13 Zugang über eine eigene Subdomain: NPM mit Client-Zertifikat, NPM-Fehlerprotokoll bleibt an

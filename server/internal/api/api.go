@@ -50,7 +50,8 @@ func NewPlan(tt *raptor.Timetable, day time.Time, n int) *Plan {
 // Server beantwortet Anfragen auf dem jeweils aktuellen Plan; Swap tauscht ihn ohne Ausfall.
 type Server struct {
 	plan      atomic.Pointer[Plan]
-	AccessM   float64 // max. Zugangsweg (Luftlinie, bis die Valhalla-Matrix angebunden ist)
+	AccessM   float64   // Suchradius für Zugangshalte (Luftlinie)
+	Valhalla  *Valhalla // echte Zugangswege; nil = Luftlinie
 	MaxTrips  int
 	WaitLimit time.Duration // so lange wartet eine Anfrage höchstens auf einen freien Router
 }
@@ -111,7 +112,8 @@ type journeyOut struct {
 
 type routeResp struct {
 	Journeys []journeyOut `json:"journeys"`
-	Ms       float64      `json:"ms"` // Rechenzeit RAPTOR
+	Ms       float64      `json:"ms"`      // Rechenzeit RAPTOR
+	WalkMs   float64      `json:"walk_ms"` // Zugangswege (Valhalla), 0 ohne Valhalla
 }
 
 func fail(w http.ResponseWriter, code int, kind string) {
@@ -143,8 +145,9 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusUnprocessableEntity, "anderer_betriebstag")
 		return
 	}
-	from := p.TT.PerRoute(p.TT.Near(*req.From.Lat, *req.From.Lon, s.AccessM))
-	to := p.TT.PerRoute(p.TT.Near(*req.To.Lat, *req.To.Lon, s.AccessM))
+	tw := time.Now()
+	from, to := s.access(r.Context(), p.TT, req.From, req.To)
+	walkMs := float64(time.Since(tw).Microseconds()) / 1000
 	if len(from) == 0 || len(to) == 0 {
 		fail(w, http.StatusUnprocessableEntity, "keine_haltestelle_in_reichweite")
 		return
@@ -163,7 +166,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	t0 := time.Now()
 	res := rt.Query(int32(dep/time.Second), from, to, s.MaxTrips)
 	ms := float64(time.Since(t0).Microseconds()) / 1000
-	out := routeResp{Journeys: []journeyOut{}, Ms: ms}
+	out := routeResp{Journeys: []journeyOut{}, Ms: ms, WalkMs: walkMs}
 	for _, j := range res.Journeys {
 		out.Journeys = append(out.Journeys, convert(p.TT, base, j))
 	}
