@@ -118,4 +118,9 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   nach `/dev/null` (Datenschutz). Kein Host-Port; routing-core spricht es im internen Netz an.
 - Speicher: Budget = min(Option ≤ 2 GB, MemAvailable − 1 GB), gemessen wird `anon` der Container-cgroup (ohne
   Page Cache, vgl. Spike: `memory.peak` enthielt Page Cache). Überschreitung → Prozessgruppe beenden, Stand verwerfen.
-- Status: umgesetzt, Messung auf dem Server offen.
+- **Korrektur zu D-11 (Messung 27.10. abends, messungen/2026-10-27-jobs.md):** Mit Original-OSM-IDs braucht der
+  Valhalla-Bau 2,1 GB (admins) bzw. **2,9 GB** anonym (tiles) – Bitsets über den ganzen ID-Raum, wie bei osmium.
+  Der Spike lag nur scheinbar unter 2 GB, weil der Container in den Swap ausweichen konnte. Lösung: Der osm-Job
+  nummeriert die IDs mit `osmium renumber` (kleine Warteschlangen per `OSMIUM_*`) neu: renumber 1,4 GB, admins
+  0,6 GB, tiles 1,2 GB. OSM-IDs gehen dabei verloren; für Routing egal.
+- Status: umgesetzt (0.1.1), Messung der ganzen Kette im Add-on folgt.

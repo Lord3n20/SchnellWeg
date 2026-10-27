@@ -12,8 +12,11 @@ FROM ghcr.io/valhalla/valhalla:3.9.1@sha256:4fd114eb1d26b8fc2f43bcb3df234c1b63a0
 LABEL org.opencontainers.image.source="https://github.com/Lord3n20/RWaysTH" \
       org.opencontainers.image.description="RWaysTH routing-jobs: OSM-Ausschnitt und Valhalla-Tiles für die Region Aachen"
 USER root
-# osmctools für osmconvert (D-10)
-RUN apt-get update && apt-get install -y --no-install-recommends osmctools && rm -rf /var/lib/apt/lists/*
+# osmctools für osmconvert (D-10), osmium-tool für renumber (D-14)
+RUN apt-get update && apt-get install -y --no-install-recommends osmctools osmium-tool && rm -rf /var/lib/apt/lists/*
+# Kleine osmium-Warteschlangen: renumber 3,0 → 1,4 GB Spitze (gemessen 27.10.)
+ENV OSMIUM_POOL_THREADS=2 OSMIUM_MAX_INPUT_QUEUE_SIZE=4 OSMIUM_MAX_OSMDATA_QUEUE_SIZE=4 \
+    OSMIUM_MAX_OUTPUT_QUEUE_SIZE=4 OSMIUM_MAX_WORK_QUEUE_SIZE=4
 COPY config/region.geojson /etc/rwaysth/region.geojson
 COPY --from=build /routing-jobs /usr/local/bin/routing-jobs
 ENTRYPOINT ["/usr/local/bin/routing-jobs", "-options", "/data/options.json", "-dir", "/config"]

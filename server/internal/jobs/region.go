@@ -13,7 +13,7 @@ func PolyFromGeoJSON(r io.Reader) (string, error) {
 	var fc struct {
 		Features []struct {
 			Geometry struct {
-				Type        string          `json:"type"`
+				Type        string         `json:"type"`
 				Coordinates [][][2]float64 `json:"coordinates"`
 			} `json:"geometry"`
 		} `json:"features"`

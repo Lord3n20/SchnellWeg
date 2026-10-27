@@ -6,7 +6,7 @@
 // Jobs:
 //
 //	osm       Geofabrik-Ausschnitte laden (ETag + md5), mit osmconvert auf config/region.geojson schneiden
-//	          und zu einer Datei zusammenführen → osm/current/region.osm.pbf
+//	          zusammenführen und mit osmium neu nummerieren → osm/current/region.osm.pbf
 //	valhalla  Valhalla-Tiles aus osm/current bauen und mit Testrouten prüfen → valhalla/current/tiles.tar;
 //	          danach wird das Valhalla-Add-on neu gestartet, falls es läuft
 //
@@ -48,6 +48,9 @@ var (
 	force       = flag.Bool("force", false, "auch bei unveränderten Eingängen neu bauen")
 	options     = flag.String("options", "", "JSON-Datei mit Optionen (HA-Add-on: /data/options.json)")
 )
+
+// osmFormat ändert sich, wenn der osm-Job anders baut; dann wird trotz gleicher Quellen neu gebaut.
+const osmFormat = "renumber"
 
 // errSkip meldet: Eingang unverändert, nichts zu tun.
 var errSkip = errors.New("unverändert")
@@ -183,7 +186,7 @@ func jobOSM(ctx context.Context, w *jobs.Watch) (string, error) {
 		files = append(files, dst)
 	}
 	// Signatur der Eingänge: ETags + Polygon. Gleich wie im aktuellen Stand → überspringen.
-	sig := inputSig(files, *region)
+	sig := osmFormat + ";" + inputSig(files, *region)
 	cur := jobs.Current(*dir, "osm")
 	if !*force && !changed && cur != "" && jobs.ReadStamp(cur, "eingang") == sig {
 		return "Quellen unverändert", errSkip
@@ -222,13 +225,20 @@ func jobOSM(ctx context.Context, w *jobs.Watch) (string, error) {
 		}
 		cuts = append(cuts, out)
 	}
-	pbf := filepath.Join(r.Dir, "region.osm.pbf")
-	if err := cmd(ctx, logf, "osmconvert", append(cuts, "-o="+pbf)...); err != nil {
+	merged := filepath.Join(r.Dir, "zusammen.osm.pbf")
+	if err := cmd(ctx, logf, "osmconvert", append(cuts, "-o="+merged)...); err != nil {
 		return "", err
 	}
 	for _, c := range cuts {
 		os.Remove(c)
 	}
+	// IDs ab 1 neu nummerieren: Valhalla legt Bitsets über den ganzen OSM-ID-Raum an (gemessen 27.10.:
+	// 2,9 GB beim Tile-Bau mit Original-IDs, 1,2 GB nach renumber). Puffergrößen per OSMIUM_* im Image.
+	pbf := filepath.Join(r.Dir, "region.osm.pbf")
+	if err := cmd(ctx, logf, "osmium", "renumber", "-o", pbf, merged); err != nil {
+		return "", err
+	}
+	os.Remove(merged)
 	nodes, ways, err := osmStats(ctx, pbf)
 	if err != nil {
 		return "", err
