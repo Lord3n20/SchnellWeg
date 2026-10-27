@@ -37,6 +37,25 @@ class HalteDb {
         await b.commit(noResult: true);
       });
 
+  /// Halte, deren Name alle Wörter von [q] enthält (Groß/klein egal), höchstens [n].
+  Future<List<Halt>> suchen(String q, {int n = 40}) async {
+    final woerter = q.trim().toLowerCase().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    if (woerter.isEmpty) return [];
+    final rows = await _db.query('halt',
+        where: List.filled(woerter.length, 'lower(name) LIKE ?').join(' AND '),
+        whereArgs: [for (final w in woerter) '%$w%'],
+        limit: n);
+    return [for (final r in rows) Halt(r['id'] as String, r['name'] as String, r['lat'] as double, r['lon'] as double)];
+  }
+
+  /// Koordinaten zu Halt-IDs (für die Karte).
+  Future<Map<String, Halt>> holen(Iterable<String> ids) async {
+    final l = ids.toSet().toList();
+    if (l.isEmpty) return {};
+    final rows = await _db.query('halt', where: 'id IN (${List.filled(l.length, '?').join(',')})', whereArgs: l);
+    return {for (final r in rows) r['id'] as String: Halt(r['id'] as String, r['name'] as String, r['lat'] as double, r['lon'] as double)};
+  }
+
   /// Halte im Umkreis [radius] Meter, nach Entfernung sortiert.
   Future<List<(Halt, double)>> naechste(double lat, double lon, {double radius = 800}) async {
     final dLat = radius / 111320, dLon = radius / (111320 * cos(lat * pi / 180));

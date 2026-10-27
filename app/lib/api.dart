@@ -39,6 +39,75 @@ class Abfahrt {
   int? get versp => depRt == null ? null : (depRt!.difference(dep).inSeconds / 60).round();
 }
 
+/// Suchtreffer: Adresse/Ort vom Server oder Haltestelle aus der lokalen SQLite.
+class Ort {
+  final String art; // adresse | strasse | ort | poi | halt
+  final String name, detail;
+  final double lat, lon;
+  Ort(this.art, this.name, this.detail, this.lat, this.lon);
+
+  Ort.json(Map<String, dynamic> j)
+      : art = j['kind'] as String,
+        name = j['name'] as String,
+        detail = (j['detail'] as String?) ?? '',
+        lat = (j['lat'] as num).toDouble(),
+        lon = (j['lon'] as num).toDouble();
+}
+
+class HaltRef {
+  final String id, name;
+  HaltRef.json(Map<String, dynamic> j)
+      : id = j['id'] as String,
+        name = j['name'] as String;
+}
+
+class Abschnitt {
+  final bool fahrt; // sonst Fußweg
+  final HaltRef? von, nach; // null = Start- bzw. Zielort
+  final DateTime ab, an;
+  final DateTime? abRt, anRt;
+  final String linie, ziel;
+  final bool fern, risiko, faelltAus, entfaellt;
+
+  Abschnitt.json(Map<String, dynamic> j)
+      : fahrt = j['mode'] == 'ride',
+        von = j['from'] == null ? null : HaltRef.json(j['from'] as Map<String, dynamic>),
+        nach = j['to'] == null ? null : HaltRef.json(j['to'] as Map<String, dynamic>),
+        ab = _zeit(j['dep'])!,
+        an = _zeit(j['arr'])!,
+        abRt = _zeit(j['dep_rt']),
+        anRt = _zeit(j['arr_rt']),
+        linie = (j['line'] as String?) ?? '',
+        ziel = (j['headsign'] as String?) ?? '',
+        fern = j['fern'] == true,
+        risiko = j['risk'] == true,
+        faelltAus = j['canceled'] == true,
+        entfaellt = j['skipped'] == true;
+
+  /// Verspätung der Abfahrt in ganzen Minuten, null ohne Echtzeit.
+  int? get versp => abRt == null ? null : (abRt!.difference(ab).inSeconds / 60).round();
+}
+
+class Verbindung {
+  final int fahrten;
+  final DateTime ab, an;
+  final DateTime? anRt;
+  final String risiko; // "" | anschluss | ausfall
+  final List<Abschnitt> abschnitte;
+
+  Verbindung.json(Map<String, dynamic> j)
+      : fahrten = j['trips'] as int,
+        ab = _zeit(j['dep'])!,
+        an = _zeit(j['arr'])!,
+        anRt = _zeit(j['arr_rt']),
+        risiko = (j['risk'] as String?) ?? '',
+        abschnitte = [for (final l in (j['legs'] as List).cast<Map<String, dynamic>>()) Abschnitt.json(l)];
+
+  DateTime get ankunft => anRt ?? an;
+}
+
+DateTime? _zeit(Object? v) => v == null ? null : DateTime.parse(v as String).toLocal();
+
 class Api {
   final Zugang zugang;
   final HttpClient _http;
@@ -91,6 +160,32 @@ class Api {
       out[id] = [for (final a in (l as List).cast<Map<String, dynamic>>()) Abfahrt.json(a)];
     });
     return (out, j['rt'] == true);
+  }
+
+  /// Adressen und Orte; der Suchtext geht nur im Body raus.
+  Future<List<Ort>> suche(String q, {int n = 10}) async {
+    final (_, _, daten) = await _anfrage('POST', '/v1/search', body: {'q': q, 'n': n});
+    final hits = (jsonDecode(utf8.decode(daten)) as Map)['hits'] as List? ?? const [];
+    return [for (final h in hits.cast<Map<String, dynamic>>()) Ort.json(h)];
+  }
+
+  /// Verbindungen (Pareto nach Umstiegen) und ob der Echtzeitstand verfügbar war.
+  Future<(List<Verbindung>, bool)> route(double vonLat, double vonLon, double nachLat, double nachLon,
+      {DateTime? ab, bool fern = false, double? kmh}) async {
+    final (_, _, daten) = await _anfrage('POST', '/v1/route',
+        body: {
+          'from': {'lat': vonLat, 'lon': vonLon},
+          'to': {'lat': nachLat, 'lon': nachLon},
+          if (ab != null) 'time': ab.toUtc().toIso8601String(),
+          if (fern) 'fern': true,
+          'kmh': ?kmh,
+        },
+        zeit: const Duration(seconds: 15));
+    final j = jsonDecode(utf8.decode(daten)) as Map<String, dynamic>;
+    return (
+      [for (final v in (j['journeys'] as List? ?? const []).cast<Map<String, dynamic>>()) Verbindung.json(v)],
+      j['rt'] == true
+    );
   }
 
   Future<Map<String, dynamic>> status() async {

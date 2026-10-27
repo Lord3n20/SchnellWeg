@@ -1,5 +1,6 @@
 // Startseite nach docs/app-ui.md: Von/Nach, Karte, Haltestellen in der Nähe mit nächster Abfahrt.
 // Abfahrten werden nur abgefragt, solange die Seite sichtbar ist (alle 30 s, kein Hintergrund-Polling).
+// Mit gewähltem Ziel zeigt die Seite statt der Haltestellen kurze Zusammenfassungen der Verbindungen.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import 'halte_db.dart';
 import 'namen.dart';
 import 'standort.dart';
 import 'zugang.dart';
+import 'ziel.dart';
 
 const _takt = Duration(seconds: 30);
 const _maxNamen = 5; // so viele Haltestellen (nach Name zusammengefasst) zeigt die Liste
@@ -39,6 +41,10 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
   List<_Gruppe> _gruppen = [];
   bool _rt = false;
   String? _hinweis;
+  Ort? _ziel;
+  List<Verbindung>? _verbindungen; // null = wird berechnet
+  bool _routeRt = false;
+  String? _routeHinweis;
 
   @override
   void initState() {
@@ -91,6 +97,53 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
       if (neu != null) await db.ersetzen(neu.$1, neu.$2);
     } on ApiFehler catch (e) {
       if (await db.anzahl() == 0) setState(() => _hinweis = 'Haltestellen nicht geladen ($e)');
+    }
+  }
+
+  Future<void> _zielWaehlen() async {
+    if (_api == null || _db == null) return;
+    final o = await Navigator.of(context).push<Ort>(
+        MaterialPageRoute(builder: (_) => ZielSuche(api: _api!, db: _db!)));
+    if (o == null) return;
+    setState(() => _ziel = o);
+    await _routeBerechnen();
+  }
+
+  void _zielWeg() => setState(() {
+        _ziel = null;
+        _verbindungen = null;
+        _routeHinweis = null;
+      });
+
+  Future<void> _routeBerechnen() async {
+    final ziel = _ziel;
+    if (ziel == null || _api == null) return;
+    setState(() {
+      _verbindungen = null;
+      _routeHinweis = null;
+    });
+    final p = await Standort.holen() ?? _pos;
+    if (p == null) return setState(() => _routeHinweis = 'Kein Standort (Berechtigung oder GPS aus?)');
+    _pos = p;
+    try {
+      final (v, rt) = await _api!.route(p.lat, p.lon, ziel.lat, ziel.lon);
+      if (!mounted || _ziel != ziel) return;
+      setState(() {
+        _verbindungen = v;
+        _routeRt = rt;
+        if (v.isEmpty) _routeHinweis = 'Keine Verbindung gefunden';
+      });
+    } on ApiFehler catch (e) {
+      if (!mounted || _ziel != ziel) return;
+      setState(() {
+        _verbindungen = [];
+        _routeHinweis = switch (e.art) {
+          'keine_haltestelle_in_reichweite' => 'Keine Haltestelle in Gehweite von Start oder Ziel',
+          'anderer_betriebstag' => 'Fahrplan für diesen Tag noch nicht geladen',
+          'fahrplan_laedt' => 'Server lädt gerade den Fahrplan',
+          _ => 'Route nicht berechnet ($e)',
+        };
+      });
     }
   }
 
@@ -153,7 +206,14 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
           child: Column(children: [
             _Feld(label: 'Von', text: 'Mein Standort', icon: Icons.my_location, onIcon: () => _aktualisieren(standortNeu: true)),
             const SizedBox(height: 8),
-            const _Feld(label: 'Nach', text: 'Ziel …'),
+            _Feld(
+              label: 'Nach',
+              text: _ziel?.name ?? 'Ziel …',
+              leer: _ziel == null,
+              onTap: _zielWaehlen,
+              icon: _ziel == null ? null : Icons.close,
+              onIcon: _zielWeg,
+            ),
           ]),
         ),
         Expanded(
@@ -167,21 +227,32 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
           child: Row(children: [
-            Text('Haltestellen in der Nähe', style: Theme.of(context).textTheme.titleSmall),
+            Text(_ziel == null ? 'Haltestellen in der Nähe' : 'Verbindungen',
+                style: Theme.of(context).textTheme.titleSmall),
             const Spacer(),
-            if (_gruppen.isNotEmpty && !_rt) Text('nur Fahrplan', style: TextStyle(fontSize: 12, color: farbe.outline)),
+            if (_ziel == null ? _gruppen.isNotEmpty && !_rt : (_verbindungen?.isNotEmpty ?? false) && !_routeRt)
+              Text('nur Fahrplan', style: TextStyle(fontSize: 12, color: farbe.outline)),
           ]),
         ),
-        Expanded(
-          flex: 6,
-          child: _hinweis != null && _gruppen.every((g) => g.abfahrten.isEmpty)
-              ? Center(child: Text(_hinweis!))
-              : RefreshIndicator(
-                  onRefresh: () => _aktualisieren(standortNeu: true),
-                  child: ListView(children: [for (final g in _gruppen) _HaltZeile(g)]),
-                ),
-        ),
+        Expanded(flex: 6, child: _ziel == null ? _halteListe() : _routeListe()),
       ]),
+    );
+  }
+
+  Widget _halteListe() => _hinweis != null && _gruppen.every((g) => g.abfahrten.isEmpty)
+      ? Center(child: Text(_hinweis!))
+      : RefreshIndicator(
+          onRefresh: () => _aktualisieren(standortNeu: true),
+          child: ListView(children: [for (final g in _gruppen) _HaltZeile(g)]),
+        );
+
+  Widget _routeListe() {
+    final v = _verbindungen;
+    if (v == null) return const Center(child: CircularProgressIndicator());
+    if (v.isEmpty) return Center(child: Text(_routeHinweis ?? 'Keine Verbindung gefunden'));
+    return RefreshIndicator(
+      onRefresh: _routeBerechnen,
+      child: ListView(children: [for (final x in v) _VerbindungZeile(x)]),
     );
   }
 }
@@ -189,18 +260,26 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
 class _Feld extends StatelessWidget {
   final String label, text;
   final IconData? icon;
-  final VoidCallback? onIcon;
-  const _Feld({required this.label, required this.text, this.icon, this.onIcon});
+  final VoidCallback? onIcon, onTap;
+  final bool leer; // Platzhaltertext blass zeigen
+  const _Feld({required this.label, required this.text, this.icon, this.onIcon, this.onTap, this.leer = false});
 
   @override
-  Widget build(BuildContext context) => InputDecorator(
-        decoration: InputDecoration(
-          labelText: label,
-          border: const OutlineInputBorder(),
-          isDense: true,
-          suffixIcon: icon == null ? null : IconButton(icon: Icon(icon), onPressed: onIcon),
+  Widget build(BuildContext context) => InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(4),
+        child: InputDecorator(
+          decoration: InputDecoration(
+            labelText: label,
+            border: const OutlineInputBorder(),
+            isDense: true,
+            suffixIcon: icon == null ? null : IconButton(icon: Icon(icon), onPressed: onIcon),
+          ),
+          child: Text(text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: leer ? TextStyle(color: Theme.of(context).colorScheme.outline) : null),
         ),
-        child: Text(text),
       );
 }
 
@@ -246,5 +325,79 @@ class _HaltZeile extends StatelessWidget {
     if (min < 0.5) return 'jetzt';
     if (min < 60) return 'in ${min.round()} min';
     return '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+  }
+}
+
+String _uhr(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+/// Kurzfassung nach app-ui.md: 🚶 4 min → 33 Elisenbrunnen 12:41 (+1) → 🚶 2 min → an 13:02 · 1 Umstieg
+class _VerbindungZeile extends StatelessWidget {
+  final Verbindung v;
+  const _VerbindungZeile(this.v);
+
+  @override
+  Widget build(BuildContext context) {
+    final farbe = Theme.of(context).colorScheme;
+    final teile = <InlineSpan>[];
+    void pfeil() {
+      if (teile.isNotEmpty) teile.add(TextSpan(text: '  →  ', style: TextStyle(color: farbe.outline)));
+    }
+
+    for (final a in v.abschnitte) {
+      final min = (a.an.difference(a.ab).inSeconds / 60).round();
+      if (!a.fahrt) {
+        if (min < 1) continue;
+        pfeil();
+        teile.add(TextSpan(text: '🚶 $min min'));
+        continue;
+      }
+      pfeil();
+      teile.add(TextSpan(
+          text: a.linie,
+          style: TextStyle(
+              fontWeight: FontWeight.w700, color: a.faelltAus || a.entfaellt ? farbe.error : null,
+              decoration: a.faelltAus ? TextDecoration.lineThrough : null)));
+      teile.add(TextSpan(text: ' ${haltName(a.von?.name ?? '')} ${_uhr(a.ab)}'));
+      final vs = a.versp ?? 0;
+      if (vs != 0) {
+        teile.add(TextSpan(
+            text: ' (${vs > 0 ? '+' : ''}$vs)', style: TextStyle(color: vs > 0 ? farbe.error : farbe.primary)));
+      }
+      if (a.fern) teile.add(TextSpan(text: ' €', style: TextStyle(color: farbe.tertiary)));
+      if (a.risiko) teile.add(TextSpan(text: ' ⚠', style: TextStyle(color: farbe.error)));
+    }
+
+    final umstiege = v.fahrten - 1;
+    final kopf = [
+      '${_uhr(v.ab)} – ${_uhr(v.ankunft)}',
+      '${v.ankunft.difference(v.ab).inMinutes} min',
+      if (v.fahrten == 0) 'nur zu Fuß' else umstiege == 1 ? '1 Umstieg' : '$umstiege Umstiege',
+    ].join(' · ');
+    final warnung = switch (v.risiko) {
+      'anschluss' => 'Anschluss gefährdet',
+      'ausfall' => 'Fahrt fällt aus',
+      _ => null,
+    };
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Expanded(child: Text(kopf, style: const TextStyle(fontWeight: FontWeight.w600))),
+            if (v.anRt != null && v.anRt != v.an)
+              Text('statt ${_uhr(v.an)}', style: TextStyle(fontSize: 12, color: farbe.outline)),
+          ]),
+          const SizedBox(height: 4),
+          Text.rich(TextSpan(children: teile)),
+          if (warnung != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(warnung, style: TextStyle(color: farbe.error, fontWeight: FontWeight.w600)),
+            ),
+        ]),
+      ),
+    );
   }
 }

@@ -21,8 +21,10 @@ String _grund(String s) => s
 /// Haltestellenname ohne Richtung und Bahnsteig.
 String haltName(String roh) => _grund(roh).replaceAll(_bahnsteig, '').trim();
 
-/// Fahrtziel ohne Richtungskürzel und Liniennummer.
-String zielName(String roh) => _grund(roh);
+final _hBahnsteig = RegExp(r'\s+H\d{1,2}$');
+
+/// Fahrtziel ohne Richtungskürzel, Liniennummer und Bahnsteig (nur „H4“, ein Großbuchstabe kann Teil des Ziels sein).
+String zielName(String roh) => _grund(roh).replaceAll(_hBahnsteig, '');
 
 /// Schlüssel zum Zusammenfassen: „Aachen Hbf“ (Bahn) und „Aachen Hauptbahnhof H1“ (Bus) sind derselbe Ort.
 String haltSchluessel(String roh) => haltName(roh).toLowerCase().replaceAll(RegExp(r'\bhauptbahnhof\b'), 'hbf');
