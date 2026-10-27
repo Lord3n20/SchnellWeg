@@ -387,7 +387,7 @@ func checkValhalla(ctx context.Context, conf, logf string) error {
 	if err := c.Start(); err != nil {
 		return err
 	}
-	defer c.Wait()
+	defer func() { cancel(); c.Wait() }() // erst beenden, dann warten (sonst wartet Wait ewig auf den Dienst)
 	var last error
 	for _, ch := range checks {
 		body := fmt.Sprintf(`{"locations":[{"lat":%s,"lon":%s},{"lat":%s,"lon":%s}],"costing":%q}`,
