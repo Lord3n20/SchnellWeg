@@ -104,3 +104,18 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   Ziele gehen im Request-Body, nie in URL/Query, damit auch dort nur Pfade stehen. Für routing-core selbst gilt
   weiter: keine Anfragen, Ziele, Standorte in Logs.
 - Status: angenommen.
+
+## D-14 Job-Add-on `routing-jobs` und Valhalla-Add-on (Phase 1)
+- `routing-jobs` (Go, `server/cmd/routing-jobs`) läuft im Valhalla-3.9.1-Image + `osmctools`, weil der Tile-Bau
+  die Valhalla-Programme braucht. Jobs bisher `osm` und `valhalla`; `gtfs` und `footpaths` folgen.
+- OSM-Quellen (Geofabrik): Regbez. Köln + Düsseldorf (Rhein-Kreis Neuss), Rheinland-Pfalz (Kreis Ahrweiler),
+  NL-Limburg, Belgien (Lüttich, Ostbelgien – Geofabrik hat keine Provinzen). Zusammen ~1,3 GB Download; jede Quelle
+  wird einzeln mit `osmconvert -B=region.poly --complete-ways --hash-memory=400` geschnitten, dann zusammengeführt.
+  Prüfung: ≥ 1 Mio. Knoten und höchstens −10 % gegenüber dem vorigen Stand.
+- Häufigkeit: Geofabrik ändert sich täglich, ETag hilft also kaum. Vorschlag: OSM + Valhalla **wöchentlich**
+  (Automation, z. B. sonntags 04:00), GTFS täglich. Fußwege für die App ändern sich selten genug.
+- Valhalla im Betrieb: nur `tiles.tar` (mmap), Cache 32 MB/Thread, 2 Threads, keine Zeitzonen/Verkehr, Protokoll
+  nach `/dev/null` (Datenschutz). Kein Host-Port; routing-core spricht es im internen Netz an.
+- Speicher: Budget = min(Option ≤ 2 GB, MemAvailable − 1 GB), gemessen wird `anon` der Container-cgroup (ohne
+  Page Cache, vgl. Spike: `memory.peak` enthielt Page Cache). Überschreitung → Prozessgruppe beenden, Stand verwerfen.
+- Status: umgesetzt, Messung auf dem Server offen.

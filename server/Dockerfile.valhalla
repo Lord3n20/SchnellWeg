@@ -1,0 +1,9 @@
+# Valhalla-Dienst für Fußwege und erste/letzte Meile. Liest die Tiles, die routing-jobs gebaut hat.
+# Gebaut nur im CI (D-03), Kontext = Repo-Wurzel. Basis mit festem Tag + Digest (gleich wie Dockerfile.jobs).
+FROM ghcr.io/valhalla/valhalla:3.9.1@sha256:4fd114eb1d26b8fc2f43bcb3df234c1b63a0bf13c277405e5943d5361dc575de
+LABEL org.opencontainers.image.source="https://github.com/Lord3n20/RWaysTH" \
+      org.opencontainers.image.description="RWaysTH valhalla: Valhalla-Dienst auf den Tiles von routing-jobs"
+USER root
+COPY server/valhalla/run.sh server/valhalla/config.py /usr/local/share/rwaysth/
+EXPOSE 8002
+ENTRYPOINT ["/bin/bash", "/usr/local/share/rwaysth/run.sh"]

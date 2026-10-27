@@ -1,0 +1,19 @@
+# routing-jobs: Datenjobs (OSM-Ausschnitt, Valhalla-Tiles) im Valhalla-Image, weil der Tile-Bau dessen Programme
+# braucht. Gebaut nur im CI (D-03), Kontext = Repo-Wurzel (wegen config/region.geojson).
+# Basis-Images mit festem Tag + Digest; beim Update beides anpassen (gleiche Valhalla-Version wie Dockerfile.valhalla).
+FROM golang:1.27.3-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS build
+WORKDIR /src
+COPY server/go.mod server/go.sum ./
+RUN go mod download
+COPY server/ .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /routing-jobs ./cmd/routing-jobs
+
+FROM ghcr.io/valhalla/valhalla:3.9.1@sha256:4fd114eb1d26b8fc2f43bcb3df234c1b63a0bf13c277405e5943d5361dc575de
+LABEL org.opencontainers.image.source="https://github.com/Lord3n20/RWaysTH" \
+      org.opencontainers.image.description="RWaysTH routing-jobs: OSM-Ausschnitt und Valhalla-Tiles für die Region Aachen"
+USER root
+# osmctools für osmconvert (D-10)
+RUN apt-get update && apt-get install -y --no-install-recommends osmctools && rm -rf /var/lib/apt/lists/*
+COPY config/region.geojson /etc/rwaysth/region.geojson
+COPY --from=build /routing-jobs /usr/local/bin/routing-jobs
+ENTRYPOINT ["/usr/local/bin/routing-jobs", "-options", "/data/options.json", "-dir", "/config"]
