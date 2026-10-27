@@ -6,11 +6,15 @@
 // Jobs:
 //
 //	gtfs      Fahrpläne von gtfs.de laden (ETag), Nahverkehr auf gtfs_box schneiden, mit dem RAPTOR-Lader prüfen
-//	          → gtfs/current/{sr_gtfs,de_rv,de_fv}.zip; danach wird routing-core neu gestartet, falls es läuft
+//	          → gtfs/current/{sr_gtfs,de_rv,de_fv}.zip
 //	osm       nur wenn der Stand älter als osm_tage ist: Geofabrik-Ausschnitte laden (ETag + md5), mit osmconvert auf config/region.geojson schneiden
 //	          zusammenführen und mit osmium neu nummerieren → osm/current/region.osm.pbf
 //	valhalla  Valhalla-Tiles aus osm/current bauen und mit Testrouten prüfen → valhalla/current/tiles.tar;
 //	          danach wird das Valhalla-Add-on neu gestartet, falls es läuft
+//	footpaths Umstiegswege zwischen nahen Halten (GTFS-Stand) mit einem kurz gestarteten Valhalla auf dem
+//	          Tile-Stand rechnen (D-12) → footpaths/current/footpaths.csv
+//
+// Hat gtfs oder footpaths einen neuen Stand gebracht, wird am Ende routing-core neu gestartet, falls es läuft.
 //
 // Jeder Job prüft vorher freien Speicher und Platz, misst den anonymen Speicher der cgroup, bricht beim
 // Überschreiten des Budgets ab und schaltet erst nach erfolgreicher Prüfung um (vorheriger Stand bleibt).
@@ -34,6 +38,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -42,7 +47,7 @@ import (
 
 var (
 	dir         = flag.String("dir", "/config", "Ablage (HA: Konfigurationsordner des Job-Add-ons)")
-	jobList     = flag.String("job", "gtfs,osm,valhalla", "Jobs, durch Komma getrennt, in dieser Reihenfolge")
+	jobList     = flag.String("job", "gtfs,osm,valhalla,footpaths", "Jobs, durch Komma getrennt, in dieser Reihenfolge")
 	sources     = flag.String("osm_sources", "", "Geofabrik-Pfade ohne -latest.osm.pbf, durch Komma getrennt")
 	region      = flag.String("region", "/etc/rwaysth/region.geojson", "Regionspolygon (GeoJSON)")
 	maxMem      = flag.Int64("max_mem_mb", 2048, "Speicherspitze je Job in MB (zusätzlich ≤ MemAvailable − 1 GB)")
@@ -74,11 +79,11 @@ func main() {
 	sup := jobs.NewSupervisor()
 
 	var report []string
-	failed := false
+	failed, coreData := false, false
 	for _, name := range strings.Split(*jobList, ",") {
 		name = strings.TrimSpace(name)
 		run, ok := map[string]func(context.Context, *jobs.Watch) (string, error){
-			"gtfs": jobGTFS, "osm": jobOSM, "valhalla": jobValhalla,
+			"gtfs": jobGTFS, "osm": jobOSM, "valhalla": jobValhalla, "footpaths": jobFootpaths,
 		}[name]
 		if !ok {
 			log.Fatalf("Fehler: unbekannter Job %q", name)
@@ -93,9 +98,10 @@ func main() {
 		if name == "valhalla" && err == nil {
 			restartSibling(ctx, sup, "valhalla", &report)
 		}
-		if name == "gtfs" && err == nil {
-			restartSibling(ctx, sup, "routing_core", &report)
-		}
+		coreData = coreData || (err == nil && (name == "gtfs" || name == "footpaths"))
+	}
+	if coreData { // einmal am Ende, auch wenn ein späterer Job fehlschlug: der neue Stand ist geprüft
+		restartSibling(ctx, sup, "routing_core", &report)
 	}
 	title := "RWaysTH-Daten aktualisiert"
 	if failed {
@@ -383,22 +389,34 @@ var checks = []struct{ costing, from, to string }{
 	{"bicycle", "50.7678,6.0911", "50.8497,5.7053"},    // Aachen Hbf → Maastricht
 }
 
-func checkValhalla(ctx context.Context, conf, logf string) error {
+// startValhalla startet valhalla_service mit conf (lauscht auf 127.0.0.1:8012); stop beendet ihn wieder.
+func startValhalla(ctx context.Context, conf, logf string, threads int) (stop func(), err error) {
 	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	lf, err := os.OpenFile(logf, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
-		return err
+		cancel()
+		return nil, err
 	}
-	defer lf.Close()
-	c := exec.CommandContext(ctx, "nice", "-n", "19", "valhalla_service", conf, "1")
+	c := exec.CommandContext(ctx, "nice", "-n", "19", "valhalla_service", conf, strconv.Itoa(threads))
 	c.Stdout, c.Stderr = lf, lf
 	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	c.Cancel = func() error { return syscall.Kill(-c.Process.Pid, syscall.SIGKILL) }
 	if err := c.Start(); err != nil {
+		cancel()
+		lf.Close()
+		return nil, err
+	}
+	// erst beenden, dann warten (sonst wartet Wait ewig auf den Dienst); mehrfacher Aufruf schadet nicht
+	var once sync.Once
+	return func() { once.Do(func() { cancel(); c.Wait(); lf.Close() }) }, nil
+}
+
+func checkValhalla(ctx context.Context, conf, logf string) error {
+	stop, err := startValhalla(ctx, conf, logf, 1)
+	if err != nil {
 		return err
 	}
-	defer func() { cancel(); c.Wait() }() // erst beenden, dann warten (sonst wartet Wait ewig auf den Dienst)
+	defer stop()
 	var last error
 	for _, ch := range checks {
 		body := fmt.Sprintf(`{"locations":[{"lat":%s,"lon":%s},{"lat":%s,"lon":%s}],"costing":%q}`,

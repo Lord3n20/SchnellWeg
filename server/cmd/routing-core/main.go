@@ -57,7 +57,7 @@ func applyOptions(path string) error {
 
 func main() {
 	gtfs := flag.String("gtfs", "sr_gtfs.zip", "GTFS-Zip(s), durch Komma getrennt")
-	footpaths := flag.String("footpaths", "", "Valhalla-Fußwege (CSV aus footpaths.py), soweit vorhanden")
+	footpaths := flag.String("footpaths", "", "Valhalla-Fußwege (CSV, Job footpaths), soweit vorhanden; Glob erlaubt, ohne Treffer gilt die Luftlinie")
 	walk := flag.Float64("walk", 400, "max. Umstiegsfußweg in m (Luftlinie); Valhalla-Wege bis 2×walk")
 	access := flag.Float64("access", 800, "Suchradius für Zugangshalte in m (Luftlinie); echte Wege bis 2×access")
 	valhalla := flag.String("valhalla", "", "Valhalla-URL für echte Zugangswege (leer = Luftlinie)")
@@ -97,6 +97,15 @@ func main() {
 		feeds = append(feeds, f)
 	}
 	*footpaths = rel(*footpaths)
+	if strings.ContainsAny(*footpaths, "*?[") {
+		m, _ := filepath.Glob(*footpaths)
+		if len(m) == 0 {
+			log.Print("Keine Fußwege gefunden, Umstiege mit Luftlinie")
+			*footpaths = ""
+		} else {
+			*footpaths = m[0]
+		}
+	}
 
 	load := func(day time.Time) (*api.Plan, error) {
 		t0 := time.Now()

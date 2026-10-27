@@ -132,8 +132,13 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   `gtfs_box`; Go-Port von `gtfs_bbox.py`, gleiches Ergebnis: 15 388 Fahrten, 7 119 Halte) und prüft mit dem
   RAPTOR-Lader für heute und in 6 Tagen (≥ 100 Muster, Halte höchstens −10 %). Danach Neustart von routing-core,
   das per Option `gtfs_dir` aus `gtfs/current` des Job-Add-ons liest. Laptop: 1,5 min, RSS 106 MB (GOMEMLIMIT 100 MiB).
-- Zeitplan: **eine** Automation täglich 04:00 (Spieleserver leer, sonst +30 min bis 07:00) mit `gtfs,osm,valhalla`.
+- Zeitplan: **eine** Automation täglich 04:00 (Spieleserver leer, sonst +30 min bis 07:00) mit `gtfs,osm,valhalla,footpaths`.
   `osm` baut nur, wenn der Stand älter als `osm_tage` (7, minus 12 h Spielraum) ist; `valhalla` folgt dem OSM-Stand.
   So bleibt es bei einem Startweg und OSM + Valhalla werden trotzdem nur wöchentlich gebaut.
-- Fußwege (`footpaths.csv`) liegen vorerst weiter im Ordner von routing-core; Halte-IDs aus neuen GTFS-Ständen,
-  die dort fehlen, fallen auf die Luftlinie zurück (ReadFootpaths überspringt sie). Job `footpaths` folgt.
+- **Job `footpaths` (routing-jobs 0.1.5, routing-core 0.1.7):** nach `gtfs`/`valhalla`, rechnet für alle Halte in
+  `gtfs_box` die Wege zu Nachbarn ≤ 400 m Luftlinie mit einem kurz gestarteten `valhalla_service` (2 Threads) auf
+  `valhalla/current/tiles.tar` (`sources_to_targets`, 4,3 km/h, wie footpaths.py) → `footpaths/current/footpaths.csv`.
+  Neu gerechnet nur bei neuem GTFS- oder Tile-Stand. Prüfung: ≥ 1000 Paare, ≥ 80 % mit Weg, höchstens −10 % Wege.
+  Lokal mit Valhalla-Ersatz: 3 354 Quellen, 14 027 Paare (27.10.: ~14 000). routing-core liest per Glob
+  `/addon_configs/*_routing_jobs/footpaths/current/footpaths.csv`; ohne Treffer Luftlinie. routing-core wird nur
+  einmal am Ende neu gestartet, wenn `gtfs` oder `footpaths` einen neuen Stand hatte.
