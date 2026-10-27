@@ -127,3 +127,13 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   nummeriert die IDs mit `osmium renumber` (kleine Warteschlangen per `OSMIUM_*`) neu: renumber 1,4 GB, admins
   0,6 GB, tiles 1,2 GB. OSM-IDs gehen dabei verloren; für Routing egal.
 - Status: umgesetzt (0.1.1), Messung der ganzen Kette im Add-on folgt.
+- **Job `gtfs` + täglicher Lauf (27.10. abends, routing-jobs 0.1.4, routing-core 0.1.6):** lädt `de_nv`/`de_rv`/`de_fv`
+  von gtfs.de (ETag), schneidet `de_nv` wie bisher auf die StädteRegion-Box `5.95,50.48,6.45,50.93` (Option
+  `gtfs_box`; Go-Port von `gtfs_bbox.py`, gleiches Ergebnis: 15 388 Fahrten, 7 119 Halte) und prüft mit dem
+  RAPTOR-Lader für heute und in 6 Tagen (≥ 100 Muster, Halte höchstens −10 %). Danach Neustart von routing-core,
+  das per Option `gtfs_dir` aus `gtfs/current` des Job-Add-ons liest. Laptop: 1,5 min, RSS 106 MB (GOMEMLIMIT 100 MiB).
+- Zeitplan: **eine** Automation täglich 04:00 (Spieleserver leer, sonst +30 min bis 07:00) mit `gtfs,osm,valhalla`.
+  `osm` baut nur, wenn der Stand älter als `osm_tage` (7, minus 12 h Spielraum) ist; `valhalla` folgt dem OSM-Stand.
+  So bleibt es bei einem Startweg und OSM + Valhalla werden trotzdem nur wöchentlich gebaut.
+- Fußwege (`footpaths.csv`) liegen vorerst weiter im Ordner von routing-core; Halte-IDs aus neuen GTFS-Ständen,
+  die dort fehlen, fallen auf die Luftlinie zurück (ReadFootpaths überspringt sie). Job `footpaths` folgt.

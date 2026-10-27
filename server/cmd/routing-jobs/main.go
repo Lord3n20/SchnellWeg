@@ -1,11 +1,13 @@
 // routing-jobs baut die Daten für routing-core und Valhalla. Ein Aufruf arbeitet die Jobs nacheinander ab und
 // beendet sich; gestartet wird er nur von einer HA-Automation (kein Scheduler im Container).
 //
-//	routing-jobs -job osm,valhalla -dir /config
+//	routing-jobs -job gtfs,osm,valhalla -dir /config
 //
 // Jobs:
 //
-//	osm       Geofabrik-Ausschnitte laden (ETag + md5), mit osmconvert auf config/region.geojson schneiden
+//	gtfs      Fahrpläne von gtfs.de laden (ETag), Nahverkehr auf gtfs_box schneiden, mit dem RAPTOR-Lader prüfen
+//	          → gtfs/current/{sr_gtfs,de_rv,de_fv}.zip; danach wird routing-core neu gestartet, falls es läuft
+//	osm       nur wenn der Stand älter als osm_tage ist: Geofabrik-Ausschnitte laden (ETag + md5), mit osmconvert auf config/region.geojson schneiden
 //	          zusammenführen und mit osmium neu nummerieren → osm/current/region.osm.pbf
 //	valhalla  Valhalla-Tiles aus osm/current bauen und mit Testrouten prüfen → valhalla/current/tiles.tar;
 //	          danach wird das Valhalla-Add-on neu gestartet, falls es läuft
@@ -40,13 +42,15 @@ import (
 
 var (
 	dir         = flag.String("dir", "/config", "Ablage (HA: Konfigurationsordner des Job-Add-ons)")
-	jobList     = flag.String("job", "osm,valhalla", "Jobs, durch Komma getrennt, in dieser Reihenfolge")
+	jobList     = flag.String("job", "gtfs,osm,valhalla", "Jobs, durch Komma getrennt, in dieser Reihenfolge")
 	sources     = flag.String("osm_sources", "", "Geofabrik-Pfade ohne -latest.osm.pbf, durch Komma getrennt")
 	region      = flag.String("region", "/etc/rwaysth/region.geojson", "Regionspolygon (GeoJSON)")
 	maxMem      = flag.Int64("max_mem_mb", 2048, "Speicherspitze je Job in MB (zusätzlich ≤ MemAvailable − 1 GB)")
 	concurrency = flag.Int("concurrency", 4, "Threads für den Valhalla-Bau (≤ 4)")
 	minDisk     = flag.Int64("min_free_disk_mb", 6000, "nötiger freier Platz vor dem Start")
 	force       = flag.Bool("force", false, "auch bei unveränderten Eingängen neu bauen")
+	gtfsBox     = flag.String("gtfs_box", "5.95,50.48,6.45,50.93", "Nahverkehr: Fahrten mit Halt in dieser Box (minlon,minlat,maxlon,maxlat)")
+	osmDays     = flag.Int("osm_tage", 7, "OSM + Valhalla erst neu bauen, wenn der Stand so alt ist (0 = immer prüfen)")
 	options     = flag.String("options", "", "JSON-Datei mit Optionen (HA-Add-on: /data/options.json)")
 )
 
@@ -74,7 +78,7 @@ func main() {
 	for _, name := range strings.Split(*jobList, ",") {
 		name = strings.TrimSpace(name)
 		run, ok := map[string]func(context.Context, *jobs.Watch) (string, error){
-			"osm": jobOSM, "valhalla": jobValhalla,
+			"gtfs": jobGTFS, "osm": jobOSM, "valhalla": jobValhalla,
 		}[name]
 		if !ok {
 			log.Fatalf("Fehler: unbekannter Job %q", name)
@@ -88,6 +92,9 @@ func main() {
 		}
 		if name == "valhalla" && err == nil {
 			restartSibling(ctx, sup, "valhalla", &report)
+		}
+		if name == "gtfs" && err == nil {
+			restartSibling(ctx, sup, "routing_core", &report)
 		}
 	}
 	title := "RWaysTH-Daten aktualisiert"
@@ -163,6 +170,9 @@ func cmd(ctx context.Context, logf, name string, args ...string) error {
 
 // jobOSM lädt die Geofabrik-Ausschnitte und schneidet sie auf das Regionspolygon.
 func jobOSM(ctx context.Context, w *jobs.Watch) (string, error) {
+	if info, fresh := osmFresh(); fresh {
+		return info, errSkip
+	}
 	var paths []string
 	for _, s := range strings.Split(*sources, ",") {
 		if s = strings.Trim(strings.TrimSpace(s), "/"); s != "" {

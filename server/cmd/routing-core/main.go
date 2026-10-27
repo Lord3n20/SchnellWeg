@@ -4,6 +4,8 @@
 //	routing-core -gtfs sr_gtfs.zip,de_rv.zip,de_fv.zip:fern -footpaths footpaths.csv -listen :8090
 //
 // Als HA-Add-on: routing-core -options /data/options.json -dir /config (Optionen heißen wie die Flags).
+// Mit gtfs_dir (Glob erlaubt, z. B. /addon_configs/*_routing_jobs/gtfs/current) kommen die Fahrpläne aus dem
+// Job-Add-on; über den Symlink current liest der Tageswechsel um Mitternacht immer den neuesten Stand.
 //
 // Protokolliert werden nur Ladezeiten, Speicher und Fehlertypen, nie Anfragen.
 package main
@@ -64,6 +66,7 @@ func main() {
 	par := flag.Int("par", 2, "gleichzeitige Anfragen (je ein Router)")
 	dayS := flag.String("day", "", "Betriebstag fest vorgeben (Test), sonst heute mit Wechsel um Mitternacht")
 	dir := flag.String("dir", "", "Ordner, auf den sich relative Pfade in -gtfs/-footpaths beziehen")
+	gtfsDir := flag.String("gtfs_dir", "", "Ordner für relative Pfade in -gtfs statt -dir (Glob erlaubt, erster Treffer)")
 	options := flag.String("options", "", "JSON-Datei mit Optionen (HA-Add-on: /data/options.json)")
 	flag.Parse()
 	log.SetFlags(0)
@@ -78,9 +81,20 @@ func main() {
 		}
 		return filepath.Join(*dir, p)
 	}
+	gdir := *dir
+	if *gtfsDir != "" {
+		m, _ := filepath.Glob(*gtfsDir)
+		if len(m) == 0 {
+			log.Fatal("Fehler: gtfs_dir nicht gefunden – erst das Job-Add-on mit job gtfs laufen lassen")
+		}
+		gdir = m[0]
+	}
 	var feeds []string
 	for _, f := range strings.Split(*gtfs, ",") {
-		feeds = append(feeds, rel(strings.TrimSpace(f)))
+		if f = strings.TrimSpace(f); !filepath.IsAbs(f) {
+			f = filepath.Join(gdir, f)
+		}
+		feeds = append(feeds, f)
 	}
 	*footpaths = rel(*footpaths)
 
