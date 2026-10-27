@@ -32,7 +32,16 @@ Ziel < 50 ms, Grenze < 100 ms: ohne Hochtakten knapp verfehlt (Median), mit Hoch
 - Valhallas HTTP-Server wird auf wiederverwendeten Verbindungen mit jeder Anfrage langsamer (curl über eine
   Verbindung: 15 → 27 ms nach 10 Anfragen). routing-core baut daher je Aufruf eine neue Verbindung auf.
 
-## Offen
+## Entscheidung: Mindesttakt 2 GHz (Betreiber, 27.10.)
 
-- Entscheidung Betreiber: Regler `performance` (oder höherer Mindesttakt) auf dem Server – betrifft den ganzen
-  Host, nicht nur die Add-ons.
+Regler `schedutil` bleibt, nur der Mindesttakt wird angehoben (Mittelweg statt `performance`). 120 Anfragen von außen:
+
+| Mindesttakt | walk_ms Median | p95 | RAPTOR Median |
+|---|---|---|---|
+| 0,8 GHz (Standard) | 55 ms | 70 ms | 4,3 ms |
+| 1,6 GHz | 38,8 ms | 45,2 ms | 2,7 ms |
+| **2,0 GHz (gewählt)** | **31,2 ms** | **37,5 ms** | 2,3 ms |
+| 2,4 GHz | 26,3 ms | 29,4 ms | 2,0 ms |
+
+Gesetzt beim Start des Servers außerhalb der RWaysTH-Add-ons (Host-Einstellung, Ort in der lokalen Betreiber-Doku).
+Ein eigenes Add-on dafür scheiterte: im geschützten Add-on-Container bleibt `/sys` schreibgeschützt.
