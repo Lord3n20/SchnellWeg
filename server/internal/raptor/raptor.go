@@ -1,5 +1,7 @@
 package raptor
 
+import "sort"
+
 const inf = int32(1 << 30)
 
 // Access ist ein Start- oder Zielhalt mit Gehzeit vom/zum eigentlichen Ort.
@@ -259,34 +261,44 @@ func (r *Router) journey(k int, to []Access) (Journey, bool) {
 	return Journey{}, false
 }
 
-// Near liefert Halte mit Abfahrten im Umkreis maxM um einen Ort (Luftlinie, Platzhalter für Valhalla-Matrix).
+// Near liefert Halte mit Abfahrten im Umkreis maxM um einen Ort (Luftlinie). Die Gehzeit ist eine Schätzung;
+// mit Valhalla ersetzt die API sie durch den echten Weg.
 func (tt *Timetable) Near(lat, lon, maxM float64) []Access {
+	if tt.byLat == nil {
+		tt.buildByLat() // von Hand gebaute Fahrpläne (Tests)
+	}
+	dLat := maxM / 111195
+	lo := sort.Search(len(tt.byLat), func(k int) bool { return tt.Stops[tt.byLat[k]].Lat >= lat-dLat })
 	var out []Access
-	for i, s := range tt.Stops {
-		if len(tt.StopRoutes[i]) == 0 {
-			continue
+	for _, i := range tt.byLat[lo:] {
+		s := &tt.Stops[i]
+		if s.Lat > lat+dLat {
+			break
 		}
 		if d := Dist(lat, lon, s.Lat, s.Lon); d <= maxM {
-			out = append(out, Access{int32(i), WalkSec(d)})
+			out = append(out, Access{i, WalkSec(d)})
 		}
 	}
+	sort.Slice(out, func(a, b int) bool { return out[a].Stop < out[b].Stop }) // Reihenfolge wie bisher
 	return out
 }
 
 // PerRoute dünnt Zugangshalte aus: je Muster nur der Halt mit der kürzesten Gehzeit. Weiter entfernte Halte
 // derselben Muster bringen keine frühere Ankunft und kosten in der Valhalla-Matrix nur Zeit.
 func (tt *Timetable) PerRoute(acc []Access) []Access {
-	best := map[int32]int{} // Muster → Index in acc
+	best := make([]int32, len(tt.Routes)) // Muster → Index in acc + 1 (0 = noch keiner); günstiger als eine Map
 	for i, a := range acc {
 		for _, r := range tt.StopRoutes[a.Stop] {
-			if j, ok := best[r]; !ok || a.Sec < acc[j].Sec {
-				best[r] = i
+			if j := best[r]; j == 0 || a.Sec < acc[j-1].Sec {
+				best[r] = int32(i + 1)
 			}
 		}
 	}
 	keep := make([]bool, len(acc))
-	for _, i := range best {
-		keep[i] = true
+	for _, j := range best {
+		if j > 0 {
+			keep[j-1] = true
+		}
 	}
 	var out []Access
 	for i, a := range acc {

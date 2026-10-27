@@ -59,6 +59,7 @@ type Timetable struct {
 	StopRoutes [][]int32 // Halt → Routen
 	StopPos    [][]int32 // parallel zu StopRoutes: Position des Halts in der Route
 	Footpaths  [][]Footpath
+	byLat      []int32 // Halte mit Abfahrten, nach Breite sortiert (für Near)
 }
 
 type csvFile struct {
@@ -196,6 +197,7 @@ func Load(paths []string, day time.Time, maxWalkM float64) (*Timetable, error) {
 		}
 	}
 	tt.buildFootpaths(maxWalkM)
+	tt.buildByLat()
 	return tt, nil
 }
 
@@ -347,6 +349,16 @@ func (tt *Timetable) buildFootpaths(maxM float64) {
 			}
 		}
 	}
+}
+
+func (tt *Timetable) buildByLat() {
+	tt.byLat = tt.byLat[:0]
+	for i := range tt.Stops {
+		if len(tt.StopRoutes[i]) > 0 {
+			tt.byLat = append(tt.byLat, int32(i))
+		}
+	}
+	sort.Slice(tt.byLat, func(a, b int) bool { return tt.Stops[tt.byLat[a]].Lat < tt.Stops[tt.byLat[b]].Lat })
 }
 
 // InBox: Halt liegt im Rechteck (Valhalla-Tiles decken nur die Region ab).

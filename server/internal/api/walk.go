@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"time"
 
@@ -72,7 +73,10 @@ func (v *Valhalla) Walk(ctx context.Context, tt *raptor.Timetable, lat, lon floa
 	if err != nil {
 		return nil, err
 	}
-	defer res.Body.Close()
+	defer func() {
+		io.Copy(io.Discard, res.Body) // bis EOF lesen, sonst schließt Go die Verbindung statt sie wiederzuverwenden
+		res.Body.Close()
+	}()
 	if res.StatusCode != http.StatusOK {
 		return nil, errMatrix // z. B. Ort außerhalb der Tiles
 	}
