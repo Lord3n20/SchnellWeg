@@ -2,12 +2,15 @@
 // Abfahrten werden nur abgefragt, solange die Seite sichtbar ist (alle 30 s, kein Hintergrund-Polling).
 // Mit gewähltem Ziel zeigt die Seite statt der Haltestellen kurze Zusammenfassungen der Verbindungen.
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:latlong2/latlong.dart';
 
 import 'api.dart';
 import 'einstellungen.dart';
 import 'halte_db.dart';
+import 'karte.dart';
 import 'namen.dart';
 import 'standort.dart';
 import 'zugang.dart';
@@ -45,6 +48,12 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
   List<Verbindung>? _verbindungen; // null = wird berechnet
   bool _routeRt = false;
   String? _routeHinweis;
+  int _gewaehlt = 0; // Verbindung, die die Karte zeigt
+  List<Strecke> _strecken = [];
+  List<LatLng> _naheHalte = [];
+  File? _karteDatei;
+  int _karteStand = 0;
+  String? _karteHinweis;
 
   @override
   void initState() {
@@ -65,6 +74,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState s) {
     if (s == AppLifecycleState.resumed) {
       _aktualisieren(standortNeu: true);
+      if (_karteDatei == null && _api != null) _karteSichern(); // letzter Versuch gescheitert
     } else if (s == AppLifecycleState.paused || s == AppLifecycleState.hidden) {
       _timer?.cancel();
     }
@@ -82,6 +92,31 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
     _zugang = z;
     _api = Api(z);
     _halteAbgleichen().then((_) => _aktualisieren(standortNeu: true));
+    _karteSichern();
+  }
+
+  /// Vorhandene Karte sofort zeigen, im Hintergrund auf neuen Stand prüfen.
+  Future<void> _karteSichern() async {
+    final f = await KartenDatei.datei();
+    final da = await f.exists();
+    if (da) setState(() => _karteDatei = f);
+    var prozent = -1;
+    try {
+      final neu = await KartenDatei.sichern(_api!, fortschritt: da ? null : (n, gesamt) {
+        final p = gesamt > 0 ? n * 100 ~/ gesamt : -1;
+        if (p == prozent || !mounted) return;
+        prozent = p;
+        setState(() => _karteHinweis = 'Karte wird geladen … ${p >= 0 ? '$p %' : '${n >> 20} MB'}');
+      });
+      if (neu && mounted) {
+        setState(() {
+          _karteDatei = f;
+          _karteStand++;
+        });
+      }
+    } on ApiFehler catch (e) {
+      if (!da && mounted) setState(() => _karteHinweis = 'Karte nicht geladen ($e)');
+    }
   }
 
   Future<void> _zugangEinrichten() async {
@@ -105,7 +140,10 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
     final o = await Navigator.of(context).push<Ort>(
         MaterialPageRoute(builder: (_) => ZielSuche(api: _api!, db: _db!)));
     if (o == null) return;
-    setState(() => _ziel = o);
+    setState(() {
+      _ziel = o;
+      _strecken = [];
+    });
     await _routeBerechnen();
   }
 
@@ -113,7 +151,36 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
         _ziel = null;
         _verbindungen = null;
         _routeHinweis = null;
+        _strecken = [];
       });
+
+  /// Verbindung [i] als Linien für die Karte: Halte aus der SQLite, Start/Ziel aus Standort und Suchtreffer.
+  /// Ohne Linienverlauf vom Server vorerst gerade Stücke zwischen den Halten.
+  Future<void> _waehlen(int i) async {
+    final v = _verbindungen, ziel = _ziel, pos = _pos;
+    if (v == null || i >= v.length || ziel == null || pos == null) return;
+    final halte = await _db!.holen([
+      for (final a in v[i].abschnitte) ...[?a.von?.id, ?a.nach?.id]
+    ]);
+    LatLng? punkt(HaltRef? h, LatLng sonst) {
+      if (h == null) return sonst;
+      final x = halte[h.id];
+      return x == null ? null : LatLng(x.lat, x.lon);
+    }
+
+    final start = LatLng(pos.lat, pos.lon), ende = LatLng(ziel.lat, ziel.lon);
+    final strecken = <Strecke>[];
+    for (final a in v[i].abschnitte) {
+      final von = punkt(a.von, start), nach = punkt(a.nach, ende);
+      if (von == null || nach == null || von == nach) continue;
+      strecken.add(Strecke([von, nach], !a.fahrt, a.linie));
+    }
+    if (!mounted || _ziel != ziel) return;
+    setState(() {
+      _gewaehlt = i;
+      _strecken = strecken;
+    });
+  }
 
   Future<void> _routeBerechnen() async {
     final ziel = _ziel;
@@ -133,6 +200,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
         _routeRt = rt;
         if (v.isEmpty) _routeHinweis = 'Keine Verbindung gefunden';
       });
+      await _waehlen(0);
     } on ApiFehler catch (e) {
       if (!mounted || _ziel != ziel) return;
       setState(() {
@@ -179,6 +247,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
   /// Bahnsteige gleichen Namens zu einer Haltestelle zusammenfassen; Entfernung = nächster Bahnsteig.
   Future<List<_Gruppe>> _gruppieren(Position p) async {
     final halte = await _db!.naechste(p.lat, p.lon);
+    _naheHalte = [for (final (h, _) in halte.take(40)) LatLng(h.lat, h.lon)];
     final gruppen = <String, _Gruppe>{};
     for (final (h, m) in halte) {
       final k = haltSchluessel(h.name);
@@ -218,10 +287,14 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
         ),
         Expanded(
           flex: 5,
-          child: Container(
-            color: farbe.surfaceContainerHighest,
-            alignment: Alignment.center,
-            child: Text('Karte', style: TextStyle(color: farbe.onSurfaceVariant)),
+          child: Karte(
+            datei: _karteDatei,
+            stand: _karteStand,
+            hinweis: _karteHinweis,
+            standort: _pos == null ? null : LatLng(_pos!.lat, _pos!.lon),
+            ziel: _ziel == null ? null : LatLng(_ziel!.lat, _ziel!.lon),
+            halte: _naheHalte,
+            strecken: _strecken,
           ),
         ),
         Padding(
@@ -252,7 +325,9 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
     if (v.isEmpty) return Center(child: Text(_routeHinweis ?? 'Keine Verbindung gefunden'));
     return RefreshIndicator(
       onRefresh: _routeBerechnen,
-      child: ListView(children: [for (final x in v) _VerbindungZeile(x)]),
+      child: ListView(children: [
+        for (final (i, x) in v.indexed) _VerbindungZeile(x, gewaehlt: i == _gewaehlt, onTap: () => _waehlen(i)),
+      ]),
     );
   }
 }
@@ -333,7 +408,9 @@ String _uhr(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toSt
 /// Kurzfassung nach app-ui.md: 🚶 4 min → 33 Elisenbrunnen 12:41 (+1) → 🚶 2 min → an 13:02 · 1 Umstieg
 class _VerbindungZeile extends StatelessWidget {
   final Verbindung v;
-  const _VerbindungZeile(this.v);
+  final bool gewaehlt;
+  final VoidCallback onTap;
+  const _VerbindungZeile(this.v, {required this.gewaehlt, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -371,7 +448,7 @@ class _VerbindungZeile extends StatelessWidget {
     final kopf = [
       '${_uhr(v.ab)} – ${_uhr(v.ankunft)}',
       '${v.ankunft.difference(v.ab).inMinutes} min',
-      if (v.fahrten == 0) 'nur zu Fuß' else umstiege == 1 ? '1 Umstieg' : '$umstiege Umstiege',
+      switch (umstiege) { -1 => 'nur zu Fuß', 0 => 'direkt', 1 => '1 Umstieg', _ => '$umstiege Umstiege' },
     ].join(' · ');
     final warnung = switch (v.risiko) {
       'anschluss' => 'Anschluss gefährdet',
@@ -381,12 +458,17 @@ class _VerbindungZeile extends StatelessWidget {
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: Padding(
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: gewaehlt ? farbe.primary : Colors.transparent, width: 2),
+      ),
+      child: InkWell(onTap: onTap, child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
             Expanded(child: Text(kopf, style: const TextStyle(fontWeight: FontWeight.w600))),
-            if (v.anRt != null && v.anRt != v.an)
+            if (v.anRt != null && _uhr(v.anRt!) != _uhr(v.an))
               Text('statt ${_uhr(v.an)}', style: TextStyle(fontSize: 12, color: farbe.outline)),
           ]),
           const SizedBox(height: 4),
@@ -397,7 +479,7 @@ class _VerbindungZeile extends StatelessWidget {
               child: Text(warnung, style: TextStyle(color: farbe.error, fontWeight: FontWeight.w600)),
             ),
         ]),
-      ),
+      )),
     );
   }
 }

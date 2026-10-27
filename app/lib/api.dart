@@ -188,6 +188,45 @@ class Api {
     );
   }
 
+  /// Lädt die Karte (PMTiles) nach [ziel], wenn sie neuer ist als [stand]; schreibt erst in eine .part-Datei
+  /// und benennt dann um, damit eine offene Karte nie eine halbe Datei sieht. Liefert true bei neuer Datei.
+  Future<bool> karte(File ziel, DateTime? stand, {void Function(int geladen, int gesamt)? fortschritt}) async {
+    final teil = File('${ziel.path}.part');
+    try {
+      final req = await _http.getUrl(zugang.basis.resolve('/v1/map'));
+      if (stand != null) req.headers.ifModifiedSince = stand;
+      final res = await req.close().timeout(const Duration(seconds: 15));
+      if (res.statusCode == 304) {
+        await res.drain<void>();
+        return false;
+      }
+      if (res.statusCode != 200) {
+        await res.drain<void>();
+        throw ApiFehler('http_${res.statusCode}');
+      }
+      final aus = teil.openWrite();
+      var n = 0;
+      await for (final b in res.timeout(const Duration(seconds: 30))) {
+        aus.add(b);
+        n += b.length;
+        fortschritt?.call(n, res.contentLength);
+      }
+      await aus.close();
+      if (res.contentLength >= 0 && n != res.contentLength) throw ApiFehler('karte_unvollstaendig');
+      await teil.setLastModified(res.headers.value('last-modified') == null
+          ? DateTime.now()
+          : HttpDate.parse(res.headers.value('last-modified')!));
+      await teil.rename(ziel.path);
+      return true;
+    } on ApiFehler {
+      if (await teil.exists()) await teil.delete();
+      rethrow;
+    } on Exception catch (e) {
+      if (await teil.exists()) await teil.delete();
+      throw ApiFehler(e is HandshakeException || e is TlsException ? 'zertifikat' : 'netz');
+    }
+  }
+
   Future<Map<String, dynamic>> status() async {
     final (_, _, daten) = await _anfrage('GET', '/v1/status');
     return jsonDecode(utf8.decode(daten)) as Map<String, dynamic>;
