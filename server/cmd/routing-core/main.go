@@ -114,7 +114,7 @@ func main() {
 	srv := &api.Server{AccessM: *access, MaxTrips: 6, WaitLimit: 2 * time.Second}
 	if *valhalla != "" {
 		srv.Valhalla = &api.Valhalla{URL: strings.TrimRight(*valhalla, "/"), KMH: *kmh, MaxM: 2 * *access,
-			Timeout: 300 * time.Millisecond, Client: &http.Client{}}
+			Timeout: 300 * time.Millisecond, Client: &http.Client{Transport: &http.Transport{DisableKeepAlives: true}}}
 	}
 	today := func() time.Time {
 		y, m, d := time.Now().In(api.Berlin).Date()

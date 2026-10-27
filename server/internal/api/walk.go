@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"time"
 
@@ -20,7 +19,9 @@ type Valhalla struct {
 	KMH     float64       // Gehtempo, Standard 4,3
 	MaxM    float64       // längere echte Wege entfallen (Umweg um Gleise, Autobahn …)
 	Timeout time.Duration // je Matrix
-	Client  *http.Client
+	// Client ohne Keep-Alive: Valhallas HTTP-Server wird auf wiederverwendeten Verbindungen mit jeder Anfrage
+	// langsamer (gemessen 15 → 27 ms nach 10 Anfragen); ein neuer Verbindungsaufbau kostet < 1 ms.
+	Client *http.Client
 }
 
 type loc struct {
@@ -73,10 +74,7 @@ func (v *Valhalla) Walk(ctx context.Context, tt *raptor.Timetable, lat, lon floa
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		io.Copy(io.Discard, res.Body) // bis EOF lesen, sonst schließt Go die Verbindung statt sie wiederzuverwenden
-		res.Body.Close()
-	}()
+	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		return nil, errMatrix // z. B. Ort außerhalb der Tiles
 	}
