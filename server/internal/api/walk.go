@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptrace"
 	"time"
 
 	"github.com/Lord3n20/RWaysTH/server/internal/raptor"
@@ -45,12 +46,38 @@ type matrixResp struct {
 
 var errMatrix = errors.New("valhalla: unerwartete Antwort")
 
+// WalkTrace schlüsselt einen Valhalla-Aufruf zeitlich auf (ms), nur für die Messung ("debug": true).
+type WalkTrace struct {
+	N     int     `json:"n"`     // Halte in der Matrix
+	DNS   float64 `json:"dns"`   // Namensauflösung
+	Conn  float64 `json:"conn"`  // Verbindungsaufbau
+	TTFB  float64 `json:"ttfb"`  // bis zum ersten Antwortbyte (ab Start)
+	Total float64 `json:"total"` // bis die Antwort gelesen ist
+}
+
+func since(t time.Time) float64 { return float64(time.Since(t).Microseconds()) / 1000 }
+
 // Walk ersetzt die Gehzeiten in acc durch echte Fußwege zwischen (lat, lon) und den Halten. toStops: Weg vom
 // Ort zu den Halten (Zugang), sonst von den Halten zum Ort (Abgang). Halte ohne Weg oder mit zu langem Weg
 // entfallen.
-func (v *Valhalla) Walk(ctx context.Context, tt *raptor.Timetable, lat, lon float64, acc []raptor.Access, toStops bool) ([]raptor.Access, error) {
+//
+// tr (darf nil sein) erhält die Zeiten des Aufrufs.
+func (v *Valhalla) Walk(ctx context.Context, tt *raptor.Timetable, lat, lon float64, acc []raptor.Access, toStops bool, tr *WalkTrace) ([]raptor.Access, error) {
 	if len(acc) == 0 {
 		return acc, nil
+	}
+	t0 := time.Now()
+	if tr != nil {
+		tr.N = len(acc)
+		var d0, c0 time.Time
+		ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+			DNSStart:             func(httptrace.DNSStartInfo) { d0 = time.Now() },
+			DNSDone:              func(httptrace.DNSDoneInfo) { tr.DNS = since(d0) },
+			ConnectStart:         func(_, _ string) { c0 = time.Now() },
+			ConnectDone:          func(_, _ string, _ error) { tr.Conn = since(c0) },
+			GotFirstResponseByte: func() { tr.TTFB = since(t0) },
+		})
+		defer func() { tr.Total = since(t0) }()
 	}
 	here := []loc{{lat, lon}}
 	stops := make([]loc, len(acc))
@@ -104,27 +131,31 @@ func (v *Valhalla) Walk(ctx context.Context, tt *raptor.Timetable, lat, lon floa
 }
 
 // access liefert Zugangs- und Abgangshalte; mit Valhalla beide Matrizen gleichzeitig. vh: Dauer der beiden
-// Valhalla-Aufrufe in ms (Start, Ziel) für die Messung.
-func (s *Server) access(ctx context.Context, tt *raptor.Timetable, from, to point) (fa, ta []raptor.Access, vh [2]float64) {
+// Valhalla-Aufrufe in ms (Start, Ziel) für die Messung; tr (nil = aus) schlüsselt sie weiter auf.
+func (s *Server) access(ctx context.Context, tt *raptor.Timetable, from, to point, tr *[2]WalkTrace) (fa, ta []raptor.Access, vh [2]float64) {
 	fa = tt.PerRoute(tt.Near(*from.Lat, *from.Lon, s.AccessM))
 	ta = tt.PerRoute(tt.Near(*to.Lat, *to.Lon, s.AccessM))
 	if s.Valhalla == nil {
 		return fa, ta, vh
 	}
-	walk := func(p point, acc []raptor.Access, toStops bool, ms *float64) []raptor.Access {
+	walk := func(p point, acc []raptor.Access, toStops bool, k int) []raptor.Access {
 		t0 := time.Now()
-		defer func() { *ms = float64(time.Since(t0).Microseconds()) / 1000 }()
-		if r, err := s.Valhalla.Walk(ctx, tt, *p.Lat, *p.Lon, acc, toStops); err == nil {
+		defer func() { vh[k] = since(t0) }()
+		var t *WalkTrace
+		if tr != nil {
+			t = &tr[k]
+		}
+		if r, err := s.Valhalla.Walk(ctx, tt, *p.Lat, *p.Lon, acc, toStops, t); err == nil {
 			return r
 		}
 		return acc
 	}
 	done := make(chan struct{})
 	go func() {
-		fa = walk(from, fa, true, &vh[0])
+		fa = walk(from, fa, true, 0)
 		close(done)
 	}()
-	ta = walk(to, ta, false, &vh[1])
+	ta = walk(to, ta, false, 1)
 	<-done
 	return fa, ta, vh
 }

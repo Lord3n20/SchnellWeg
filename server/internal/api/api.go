@@ -80,10 +80,11 @@ func (p point) ok() bool {
 }
 
 type routeReq struct {
-	From point      `json:"from"`
-	To   point      `json:"to"`
-	Time *time.Time `json:"time"` // Abfahrt frühestens; fehlt sie, gilt jetzt
-	Fern bool       `json:"fern"` // Fernverkehr zulassen; sonst nur, was das Deutschlandsemesterticket abdeckt
+	From  point      `json:"from"`
+	To    point      `json:"to"`
+	Time  *time.Time `json:"time"`  // Abfahrt frühestens; fehlt sie, gilt jetzt
+	Fern  bool       `json:"fern"`  // Fernverkehr zulassen; sonst nur, was das Deutschlandsemesterticket abdeckt
+	Debug bool       `json:"debug"` // Zeiten der Valhalla-Aufrufe aufschlüsseln (nur Messung, keine Orte)
 }
 
 type stopOut struct {
@@ -111,10 +112,11 @@ type journeyOut struct {
 }
 
 type routeResp struct {
-	Journeys []journeyOut `json:"journeys"`
-	Ms       float64      `json:"ms"`      // Rechenzeit RAPTOR
-	WalkMs   float64      `json:"walk_ms"` // Zugangswege gesamt (Halte-Suche + Valhalla)
-	VhMs     [2]float64   `json:"vh_ms"`   // davon die Valhalla-Aufrufe für Start und Ziel (parallel)
+	Journeys []journeyOut  `json:"journeys"`
+	Ms       float64       `json:"ms"`           // Rechenzeit RAPTOR
+	WalkMs   float64       `json:"walk_ms"`      // Zugangswege gesamt (Halte-Suche + Valhalla)
+	VhMs     [2]float64    `json:"vh_ms"`        // davon die Valhalla-Aufrufe für Start und Ziel (parallel)
+	Vh       *[2]WalkTrace `json:"vh,omitempty"` // nur mit "debug": true
 }
 
 func fail(w http.ResponseWriter, code int, kind string) {
@@ -147,7 +149,11 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tw := time.Now()
-	from, to, vh := s.access(r.Context(), p.TT, req.From, req.To)
+	var tr *[2]WalkTrace
+	if req.Debug {
+		tr = &[2]WalkTrace{}
+	}
+	from, to, vh := s.access(r.Context(), p.TT, req.From, req.To, tr)
 	walkMs := float64(time.Since(tw).Microseconds()) / 1000
 	if len(from) == 0 || len(to) == 0 {
 		fail(w, http.StatusUnprocessableEntity, "keine_haltestelle_in_reichweite")
@@ -167,7 +173,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	t0 := time.Now()
 	res := rt.Query(int32(dep/time.Second), from, to, s.MaxTrips)
 	ms := float64(time.Since(t0).Microseconds()) / 1000
-	out := routeResp{Journeys: []journeyOut{}, Ms: ms, WalkMs: walkMs, VhMs: vh}
+	out := routeResp{Journeys: []journeyOut{}, Ms: ms, WalkMs: walkMs, VhMs: vh, Vh: tr}
 	for _, j := range res.Journeys {
 		out.Journeys = append(out.Journeys, convert(p.TT, base, j))
 	}
