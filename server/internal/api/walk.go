@@ -105,23 +105,28 @@ func (v *Valhalla) Walk(ctx context.Context, tt *raptor.Timetable, lat, lon floa
 	return out, nil
 }
 
-// access liefert Zugangs- und Abgangshalte; mit Valhalla beide Matrizen gleichzeitig.
-func (s *Server) access(ctx context.Context, tt *raptor.Timetable, from, to point) (fa, ta []raptor.Access) {
+// access liefert Zugangs- und Abgangshalte; mit Valhalla beide Matrizen gleichzeitig. vh: Dauer der beiden
+// Valhalla-Aufrufe in ms (Start, Ziel) für die Messung.
+func (s *Server) access(ctx context.Context, tt *raptor.Timetable, from, to point) (fa, ta []raptor.Access, vh [2]float64) {
 	fa = tt.PerRoute(tt.Near(*from.Lat, *from.Lon, s.AccessM))
 	ta = tt.PerRoute(tt.Near(*to.Lat, *to.Lon, s.AccessM))
 	if s.Valhalla == nil {
-		return fa, ta
+		return fa, ta, vh
+	}
+	walk := func(p point, acc []raptor.Access, toStops bool, ms *float64) []raptor.Access {
+		t0 := time.Now()
+		defer func() { *ms = float64(time.Since(t0).Microseconds()) / 1000 }()
+		if r, err := s.Valhalla.Walk(ctx, tt, *p.Lat, *p.Lon, acc, toStops); err == nil {
+			return r
+		}
+		return acc
 	}
 	done := make(chan struct{})
 	go func() {
-		if r, err := s.Valhalla.Walk(ctx, tt, *from.Lat, *from.Lon, fa, true); err == nil {
-			fa = r
-		}
+		fa = walk(from, fa, true, &vh[0])
 		close(done)
 	}()
-	if r, err := s.Valhalla.Walk(ctx, tt, *to.Lat, *to.Lon, ta, false); err == nil {
-		ta = r
-	}
+	ta = walk(to, ta, false, &vh[1])
 	<-done
-	return fa, ta
+	return fa, ta, vh
 }
