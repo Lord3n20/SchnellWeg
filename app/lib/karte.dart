@@ -8,11 +8,32 @@ import 'package:latlong2/latlong.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:vector_map_tiles/vector_map_tiles.dart';
 import 'package:vector_map_tiles_pmtiles/vector_map_tiles_pmtiles.dart';
+// ignore: implementation_imports
+import 'package:vector_map_tiles_pmtiles/src/themes/v4/_package.dart' as v4;
 
 import 'api.dart';
 
 const _pruefTakt = Duration(days: 1);
 final _aachen = LatLng(50.7753, 6.0839); // Hbf, bis der Standort da ist
+
+/// Protomaps-Stile mit vereinfachten Beschriftungen: die Originale bauen den Text mit `format` (zweisprachig,
+/// Schrift je Schriftsystem), das der Renderer nicht kennt – dann fiele jede Beschriftung weg.
+/// Stattdessen deutscher Name, sonst der Name vor Ort. Glyphen/Sprites werden nicht von außen geladen.
+List<Map<String, Object>> _stil(List<Map<String, Object>> ebenen) => [
+      for (final e in ebenen)
+        if (e['layout'] case final Map<String, Object> l when l.containsKey('text-field'))
+          {
+            ...e,
+            'layout': {
+              ...l,
+              'text-field': ['coalesce', ['get', 'name:de'], ['get', 'name']],
+            },
+          }
+        else
+          e,
+    ];
+
+final hellerStil = ProtomapsThemes().build(_stil(v4.themeLight)), _dunkel = ProtomapsThemes().build(_stil(v4.themeDark));
 
 /// Ablage der Kartendatei im App-Ordner (wird bei Deinstallation mit entfernt).
 class KartenDatei {
@@ -165,7 +186,7 @@ class _KarteState extends State<Karte> {
       children: [
         VectorTileLayer(
           key: ValueKey(_quelleStand),
-          theme: dunkel ? ProtomapsThemes.darkV4() : ProtomapsThemes.lightV4(),
+          theme: dunkel ? _dunkel : hellerStil,
           tileProviders: TileProviders({'protomaps': q}),
           fileCacheTtl: Duration.zero, // Quelle liegt ohnehin lokal
         ),
