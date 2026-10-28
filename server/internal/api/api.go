@@ -5,6 +5,10 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"runtime"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -333,6 +337,23 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewEncoder(w).Encode(map[string]any{
 		"ready": true, "day": p.Day.Format("2006-01-02"), "loaded": p.Loaded.Format(time.RFC3339),
-		"stops": len(p.TT.Stops), "routes": len(p.TT.Routes), "rt": s.liveStatus(),
+		"stops": len(p.TT.Stops), "routes": len(p.TT.Routes), "rt": s.liveStatus(), "mem": speicher(),
 	})
+}
+
+// speicher meldet den eigenen Speicher in MB (Messung, D-24): RSS anonym/Datei laut /proc, Heap laut Go.
+func speicher() map[string]int64 {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	out := map[string]int64{"heap": int64(m.HeapAlloc >> 20), "go_sys": int64(m.Sys >> 20)}
+	if b, err := os.ReadFile("/proc/self/status"); err == nil {
+		for _, l := range strings.Split(string(b), "\n") {
+			if k, v, ok := strings.Cut(l, ":"); ok && (k == "RssAnon" || k == "RssFile" || k == "VmHWM") {
+				if kb, err := strconv.ParseInt(strings.TrimSuffix(strings.TrimSpace(v), " kB"), 10, 64); err == nil {
+					out[strings.ToLower(k)] = kb >> 10
+				}
+			}
+		}
+	}
+	return out
 }
