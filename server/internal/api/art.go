@@ -21,7 +21,7 @@ var arten = map[string]Art{
 	"":         {Min: 2, Max: 8},
 	"fuss":     {Min: 2, Max: 8},
 	"einrad":   {Min: 4, Max: 20},
-	"klapprad": {Min: 6, Max: 30, Rad: true, BusMalus: 3 * time.Minute}, // zusammengeklappt in Bus und Bahn, kein Ticket
+	"klapprad": {Min: 6, Max: 30, Rad: true, BusMalus: 5 * time.Minute}, // zusammengeklappt in Bus und Bahn, kein Ticket
 	"fixie":    {Min: 6, Max: 40, Rad: true, NurBahn: true},
 	"rad":      {Min: 6, Max: 40, Rad: true, NurBahn: true}, // App vor D-22 = Fixie
 	"rennrad":  {Min: 10, Max: 45, Rad: true, NurBahn: true, Strasse: true, Stufen: 600},

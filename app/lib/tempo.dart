@@ -31,7 +31,7 @@ const artName = {
 const artInfo = {
   'fuss': 'Fußwege und Treppen',
   'einrad': 'Wege wie zu Fuß, fährt gratis in Bus und Bahn mit',
-  'klapprad': 'Wege wie zu Fuß, zusammengeklappt in Bus und Bahn ohne Fahrradticket; Bus nur, wenn er 3 min spart',
+  'klapprad': 'Wege wie zu Fuß, zusammengeklappt in Bus und Bahn ohne Fahrradticket; Bus nur, wenn er 5 min spart',
   'fixie': 'Wege wie zu Fuß, Treppen getragen; nur Bahn, Fahrradticket nötig',
   'rennrad': 'Straßen und Radwege, keine Fußwege, Treppen nur zur Not; nur Bahn, Fahrradticket nötig',
   'mtb': 'Überall lang, meidet Treppen; nur Bahn, Fahrradticket nötig',
