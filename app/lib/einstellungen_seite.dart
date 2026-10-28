@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'einstellungen.dart';
+import 'favoriten.dart';
 import 'karte.dart' show groesse;
 import 'kartenlager.dart';
 import 'tempo.dart';
@@ -72,6 +73,12 @@ class _EinstellungenSeiteState extends State<EinstellungenSeite> with _LagerBeob
             if (laeuft) 'lädt …',
           ].join(' · '),
           onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const KartenSeite())),
+        ),
+        _Punkt(
+          icon: Icons.star_outline,
+          titel: 'Favoriten',
+          unter: 'sortieren, Ordner anlegen',
+          onTap: () => favoritenOrdnen(context),
         ),
         _Punkt(
           icon: Icons.key,

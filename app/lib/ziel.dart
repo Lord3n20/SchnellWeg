@@ -1,6 +1,6 @@
 // Ziel wählen: Haltestellen sucht das Handy in der eigenen SQLite, Adressen und Orte fragt es bei /v1/search
 // (Suchtext nur im Body), RWTH-Gebäude live bei RWTH Maps (D-18). Alles parallel; Haltestellen oben, weil sofort da.
-// Ohne Eingabe stehen die Favoriten da; jeder Treffer hat einen Stern.
+// Ohne Eingabe stehen die Favoriten da (Ordner aufklappbar); jeder Treffer hat einen Stern.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -102,6 +102,14 @@ class _ZielSucheState extends State<ZielSuche> {
         _ => Icons.place_outlined,
       };
 
+  Widget _favZeile(Ort o) => ListTile(
+        leading: Icon(Icons.star, color: Colors.amber.shade700),
+        title: Text(o.name),
+        subtitle: o.detail.isEmpty || _osmTag.hasMatch(o.detail) ? null : Text(o.detail),
+        onTap: () => Navigator.of(context).pop(o),
+        onLongPress: () => favoritBearbeiten(context, o),
+      );
+
   @override
   Widget build(BuildContext context) {
     // Gebäude vom Server nur, wenn die Live-Abfrage sie nicht schon hat (oder ausgefallen ist)
@@ -130,15 +138,23 @@ class _ZielSucheState extends State<ZielSuche> {
         listenable: Favoriten.instanz,
         builder: (context, _) => ListView(children: [
           if (_fehler != null) ListTile(leading: const Icon(Icons.cloud_off), title: Text(_fehler!)),
-          if (_feld.text.trim().length < 2)
-            for (final o in Favoriten.instanz.liste)
-              ListTile(
-                leading: Icon(Icons.star, color: Colors.amber.shade700),
-                title: Text(o.name),
-                subtitle: o.detail.isEmpty || _osmTag.hasMatch(o.detail) ? null : Text(o.detail),
-                onTap: () => Navigator.of(context).pop(o),
-                onLongPress: () => favoritBearbeiten(context, o),
+          if (_feld.text.trim().length < 2) ...[
+            for (final o in Favoriten.instanz.oben) _favZeile(o),
+            for (final (name, orte) in Favoriten.instanz.ordner)
+              ExpansionTile(
+                leading: const Icon(Icons.folder_outlined),
+                title: Text(name),
+                subtitle: Text(orte.length == 1 ? '1 Favorit' : '${orte.length} Favoriten'),
+                childrenPadding: const EdgeInsets.only(left: 24),
+                children: [for (final o in orte) _favZeile(o)],
               ),
+            if (Favoriten.instanz.eintraege.isNotEmpty)
+              ListTile(
+                leading: const Icon(Icons.swap_vert),
+                title: const Text('Favoriten ordnen'),
+                onTap: () => favoritenOrdnen(context),
+              ),
+          ],
           for (final o in treffer)
             ListTile(
               leading: Icon(_icon(o.art)),

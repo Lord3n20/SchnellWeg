@@ -349,12 +349,12 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
             if (_ziel == null)
               ListenableBuilder(
                 listenable: Favoriten.instanz,
-                builder: (context, _) => Favoriten.instanz.liste.isEmpty
+                builder: (context, _) => Favoriten.instanz.eintraege.isEmpty
                     ? const SizedBox.shrink()
                     : SizedBox(
                         height: 44,
                         child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.only(top: 6), children: [
-                          for (final f in Favoriten.instanz.liste)
+                          for (final f in Favoriten.instanz.oben)
                             Padding(
                               padding: const EdgeInsets.only(right: 6),
                               child: GestureDetector(
@@ -363,6 +363,21 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
                                   avatar: Icon(Icons.star, size: 18, color: Colors.amber.shade700),
                                   label: Text(f.name),
                                   onPressed: () => _zielSetzen(f),
+                                ),
+                              ),
+                            ),
+                          for (final (name, orte) in Favoriten.instanz.ordner)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: GestureDetector(
+                                onLongPress: () => favoritenOrdnen(context),
+                                child: ActionChip(
+                                  avatar: const Icon(Icons.folder_outlined, size: 18),
+                                  label: Text('$name (${orte.length})'),
+                                  onPressed: () async {
+                                    final o = await ausOrdnerWaehlen(context, name, orte);
+                                    if (o != null && mounted) _zielSetzen(o);
+                                  },
                                 ),
                               ),
                             ),
