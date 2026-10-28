@@ -44,6 +44,17 @@
             android:name=".AusstiegDienst"
             android:exported="false"
             android:foregroundServiceType="location"/>
+        <service
+            android:name=".VerkehrsmittelKachel"
+            android:exported="true"
+            android:icon="@drawable/kachel_fuss"
+            android:label="Verkehrsmittel"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE"/>
+            </intent-filter>
+            <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="false"/>
+        </service>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

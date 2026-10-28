@@ -241,12 +241,13 @@ class Api {
 
   /// Verbindungen (Pareto nach Umstiegen) und ob der Echtzeitstand verfügbar war.
   Future<(List<Verbindung>, bool)> route(double vonLat, double vonLon, double nachLat, double nachLon,
-      {DateTime? ab, bool fern = false, double? kmh, String? art, bool lang = false}) async {
+      {DateTime? ab, bool ankunft = false, double? kmh, String? art, bool fern = false, bool lang = false}) async {
     final (_, _, daten) = await _anfrage('POST', '/v1/route',
         body: {
           'from': {'lat': vonLat, 'lon': vonLon},
           'to': {'lat': nachLat, 'lon': nachLon},
           if (ab != null) 'time': ab.toUtc().toIso8601String(),
+          if (ab != null && ankunft) 'ankunft': true, // ab ist dann die späteste Ankunft (D-27)
           if (fern) 'fern': true,
           'kmh': ?kmh,
           'art': ?art, // fuss | einrad | klapprad | fixie | rennrad | mtb (D-21, D-22)

@@ -316,3 +316,15 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   Alte Apps zeigen dann „Route nicht berechnet (fussweg_lang)“ (vorher kam dort ohnehin kein Ergebnis).
 - Ganz Deutschland erreichbar wird es erst mit dem DE-Fahrplan (zweistufiger Plan in D-24).
 - Status: umgesetzt (routing-core 0.1.24; 0.1.23 ohne Nachfrage nicht ausgerollt).
+
+## D-27 Planung nach Ankunftszeit (28.10.)
+- Betreiber 28.10.: „ich würde gerne noch ankunfts-/abfahrtszeit planen können“.
+- POST /v1/route: neues optionales Feld `ankunft` (bool); `time` ist dann die späteste Ankunft. RAPTOR rechnet weiter
+  nur vorwärts: erst ab 1 h vor der Ankunft (bei Bedarf 2, 4, 8 … h zurück bis Betriebstagbeginn), dann wiederholt
+  eine Minute nach der spätesten passenden Abfahrt, bis nichts Späteres mehr ankommt. Je Umstiegszahl bleibt die
+  späteste Abfahrt; mehr Umstiege nur, wenn man damit später losgehen kann. Reiner Fußweg endet genau zur Ankunft.
+- **Abweichung:** eine Anfrage sind so typisch 3–6 RAPTOR-Läufe (Grenze 100 ms gilt je Lauf, nicht je Anfrage);
+  ein Rückwärts-RAPTOR wäre schneller, lohnt aber erst bei Bedarf.
+- App: Chip unter „Nach“ (Jetzt losgehen / Abfahrt hh:mm / Ankunft hh:mm), nur für heute, weil nur der heutige
+  Betriebstag geladen ist. Alte Apps senden das Feld nicht.
+- Status: umgesetzt (routing-core 0.1.26).

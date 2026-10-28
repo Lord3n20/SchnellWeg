@@ -53,6 +53,8 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
   bool _routeRt = false;
   String? _routeHinweis;
   bool _langFrage = false; // Hinweis ist eine grobe Schätzung (Fußweg > 5 km): Knopf „trotzdem genau berechnen“
+  DateTime? _zeit; // geplante Abfahrt bzw. Ankunft; null = jetzt
+  bool _ankunft = false;
   int _gewaehlt = 0; // Verbindung, die die Karte zeigt
   List<Strecke> _strecken = [];
   Map<String, Halt> _halteDerVerbindung = {};
@@ -79,10 +81,18 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState s) {
     if (s == AppLifecycleState.resumed) {
       _aktualisieren(standortNeu: true);
+      _tempoNeuLesen(); // die Schnelleinstellung „Verkehrsmittel“ kann es geändert haben
       if (_api != null) KartenLager.instanz.start(_api!); // prüft höchstens täglich
     } else if (s == AppLifecycleState.paused || s == AppLifecycleState.hidden) {
       _timer?.cancel();
     }
+  }
+
+  Future<void> _tempoNeuLesen() async {
+    final t = await Tempo.laden();
+    if (!mounted || (t.name == _tempo.name && t.kmh == _tempo.kmh)) return;
+    setState(() => _tempo = t);
+    if (_ziel != null) await _routeBerechnen();
   }
 
   Future<void> _starten() async {
@@ -230,7 +240,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
     if (p == null) return setState(() => _routeHinweis = 'Kein Standort (Berechtigung oder GPS aus?)');
     _pos = p;
     try {
-      final (v, rt) = await _api!.route(p.lat, p.lon, ziel.lat, ziel.lon, kmh: _tempo.kmh, art: _tempo.art, lang: lang);
+      final (v, rt) = await _api!.route(p.lat, p.lon, ziel.lat, ziel.lon, kmh: _tempo.kmh, art: _tempo.art, lang: lang, ab: _zeit, ankunft: _ankunft);
       if (!mounted || _ziel != ziel) return;
       setState(() {
         _verbindungen = v;
@@ -256,6 +266,58 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
         };
       });
     }
+  }
+
+  static String _uhr(DateTime t) {
+    final heute = DateUtils.isSameDay(t, DateTime.now());
+    final h = '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+    return heute ? h : '${t.day}.${t.month}. $h';
+  }
+
+  /// Abfahrt oder Ankunft planen (Fahrplan gilt bisher nur für den heutigen Betriebstag).
+  Future<void> _zeitWaehlen() async {
+    var ankunft = _ankunft;
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      builder: (c) => StatefulBuilder(
+        builder: (c, setz) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(value: false, label: Text('Abfahrt'), icon: Icon(Icons.logout)),
+                  ButtonSegment(value: true, label: Text('Ankunft'), icon: Icon(Icons.flag_outlined)),
+                ],
+                selected: {ankunft},
+                onSelectionChanged: (v) => setz(() => ankunft = v.first),
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                icon: const Icon(Icons.schedule),
+                label: const Text('Uhrzeit wählen'),
+                onPressed: () => Navigator.of(c).pop(true),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final jetzt = DateTime.now(), alt = _zeit ?? jetzt;
+    final u = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(alt),
+      helpText: ankunft ? 'Ankommen bis' : 'Losgehen ab',
+    );
+    if (u == null || !mounted) return;
+    var t = DateTime(jetzt.year, jetzt.month, jetzt.day, u.hour, u.minute);
+    if (!ankunft && t.isBefore(jetzt.subtract(const Duration(minutes: 1)))) t = jetzt; // Vergangenheit = jetzt
+    setState(() {
+      _zeit = t;
+      _ankunft = ankunft;
+    });
+    await _routeBerechnen();
   }
 
   /// Grobe Schätzung des Servers (Luftlinie × 1,3) als Text, z. B. „Vom Start bis zum nächsten Halt ca. 6,5 km zu Fuß (~1 h 30 min).“
@@ -358,6 +420,24 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
               icon: _ziel == null ? null : Icons.close,
               onIcon: _zielWeg,
             ),
+            if (_ziel != null)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: InputChip(
+                    avatar: const Icon(Icons.schedule, size: 18),
+                    label: Text(_zeit == null ? 'Jetzt losgehen' : '${_ankunft ? 'Ankunft' : 'Abfahrt'} ${_uhr(_zeit!)}'),
+                    onPressed: _zeitWaehlen,
+                    onDeleted: _zeit == null
+                        ? null
+                        : () {
+                            setState(() => _zeit = null);
+                            _routeBerechnen();
+                          },
+                  ),
+                ),
+              ),
             if (_ziel == null)
               ListenableBuilder(
                 listenable: Favoriten.instanz,

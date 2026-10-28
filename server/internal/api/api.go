@@ -113,6 +113,8 @@ type routeReq struct {
 	KMH   *float64   `json:"kmh"`   // Gehtempo (App-Einstellung, D-12); fehlt es, gilt BaseKMH
 	Art   string     `json:"art"`   // fuss (Standard) | einrad | klapprad | fixie | rennrad | mtb (D-21, D-22); rad = fixie
 	Lang  bool       `json:"lang"`  // auch mit sehr langem Zugangsweg (> LangM) genau rechnen (D-25)
+	// Ankunft: time ist die späteste Ankunft statt der frühesten Abfahrt (D-27)
+	Ankunft bool `json:"ankunft"`
 }
 
 // reichweite: Faktor für Zugangsradius und direkten Weg; schneller unterwegs = weiter, höchstens das Vierfache.
@@ -231,7 +233,16 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	if s.Valhalla != nil {
 		ks = art.kosten(s.Valhalla.KMH, kmh, scale)
 	}
-	go func() { directC <- s.directWalk(r.Context(), req.From, req.To, t, scale, weit, ks) }()
+	go func() {
+		d := s.directWalk(r.Context(), req.From, req.To, t, scale, weit, ks)
+		if d != nil && req.Ankunft { // so losgehen, dass man pünktlich ankommt
+			dauer := d.Arr.Sub(d.Dep)
+			d.Arr = t.Truncate(time.Second)
+			d.Dep = d.Arr.Add(-dauer)
+			d.Legs[0].Dep, d.Legs[0].Arr = d.Dep, d.Arr
+		}
+		directC <- d
+	}()
 	from, to, vh, grob := s.access(r.Context(), p.TT, req.From, req.To, weit, scale, art.NurBahn, req.Lang, ks, tr)
 	walkMs := float64(time.Since(tw).Microseconds()) / 1000
 	if len(from) == 0 || len(to) == 0 {
@@ -267,7 +278,12 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	}
 	rt.NoFern, rt.WalkScale, rt.NurBahn = !req.Fern, scale, art.NurBahn
 	t0 := time.Now()
-	res := rt.Query(int32(dep/time.Second), from, to, s.MaxTrips)
+	var res raptor.Result
+	if req.Ankunft {
+		res = spaetesteAbfahrt(rt, int32(dep/time.Second), from, to, s.MaxTrips)
+	} else {
+		res = rt.Query(int32(dep/time.Second), from, to, s.MaxTrips)
+	}
 	ms := float64(time.Since(t0).Microseconds()) / 1000
 	p.routers <- rt
 	snap := <-liveC
@@ -330,6 +346,63 @@ func fussLang(w http.ResponseWriter, grob [2]float64, kmh float64) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnprocessableEntity)
 	json.NewEncoder(w).Encode(out)
+}
+
+// abfahrt: wann man bei j losgeht (der Zugangsweg wird wie in convert direkt vor die erste Fahrt gelegt).
+func abfahrt(j raptor.Journey) int32 {
+	if len(j.Legs) > 1 && j.Legs[0].Kind == raptor.Walk && j.Legs[1].Kind == raptor.Ride {
+		return j.Legs[1].Dep - (j.Legs[0].Arr - j.Legs[0].Dep)
+	}
+	if len(j.Legs) > 0 {
+		return j.Legs[0].Dep
+	}
+	return 0
+}
+
+// spaetesteAbfahrt sucht zur Ankunft spätestens bis vorwärts (RAPTOR kennt nur frühste Ankunft): erst früh genug
+// starten (1 h vorher, dann immer doppelt so weit zurück, höchstens bis Betriebstagbeginn), dann so lange eine Minute
+// nach der spätesten passenden Abfahrt neu fragen, bis nichts Passendes mehr kommt. Je Umstiegszahl bleibt die
+// späteste Abfahrt; mehr Umstiege nur, wenn man damit später losgehen kann (D-27). Typisch 3–6 Abfragen.
+func spaetesteAbfahrt(rt *raptor.Router, bis int32, from, to []raptor.Access, maxTrips int) raptor.Result {
+	best := map[int]raptor.Journey{}
+	nimm := func(res raptor.Result) (spaet int32, neu bool) {
+		spaet = -1
+		for _, j := range res.Journeys {
+			if j.Arr > bis {
+				continue
+			}
+			a := abfahrt(j)
+			spaet = max(spaet, a)
+			if b, ok := best[j.Trips]; !ok || a > abfahrt(b) || a == abfahrt(b) && j.Arr < b.Arr {
+				best[j.Trips], neu = j, true
+			}
+		}
+		return spaet, neu
+	}
+	spaet := int32(-1)
+	for zurueck := int32(3600); ; zurueck *= 2 {
+		start := max(0, bis-zurueck)
+		spaet, _ = nimm(rt.Query(start, from, to, maxTrips))
+		if spaet >= 0 || start == 0 {
+			break
+		}
+	}
+	for k := 0; spaet >= 0 && k < 12; k++ {
+		s, neu := nimm(rt.Query(spaet+60, from, to, maxTrips))
+		if s < 0 || !neu {
+			break
+		}
+		spaet = s
+	}
+	var out raptor.Result
+	vorher := int32(-1)
+	for n := 0; n <= maxTrips; n++ {
+		if j, ok := best[n]; ok && abfahrt(j) > vorher {
+			out.Journeys = append(out.Journeys, j)
+			vorher = abfahrt(j)
+		}
+	}
+	return out
 }
 
 // radVergleich behält beim Rad nur die Verbindungen, die gegenüber dem direkten Weg d etwas bringen: RAPTOR-Wege

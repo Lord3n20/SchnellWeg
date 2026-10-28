@@ -349,3 +349,18 @@ func TestNearest(t *testing.T) {
 		t.Errorf("nearest: %+v", got)
 	}
 }
+
+func TestAnkunft(t *testing.T) {
+	s := testServer(time.Date(2026, 10, 28, 0, 0, 0, 0, Berlin))
+	// Fahrten A→B um 08:00 (an 08:10) und 08:30 (an 08:40), Abgang ~1 min
+	body := `{"from":{"lat":50.7701,"lon":6.08},"to":{"lat":50.7799,"lon":6.08},"time":"2026-10-28T%s:00+01:00","ankunft":true}`
+	for bis, want := range map[string]string{"08:45": "t2", "08:41": "t2", "08:40": "t1", "08:15": "t1"} {
+		w, r := post(s, fmt.Sprintf(body, bis))
+		if w.Code != 200 || len(r.Journeys) != 1 || r.Journeys[0].Legs[1].TripID != want {
+			t.Errorf("an bis %s: erwartet %s, Code %d: %s", bis, want, w.Code, w.Body)
+		}
+	}
+	if _, r := post(s, fmt.Sprintf(body, "08:05")); len(r.Journeys) != 0 {
+		t.Errorf("an bis 08:05: keine Fahrt möglich, bekam %+v", r.Journeys)
+	}
+}
