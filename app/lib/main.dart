@@ -23,6 +23,7 @@ class SchnellWeg extends StatelessWidget {
         theme: ThemeData(colorSchemeSeed: saat),
         darkTheme: dunklesThema(saat, oled: d.oled),
         themeMode: d.modus,
+        navigatorObservers: [seitenBeobachter],
         home: const Start(),
       ),
     );

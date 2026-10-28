@@ -1,5 +1,6 @@
 // Startseite nach docs/app-ui.md: Von/Nach, Karte, Haltestellen in der Nähe mit nächster Abfahrt.
-// Abfahrten werden nur abgefragt, solange die Seite sichtbar ist (alle 30 s, kein Hintergrund-Polling).
+// Abfahrten werden nur abgefragt, solange die Seite sichtbar ist (alle 30 s, kein Hintergrund-Polling; auch nicht,
+// solange eine Unterseite sie verdeckt).
 // Ziel per Suche oder durch Antippen der Karte. Mit gewähltem Ziel zeigt die Seite statt der Haltestellen kurze Zusammenfassungen der Verbindungen.
 import 'dart:async';
 
@@ -21,6 +22,9 @@ import 'zugang.dart';
 import 'ziel.dart';
 
 const _takt = Duration(seconds: 30);
+
+/// Meldet der Startseite, wann eine Unterseite sie verdeckt (dann ruht der Abfahrten-Takt); Dialoge zählen nicht.
+final seitenBeobachter = RouteObserver<PageRoute<dynamic>>();
 const _maxNamen = 5; // so viele Haltestellen (nach Name zusammengefasst) zeigt die Liste
 const _maxIds = 30; // Grenze von /v1/departures
 
@@ -39,11 +43,12 @@ class Start extends StatefulWidget {
   State<Start> createState() => _StartState();
 }
 
-class _StartState extends State<Start> with WidgetsBindingObserver {
+class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
   Zugang? _zugang;
   Api? _api;
   HalteDb? _db;
   Timer? _timer;
+  bool _verdeckt = false; // eine Unterseite liegt darüber
   Position? _pos;
   List<_Gruppe> _gruppen = [];
   bool _rt = false;
@@ -70,7 +75,27 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final r = ModalRoute.of(context);
+    if (r is PageRoute) seitenBeobachter.subscribe(this, r);
+  }
+
+  @override
+  void didPushNext() {
+    _verdeckt = true;
+    _timer?.cancel();
+  }
+
+  @override
+  void didPopNext() {
+    _verdeckt = false;
+    _aktualisieren();
+  }
+
+  @override
   void dispose() {
+    seitenBeobachter.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     _api?.schliessen();
@@ -80,7 +105,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState s) {
     if (s == AppLifecycleState.resumed) {
-      _aktualisieren(standortNeu: true);
+      if (!_verdeckt) _aktualisieren(standortNeu: true);
       _tempoNeuLesen(); // die Schnelleinstellung „Verkehrsmittel“ kann es geändert haben
       if (_api != null) KartenLager.instanz.start(_api!); // prüft höchstens täglich
     } else if (s == AppLifecycleState.paused || s == AppLifecycleState.hidden) {
@@ -362,7 +387,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
     if (!mounted) return;
     setState(() {});
     _timer?.cancel(); // überlappende Aufrufe (Start, Abgleich, Rückkehr) sollen nur einen Takt hinterlassen
-    _timer = Timer(_takt, _aktualisieren);
+    if (!_verdeckt) _timer = Timer(_takt, _aktualisieren);
   }
 
   /// Bahnsteige gleichen Namens zu einer Haltestelle zusammenfassen; Entfernung = nächster Bahnsteig.
