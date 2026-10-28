@@ -317,6 +317,32 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - Ganz Deutschland erreichbar wird es erst mit dem DE-Fahrplan (zweistufiger Plan in D-24).
 - Status: umgesetzt (routing-core 0.1.24; 0.1.23 ohne Nachfrage nicht ausgerollt).
 
+## D-26 Adresssuche für ganz Deutschland: eigene Länderquellen, Index-Datei per mmap (28.10.)
+- Betreiber 28.10.: Adresssuche überall (ganz DE); Daten dürfen auf der SSD liegen, RAM im Betrieb < 1 GB.
+- Job `geocode` liest nicht mehr den Regionsausschnitt des osm-Jobs, sondern ganze Geofabrik-Gebiete (neue Option
+  `geocode_sources`, Standard europe/germany, netherlands/limburg, belgium; md5 + ETag wie beim osm-Job, höchstens
+  alle `osm_tage`). Keine Box mehr: die Suche reicht weiter als der Fahrplan (D-24).
+- Extraktion in drei Durchläufen je Datei (osmpbf Skip*): Relationen → gesuchte Wege, Wege → je Eintrag ein Knoten
+  (der mittlere; bei Gebäuden eine Ecke, ~20 m daneben – der zweite Knoten für die Mitte kostete ~300 MB), Knoten →
+  nur deren Koordinaten. Einträge gehen sofort in Dateien je 0,5°-Zelle, werden dort sortiert und entdoppelt
+  (auch Grenzgebiete in zwei Quellen) und nach Zellen geordnet zu geocode.tsv verkettet. Nächster Ort einer Straße
+  über ein 0,25°-Gitter.
+- geocode.idx (neues Format, Kopf `SWGIDX01`): Zeilenanfänge, Koordinaten (1e-6°), sortierte Wörter,
+  Trefferlisten (Eintrag<<1 | Wort im Namen), Zellentabelle. routing-core blendet TSV + Index per mmap ein; im Heap
+  liegt nichts Dauerhaftes (vorher ~130 MB für 1 Mio. Einträge). Kleine Listen ohne .idx (RWTH-Gebäude) baut es beim
+  Start im Speicher.
+- Suche: Trefferliste des seltensten Suchworts, geschnitten mit den weiteren, bis ≤ 5000 Kandidaten (sonst zuerst
+  die mit dem Wort im Namen); Wörter mit > 2 Mio. Treffern („5“ samt Postleitzahlen 5xxxx) nur prüfen. Mit `near`
+  (App schickt den Standort auf 0,05° gerundet, nur für die Wertung, nie protokolliert) zusätzlich ein Durchgang über
+  die 3 × 3 Zellen um den Nutzer, Bonus < 3 / 15 / 60 km, bei Gleichstand das Nähere. Gleicher Name + Detail
+  < 200 m nur einmal. Alte Apps ohne `near` bekommen die Suche ohne Nähe.
+- **Reihenfolge beim Ausrollen:** routing-core bis 0.1.24 lehnt `near` ab (unbekanntes Feld → 400), also erst den
+  Server, dann eine App ab 219d12f.
+- Laptop 28.10. (DE + NL-Limburg, GOMEMLIMIT 1,5 GiB wie im Job): 20,9 Mio. Adressen, 1,6 Mio. Straßen, 102 000 Orte,
+  2,2 Mio. Einrichtungen; Extraktion 6:54 min (anonymer Speicher bis 1,09 GB), Index 1:46 min (bis 1,54 GB, darin
+  ~0,5 GB Trefferlisten); TSV 1,44 GB, Index 0,73 GB.
+- Status: umgesetzt (routing-core 0.1.25, routing-jobs 0.1.12).
+
 ## D-27 Planung nach Ankunftszeit (28.10.)
 - Betreiber 28.10.: „ich würde gerne noch ankunfts-/abfahrtszeit planen können“.
 - POST /v1/route: neues optionales Feld `ankunft` (bool); `time` ist dann die späteste Ankunft. RAPTOR rechnet weiter
