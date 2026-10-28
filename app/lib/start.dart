@@ -1,6 +1,6 @@
 // Startseite nach docs/app-ui.md: Von/Nach, Karte, Haltestellen in der Nähe mit nächster Abfahrt.
 // Abfahrten werden nur abgefragt, solange die Seite sichtbar ist (alle 30 s, kein Hintergrund-Polling).
-// Mit gewähltem Ziel zeigt die Seite statt der Haltestellen kurze Zusammenfassungen der Verbindungen.
+// Ziel per Suche oder durch Antippen der Karte. Mit gewähltem Ziel zeigt die Seite statt der Haltestellen kurze Zusammenfassungen der Verbindungen.
 import 'dart:async';
 import 'dart:io';
 
@@ -142,6 +142,19 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
     if (o == null) return;
     setState(() {
       _ziel = o;
+      _strecken = [];
+    });
+    await _routeBerechnen();
+  }
+
+  /// Angetippter Kartenpunkt als Ziel; benannt nach der nächsten Haltestelle, weil es keine Rückwärtssuche gibt.
+  Future<void> _zielAusKarte(LatLng p) async {
+    if (_api == null || _db == null) return;
+    final nah = await _db!.naechste(p.latitude, p.longitude, radius: 300);
+    final name = nah.isEmpty ? 'Punkt auf der Karte' : 'Punkt bei ${haltName(nah.first.$1.name)}';
+    if (!mounted) return;
+    setState(() {
+      _ziel = Ort('karte', name, '', p.latitude, p.longitude);
       _strecken = [];
     });
     await _routeBerechnen();
@@ -304,6 +317,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
             ziel: _ziel == null ? null : LatLng(_ziel!.lat, _ziel!.lon),
             halte: _naheHalte,
             strecken: _strecken,
+            onAntippen: _zielAusKarte,
           ),
         ),
         Padding(

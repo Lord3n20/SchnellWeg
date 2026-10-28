@@ -41,7 +41,7 @@ class Abfahrt {
 
 /// Suchtreffer: Adresse/Ort vom Server oder Haltestelle aus der lokalen SQLite.
 class Ort {
-  final String art; // adresse | strasse | ort | poi | halt
+  final String art; // adresse | strasse | ort | poi | halt | gebaeude | karte
   final String name, detail;
   final double lat, lon;
   Ort(this.art, this.name, this.detail, this.lat, this.lon);

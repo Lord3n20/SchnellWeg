@@ -57,6 +57,7 @@ class Karte extends StatefulWidget {
   final LatLng? standort, ziel;
   final List<LatLng> halte;
   final List<Strecke> strecken;
+  final void Function(LatLng)? onAntippen; // Punkt als Ziel übernehmen
   const Karte({
     super.key,
     required this.datei,
@@ -66,6 +67,7 @@ class Karte extends StatefulWidget {
     this.ziel,
     this.halte = const [],
     this.strecken = const [],
+    this.onAntippen,
   });
 
   @override
@@ -155,6 +157,7 @@ class _KarteState extends State<Karte> {
           _bereit = true;
           _ausschnitt();
         },
+        onTap: widget.onAntippen == null ? null : (_, p) => widget.onAntippen!(p),
         onPositionChanged: (_, vomNutzer) {
           if (vomNutzer) _folgen = false;
         },
