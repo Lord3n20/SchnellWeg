@@ -17,10 +17,11 @@ import io.flutter.plugin.common.MethodChannel
 
 // Standort über den LocationManager des Systems (keine Play-Dienste, siehe lib/standort.dart).
 // Eine einzelne Position auf Anfrage; laufende GPS-Positionen nur, solange der Messgang offen ist
-// (Bildschirm bleibt dann an, kein Hintergrund).
+// (Bildschirm bleibt dann an, kein Hintergrund). Kanal schnellweg/karte steuert den KartenDienst (Download im Hintergrund).
 class MainActivity : FlutterActivity() {
     private val wartend = mutableListOf<MethodChannel.Result>()
     private var laufend: LocationListener? = null
+    private var gefragt = false
 
     override fun configureFlutterEngine(engine: FlutterEngine) {
         super.configureFlutterEngine(engine)
@@ -46,6 +47,22 @@ class MainActivity : FlutterActivity() {
 
                 override fun onCancel(args: Any?) = laufendBeenden()
             })
+        MethodChannel(engine.dartExecutor.binaryMessenger, "schnellweg/karte").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "melden" -> {
+                    // Beim ersten Download einmal um Benachrichtigungen bitten; ohne läuft der Dienst trotzdem.
+                    if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
+                        !gefragt) {
+                        gefragt = true
+                        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), ANFRAGE + 1)
+                    }
+                    KartenDienst.melden(this, call.argument<String>("text")!!, call.argument<Int>("prozent")!!)
+                    result.success(null)
+                }
+                "beenden" -> result.success(KartenDienst.beenden(this))
+                else -> result.notImplemented()
+            }
+        }
         MethodChannel(engine.dartExecutor.binaryMessenger, "schnellweg/standort").setMethodCallHandler { call, result ->
             if (call.method != "holen") return@setMethodCallHandler result.notImplemented()
             if (erlaubt()) holen(result) else {

@@ -12,7 +12,14 @@ import 'tempo.dart';
 
 const _genauMax = 20.0; // m; ungenauere Positionen zählen nicht
 /// Art → (min, max) m/s in Bewegung; darunter Stehen, darüber etwas anderes (Rennen, Bus, Auto).
-const _bewegung = {'fuss': (0.6, 3.0), 'einrad': (1.0, 7.0), 'rad': (1.5, 12.0)};
+const _bewegung = {
+  'fuss': (0.6, 3.0),
+  'einrad': (1.0, 7.0),
+  'klapprad': (1.5, 10.0),
+  'fixie': (1.5, 13.0),
+  'rennrad': (2.0, 14.0),
+  'mtb': (1.5, 11.0),
+};
 const _lueckeMax = 5000.0; // ms; größere Lücken im GPS werden nicht überbrückt
 const _zeitMin = Duration(minutes: 2), _streckeMin = 150.0;
 
@@ -66,12 +73,12 @@ class _TempoSeiteState extends State<TempoSeite> {
           : ListView(children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: Text('Das ausgewählte Profil gilt für Wege zu Haltestellen, Umstiege und direkte Wege. '
-                    'Mit dem Fahrrad nimmt die Route nur Bahnen (Fahrradticket nötig). '
+                child: Text('Das ausgewählte Profil gilt für Wege zu Haltestellen, Umstiege und direkte Wege; '
+                    'mit dem Rad steht der direkte Weg vorn. '
                     'Zum Kalibrieren ein Profil messen: ein paar Minuten in diesem Tempo unterwegs sein.'),
               ),
               for (final art in grenzen.keys) ...[
-                _Ueberschrift(artName[art]!),
+                _Ueberschrift(artName[art]!, artInfo[art]),
                 for (final p in t.profile.where((p) => p.art == art)) ListTile(
                   leading: Icon(p.name == t.aktiv ? Icons.radio_button_checked : Icons.radio_button_unchecked,
                       color: p.name == t.aktiv ? Theme.of(context).colorScheme.primary : null),
@@ -95,14 +102,18 @@ class _TempoSeiteState extends State<TempoSeite> {
 
 class _Ueberschrift extends StatelessWidget {
   final String text;
-  const _Ueberschrift(this.text);
+  final String? info;
+  const _Ueberschrift(this.text, [this.info]);
 
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Text(text, style: t.textTheme.labelLarge?.copyWith(color: t.colorScheme.primary)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(text, style: t.textTheme.labelLarge?.copyWith(color: t.colorScheme.primary)),
+        if (info != null) Text(info!, style: t.textTheme.bodySmall?.copyWith(color: t.colorScheme.onSurfaceVariant)),
+      ]),
     );
   }
 }

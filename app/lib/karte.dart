@@ -1,9 +1,12 @@
 // Karte offline aus den PMTiles-Dateien im KartenLager (D-20): Übersicht unten, geladene Bundesländer darüber.
-// Fehlt an der angezeigten Stelle das Bundesland, bietet ein Hinweis oben das Laden an.
+// Fehlt an der angezeigten Stelle das Bundesland, bietet ein Hinweis oben das Laden an; Gebiete ohne geladenes
+// Bundesland sind grau schraffiert, geladene haben einen Rand.
 // Gezeichnet wird alles auf dem Handy: eigener Standort, Halte in der Nähe, gewählte Verbindung.
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:latlong2/latlong.dart' hide Path;
 import 'package:vector_map_tiles/vector_map_tiles.dart';
 import 'package:vector_map_tiles_pmtiles/vector_map_tiles_pmtiles.dart';
 // ignore: implementation_imports
@@ -176,6 +179,7 @@ class _KarteState extends State<Karte> {
               tileProviders: TileProviders({'protomaps': fein}),
               fileCacheTtl: Duration.zero,
             ),
+          if (_lager.regionen.isNotEmpty) _Abdeckung(_lager, farbe),
           PolylineLayer(polylines: [
             for (final s in widget.strecken)
               Polyline(
@@ -219,6 +223,96 @@ class _KarteState extends State<Karte> {
       if (_fehlt != null) Positioned(top: 8, left: 8, right: 8, child: _RegionLaden(_fehlt!)),
     ]);
   }
+}
+
+/// Zeigt, wo die Karte nur die Übersicht hat: alles außerhalb der geladenen Bundesländer grau schraffiert,
+/// die geladenen umrandet, ein gerade ladendes gestrichelt.
+class _Abdeckung extends StatelessWidget {
+  final KartenLager lager;
+  final ColorScheme farbe;
+  const _Abdeckung(this.lager, this.farbe);
+
+  @override
+  Widget build(BuildContext context) {
+    final c = MapCamera.of(context);
+    Rect rechteck(KartenRegion r) {
+      final a = c.latLngToScreenPoint(LatLng(r.nord, r.west)), b = c.latLngToScreenPoint(LatLng(r.sued, r.ost));
+      return Rect.fromLTRB(a.x, a.y, b.x, b.y);
+    }
+
+    final regionen = lager.regionen.where((r) => r.id != uebersicht);
+    return IgnorePointer(
+      child: CustomPaint(
+        size: Size.infinite,
+        painter: _AbdeckungMaler(
+          da: [for (final r in regionen) if (lager.hat(r.id)) rechteck(r)],
+          laedt: [for (final r in regionen) if (!lager.hat(r.id) && lager.laedt.containsKey(r.id)) rechteck(r)],
+          schleier: farbe.brightness == Brightness.dark ? Colors.black.withValues(alpha: 0.35) : farbe.onSurface.withValues(alpha: 0.08),
+          linie: farbe.onSurface.withValues(alpha: 0.18),
+          rand: farbe.primary,
+        ),
+      ),
+    );
+  }
+}
+
+class _AbdeckungMaler extends CustomPainter {
+  final List<Rect> da, laedt;
+  final Color schleier, linie, rand;
+  _AbdeckungMaler({required this.da, required this.laedt, required this.schleier, required this.linie, required this.rand});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final alles = Offset.zero & size;
+    var geladen = Path();
+    for (final r in da) {
+      final k = r.intersect(alles.inflate(50)); // Ränder außerhalb des Bildschirms bleiben unsichtbar
+      if (k.width > 0 && k.height > 0) {
+        geladen = Path.combine(PathOperation.union, geladen, Path()..addRect(k)); // Rechtecke überlappen sich
+      }
+    }
+    final fehlt = Path.combine(PathOperation.difference, Path()..addRect(alles), geladen);
+    canvas.drawPath(fehlt, Paint()..color = schleier);
+    canvas.save();
+    canvas.clipPath(fehlt);
+    final strich = Paint()
+      ..color = linie
+      ..strokeWidth = 1;
+    for (var x = -size.height; x < size.width; x += 14) {
+      canvas.drawLine(Offset(x, size.height), Offset(x + size.height, 0), strich);
+    }
+    canvas.restore();
+    if (da.isNotEmpty) {
+      canvas.drawPath(geladen, Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5
+        ..color = rand.withValues(alpha: 0.6));
+    }
+    final gestrichelt = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..color = rand;
+    // Kanten nur im sichtbaren Teil stricheln (bei starkem Zoom ist ein Bundesland Millionen Pixel groß)
+    void kante(double fest, double von, double bis, bool waagrecht, double grenze, double laenge) {
+      if (fest < 0 || fest > grenze) return;
+      final a = max(von, -20.0), b = min(bis, laenge + 20);
+      for (var t = (a / 20).floorToDouble() * 20; t < b; t += 20) {
+        final s = max(t, von), e = min(t + 10, bis);
+        if (e <= s) continue;
+        canvas.drawLine(waagrecht ? Offset(s, fest) : Offset(fest, s), waagrecht ? Offset(e, fest) : Offset(fest, e), gestrichelt);
+      }
+    }
+
+    for (final r in laedt) {
+      kante(r.top, r.left, r.right, true, size.height, size.width);
+      kante(r.bottom, r.left, r.right, true, size.height, size.width);
+      kante(r.left, r.top, r.bottom, false, size.width, size.height);
+      kante(r.right, r.top, r.bottom, false, size.width, size.height);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_AbdeckungMaler alt) => true; // wird nur bei Kamera- oder Lageränderung neu gebaut
 }
 
 /// „Karte für Bayern laden (1,2 GB)“ – oder der Fortschritt, solange sie lädt.

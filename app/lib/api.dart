@@ -238,7 +238,7 @@ class Api {
           if (ab != null) 'time': ab.toUtc().toIso8601String(),
           if (fern) 'fern': true,
           'kmh': ?kmh,
-          'art': ?art, // fuss | einrad | rad (D-21)
+          'art': ?art, // fuss | einrad | klapprad | fixie | rennrad | mtb (D-21, D-22)
         },
         zeit: const Duration(seconds: 15));
     final j = jsonDecode(utf8.decode(daten)) as Map<String, dynamic>;

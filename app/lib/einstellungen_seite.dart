@@ -54,7 +54,11 @@ class _EinstellungenSeiteState extends State<EinstellungenSeite> with _LagerBeob
       appBar: AppBar(title: const Text('Einstellungen')),
       body: ListView(children: [
         _Punkt(
-          icon: switch (_tempo.art) { 'rad' => Icons.directions_bike, 'einrad' => Icons.circle_outlined, _ => Icons.directions_walk },
+          icon: switch (_tempo.art) {
+            'fuss' => Icons.directions_walk,
+            'einrad' => Icons.circle_outlined,
+            _ => Icons.directions_bike,
+          },
           titel: 'Tempo',
           unter: '${_tempo.name} · ${tempoText(_tempo.kmh)}',
           onTap: _tempoAendern,

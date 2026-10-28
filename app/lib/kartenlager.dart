@@ -6,6 +6,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pmtiles/pmtiles.dart';
 import 'package:vector_map_tiles/vector_map_tiles.dart';
@@ -14,6 +15,8 @@ import 'package:vector_map_tiles_pmtiles/vector_map_tiles_pmtiles.dart';
 import 'api.dart';
 
 const _pruefTakt = Duration(days: 1);
+const _versuche = 8; // Netzabbrüche während eines Downloads: so oft nach kurzer Pause weitermachen
+const _dienstKanal = MethodChannel('schnellweg/karte'); // KartenDienst.kt: Download läuft im Hintergrund weiter
 const uebersicht = 'uebersicht';
 
 class KartenLager extends ChangeNotifier {
@@ -27,6 +30,8 @@ class KartenLager extends ChangeNotifier {
   final Map<String, double> laedt = {}; // id → Fortschritt 0..1, -1 = unbekannt
   String? fehler;
   int stand = 0; // ändert sich, wenn Dateien dazukommen oder ersetzt werden
+  final Set<String> _gewollt = {}; // Downloads, die jemand angestoßen hat (nicht die stille Prüfung auf neue Stände)
+  String? _gemeldet; // zuletzt an den Dienst gemeldeter Text
 
   bool hat(String id) => _archive.containsKey(id);
   bool get bereit => _archive.isNotEmpty;
@@ -111,31 +116,67 @@ class KartenLager extends ChangeNotifier {
     }
   }
 
-  /// Datei [id] laden (oder mit [nurNeu] nur bei neuerem Serverstand ersetzen).
+  /// Datei [id] laden (oder mit [nurNeu] nur bei neuerem Serverstand ersetzen). Ein Download läuft im Hintergrund
+  /// weiter (KartenDienst) und setzt nach Netzabbrüchen selbst wieder an.
   Future<void> laden(String id, {bool nurNeu = false}) async {
     final api = _api;
     if (api == null || laedt.containsKey(id)) return;
     final f = await _datei(id);
-    final da = await f.exists();
     laedt[id] = nurNeu ? -1 : 0;
-    if (!nurNeu) notifyListeners();
+    if (!nurNeu) {
+      _gewollt.add(id);
+      notifyListeners();
+    }
     var zuletzt = DateTime(0);
     try {
-      final neu = await api.karte(id, f, da ? await f.lastModified() : null, fortschritt: (n, gesamt) {
-        final jetzt = DateTime.now();
-        if (jetzt.difference(zuletzt) < const Duration(milliseconds: 300)) return;
-        zuletzt = jetzt;
-        laedt[id] = gesamt > 0 ? n / gesamt : -1;
-        notifyListeners();
-      });
-      if (neu) await _oeffnen(id, f);
-      fehler = null;
+      for (var versuch = 1;; versuch++) {
+        final da = await f.exists();
+        try {
+          final neu = await api.karte(id, f, da ? await f.lastModified() : null, fortschritt: (n, gesamt) {
+            final jetzt = DateTime.now();
+            if (jetzt.difference(zuletzt) < const Duration(milliseconds: 300)) return;
+            zuletzt = jetzt;
+            laedt[id] = gesamt > 0 ? n / gesamt : -1;
+            notifyListeners();
+          });
+          if (neu) await _oeffnen(id, f);
+          fehler = null;
+          break;
+        } on ApiFehler catch (e) {
+          if (nurNeu || e.art != 'netz' || versuch >= _versuche) rethrow;
+          await Future<void>.delayed(Duration(seconds: 5 * versuch)); // .part bleibt, es geht per Range weiter
+        }
+      }
     } on ApiFehler catch (e) {
       if (!nurNeu) fehler = 'Karte nicht geladen ($e)';
     } finally {
       laedt.remove(id);
+      _gewollt.remove(id);
       notifyListeners();
     }
+  }
+
+  @override
+  void notifyListeners() {
+    super.notifyListeners();
+    _dienst();
+  }
+
+  /// Hält den KartenDienst an, solange ein gewollter Download läuft, und zeigt dort den Fortschritt.
+  void _dienst() {
+    final ids = _gewollt.where(laedt.containsKey).toList();
+    if (ids.isEmpty) {
+      if (_gemeldet != null) _dienstKanal.invokeMethod<void>('beenden').ignore();
+      _gemeldet = null;
+      return;
+    }
+    final name = regionen.where((r) => r.id == ids.first).firstOrNull?.name ?? 'Übersicht';
+    final p = laedt[ids.first]!;
+    final prozent = p >= 0 ? (p * 100).floor() : -1;
+    final text = ids.length == 1 ? 'Karte $name wird geladen' : '${ids.length} Karten werden geladen';
+    if ('$text $prozent' == _gemeldet) return;
+    _gemeldet = '$text $prozent';
+    _dienstKanal.invokeMethod<void>('melden', {'text': text, 'prozent': prozent}).ignore();
   }
 
   Future<void> loeschen(String id) async {

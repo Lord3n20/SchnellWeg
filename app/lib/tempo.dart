@@ -1,4 +1,5 @@
-// Tempo-Profile (D-12, D-21): zu Fuß, Einrad, Fahrrad – je von Hand gesetzt oder per Messgang (tempo_messen.dart).
+// Tempo-Profile (D-12, D-21, D-22): zu Fuß, Einrad und vier Fahrradtypen – je von Hand gesetzt oder per Messgang
+// (tempo_messen.dart).
 // Das aktive Profil geht je Anfrage als `art` + `kmh` an /v1/route (Grenzen je Art wie dort).
 // Bleibt nur auf dem Handy (tempo.json im App-Ordner).
 import 'dart:convert';
@@ -10,8 +11,32 @@ import 'package:path_provider/path_provider.dart';
 const standardKmh = 4.3;
 
 /// Art → (min, max) km/h; außerhalb antwortet /v1/route mit 400.
-const grenzen = {'fuss': (2.0, 8.0), 'einrad': (4.0, 20.0), 'rad': (6.0, 35.0)};
-const artName = {'fuss': 'Zu Fuß', 'einrad': 'Einrad', 'rad': 'Fahrrad'};
+const grenzen = {
+  'fuss': (2.0, 8.0),
+  'einrad': (4.0, 20.0),
+  'klapprad': (6.0, 30.0),
+  'fixie': (6.0, 40.0),
+  'rennrad': (10.0, 45.0),
+  'mtb': (6.0, 35.0),
+};
+const artName = {
+  'fuss': 'Zu Fuß',
+  'einrad': 'Einrad',
+  'klapprad': 'Klapprad',
+  'fixie': 'Fixie',
+  'rennrad': 'Rennrad',
+  'mtb': 'Mountainbike',
+};
+/// Was die Art für die Route bedeutet (wie der Server sie rechnet, D-22).
+const artInfo = {
+  'fuss': 'Fußwege und Treppen',
+  'einrad': 'Wege wie zu Fuß, fährt gratis in Bus und Bahn mit',
+  'klapprad': 'Wege wie zu Fuß, zusammengeklappt in Bus und Bahn ohne Fahrradticket',
+  'fixie': 'Wege wie zu Fuß, Treppen getragen; nur Bahn, Fahrradticket nötig',
+  'rennrad': 'Straßen und Radwege, keine Fußwege, Treppen nur zur Not; nur Bahn, Fahrradticket nötig',
+  'mtb': 'Überall lang, meidet Treppen; nur Bahn, Fahrradticket nötig',
+};
+bool istRad(String art) => const {'klapprad', 'fixie', 'rennrad', 'mtb'}.contains(art);
 
 const _vorgaben = [
   ('entspannt', 'fuss', standardKmh),
@@ -19,9 +44,21 @@ const _vorgaben = [
   ('schnell', 'fuss', 6.0),
   ('Einrad', 'einrad', 12.0),
   ('Einrad schnell', 'einrad', 15.0),
-  ('Fahrrad', 'rad', 16.0),
-  ('Fahrrad schnell', 'rad', 22.0),
+  ('Klapprad entspannt', 'klapprad', 12.0),
+  ('Klapprad', 'klapprad', 15.0),
+  ('Klapprad schnell', 'klapprad', 19.0),
+  ('Fixie entspannt', 'fixie', 16.0),
+  ('Fixie', 'fixie', 21.0),
+  ('Fixie schnell', 'fixie', 26.0),
+  ('Rennrad entspannt', 'rennrad', 18.0),
+  ('Rennrad', 'rennrad', 25.0),
+  ('Rennrad schnell', 'rennrad', 32.0),
+  ('Mountainbike entspannt', 'mtb', 12.0),
+  ('Mountainbike', 'mtb', 16.0),
+  ('Mountainbike schnell', 'mtb', 20.0),
 ];
+/// Profile vor D-22 (ein Fahrrad = heute Fixie): Werte und Auswahl werden übernommen.
+const _alteNamen = {'Fixie': 'Fahrrad', 'Fixie schnell': 'Fahrrad schnell'};
 
 class TempoProfil {
   final String name, art;
@@ -54,13 +91,14 @@ class Tempo {
       final j = jsonDecode(await (await _datei('tempo.json')).readAsString()) as Map<String, dynamic>;
       final p = j['profile'] as Map<String, dynamic>;
       for (final x in t.profile) {
-        final e = p[x.name] as Map<String, dynamic>?;
+        final e = (p[x.name] ?? p[_alteNamen[x.name]]) as Map<String, dynamic>?;
         final v = (e?['kmh'] as num?)?.toDouble();
         if (v == null || v < x.min || v > x.max) continue;
         x.kmh = v;
         x.gemessen = DateTime.tryParse(e!['gemessen'] as String? ?? '');
       }
-      if (t.profile.any((x) => x.name == j['aktiv'])) t.aktiv = j['aktiv'] as String;
+      final aktiv = _alteNamen.entries.where((e) => e.value == j['aktiv']).firstOrNull?.key ?? j['aktiv'];
+      if (t.profile.any((x) => x.name == aktiv)) t.aktiv = aktiv as String;
       return t;
     } on FileSystemException {
       // noch nie gespeichert
