@@ -86,9 +86,9 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
   }
 
   Future<void> _starten() async {
-    _db = await HalteDb.oeffnen();
-    _tempo = await Tempo.laden();
-    final z = await Zugang.laden();
+    final (db, tempo, z) = await (HalteDb.oeffnen(), Tempo.laden(), Zugang.laden()).wait;
+    _db = db;
+    _tempo = tempo;
     if (z == null) return _zugangEinrichten();
     _setzeZugang(z);
   }
@@ -97,7 +97,15 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
     _api?.schliessen();
     _zugang = z;
     _api = Api(z);
-    _halteAbgleichen().then((_) => _aktualisieren(standortNeu: true));
+    // Mit gespeicherten Halten gleich Abfahrten zeigen, der Abgleich läuft nebenher; nur ein neuer Stand oder die
+    // erste Liste (frisch installiert) löst danach noch eine Aktualisierung aus.
+    final db = _db!;
+    db.anzahl().then((n) {
+      if (n > 0) _aktualisieren(standortNeu: true);
+      _halteAbgleichen().then((neu) {
+        if (neu || n == 0) _aktualisieren(standortNeu: true);
+      });
+    });
     KartenLager.instanz.start(_api!);
   }
 
@@ -106,14 +114,17 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
     if (z != null) _setzeZugang(z);
   }
 
-  /// Haltestellenliste vom Server holen, wenn sie sich geändert hat (ETag = Fahrplanstand).
-  Future<void> _halteAbgleichen() async {
+  /// Haltestellenliste vom Server holen, wenn sie sich geändert hat (ETag = Fahrplanstand); true = neu geladen.
+  Future<bool> _halteAbgleichen() async {
     final db = _db!, api = _api!;
     try {
       final neu = await api.halte(await db.etag());
-      if (neu != null) await db.ersetzen(neu.$1, neu.$2);
+      if (neu == null) return false;
+      await db.ersetzen(neu.$1, neu.$2);
+      return true;
     } on ApiFehler catch (e) {
-      if (await db.anzahl() == 0) setState(() => _hinweis = 'Haltestellen nicht geladen ($e)');
+      if (await db.anzahl() == 0 && mounted) setState(() => _hinweis = 'Haltestellen nicht geladen ($e)');
+      return false;
     }
   }
 
@@ -288,6 +299,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
     }
     if (!mounted) return;
     setState(() {});
+    _timer?.cancel(); // überlappende Aufrufe (Start, Abgleich, Rückkehr) sollen nur einen Takt hinterlassen
     _timer = Timer(_takt, _aktualisieren);
   }
 
