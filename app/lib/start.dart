@@ -15,6 +15,7 @@ import 'favoriten.dart';
 import 'halte_db.dart';
 import 'karte.dart';
 import 'kartenlager.dart';
+import 'losgehen.dart';
 import 'namen.dart';
 import 'standort.dart';
 import 'tempo.dart';
@@ -27,6 +28,21 @@ const _takt = Duration(seconds: 30);
 final seitenBeobachter = RouteObserver<PageRoute<dynamic>>();
 const _maxNamen = 5; // so viele Haltestellen (nach Name zusammengefasst) zeigt die Liste
 const _maxIds = 30; // Grenze von /v1/departures
+
+/// Oberste Zeile der Haltestellenliste: nächster Termin mit Ort und wann man los muss.
+class _TerminZeile extends StatelessWidget {
+  final Losgehplan p;
+  final VoidCallback onTap;
+  const _TerminZeile(this.p, {required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => ListTile(
+        leading: Icon(Icons.event, color: Theme.of(context).colorScheme.primary),
+        title: Text('${_uhr(p.termin.beginn)} ${p.termin.titel}', maxLines: 1, overflow: TextOverflow.ellipsis),
+        subtitle: Text(losText(p), maxLines: 2),
+        onTap: p.ziel == null ? null : onTap,
+      );
+}
 
 class _Gruppe {
   final String name;
@@ -70,6 +86,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
   void initState() {
     super.initState();
     Favoriten.instanz.laden();
+    Losgehen.instanz.laden();
     WidgetsBinding.instance.addObserver(this);
     _starten();
   }
@@ -368,6 +385,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
       if (p == null && _pos == null) return setState(() => _hinweis = 'Kein Standort (Berechtigung oder GPS aus?)');
       _pos = p ?? _pos;
       _gruppen = await _gruppieren(_pos!);
+      Losgehen.instanz.pruefen(_api!, _pos!, _tempo).ignore(); // nebenher, höchstens alle 5 min
     }
     final ids = [for (final g in _gruppen) ...g.ids].take(_maxIds).toList();
     if (ids.isNotEmpty) {
@@ -533,8 +551,23 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
       ? Center(child: Text(_hinweis!))
       : RefreshIndicator(
           onRefresh: () => _aktualisieren(standortNeu: true),
-          child: ListView(children: [for (final g in _gruppen) _HaltZeile(g)]),
+          child: ListenableBuilder(
+            listenable: Losgehen.instanz,
+            builder: (context, _) => ListView(children: [
+              if (Losgehen.instanz.plan case final p?) _TerminZeile(p, onTap: () => _terminAlsZiel(p)),
+              for (final g in _gruppen) _HaltZeile(g),
+            ]),
+          ),
         );
+
+  /// Nächster Termin des Losgeh-Weckers als Ziel, mit Ankunft bis Beginn − Puffer.
+  void _terminAlsZiel(Losgehplan p) {
+    final ziel = p.ziel;
+    if (ziel == null) return;
+    _zeit = p.termin.beginn.subtract(Duration(minutes: Losgehen.instanz.puffer));
+    _ankunft = true;
+    _zielSetzen(Ort(ziel.art, p.termin.titel, ziel.name, ziel.lat, ziel.lon));
+  }
 
   Widget _routeListe() {
     final v = _verbindungen;

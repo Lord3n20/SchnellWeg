@@ -19,11 +19,12 @@ import io.flutter.plugin.common.MethodChannel
 // Eine einzelne Position auf Anfrage; laufende GPS-Positionen nur, solange der Messgang offen ist
 // (Bildschirm bleibt dann an, kein Hintergrund). Kanal schnellweg/karte steuert den KartenDienst (Download im Hintergrund),
 // schnellweg/aussteigen den AusstiegDienst (Ausstiegs-Erinnerung), schnellweg/sperrbildschirm, ob die Activity über dem
-// Sperrbildschirm erscheinen darf (nur solange die Detailansicht offen ist).
+// Sperrbildschirm erscheinen darf (nur solange die Detailansicht offen ist), schnellweg/losgehen den Losgeh-Wecker.
 class MainActivity : FlutterActivity() {
     private val wartend = mutableListOf<MethodChannel.Result>()
     private var laufend: LocationListener? = null
     private var gefragt = false
+    private val kalenderWartend = mutableListOf<MethodChannel.Result>()
 
     override fun configureFlutterEngine(engine: FlutterEngine) {
         super.configureFlutterEngine(engine)
@@ -86,6 +87,24 @@ class MainActivity : FlutterActivity() {
             setShowWhenLocked(call.arguments as Boolean)
             result.success(null)
         }
+        MethodChannel(engine.dartExecutor.binaryMessenger, "schnellweg/losgehen").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "erlaubt" -> result.success(kalenderErlaubt())
+                "erbitten" -> if (kalenderErlaubt()) result.success(true) else {
+                    kalenderWartend += result
+                    if (kalenderWartend.size == 1) requestPermissions(arrayOf(Manifest.permission.READ_CALENDAR), ANFRAGE + 2)
+                }
+                "termine" -> result.success(if (kalenderErlaubt()) LosgehWecker.termine(this, call.argument<Int>("stunden")!!) else null)
+                "stellen" -> {
+                    meldungenErbitten()
+                    LosgehWecker.stellen(this, call.argument<Number>("zeit")!!.toLong(),
+                        call.argument<String>("titel")!!, call.argument<String>("text")!!)
+                    result.success(null)
+                }
+                "loeschen" -> result.success(LosgehWecker.loeschen(this).let { null })
+                else -> result.notImplemented()
+            }
+        }
         MethodChannel(engine.dartExecutor.binaryMessenger, "schnellweg/standort").setMethodCallHandler { call, result ->
             if (call.method != "holen") return@setMethodCallHandler result.notImplemented()
             if (erlaubt()) holen(result) else {
@@ -98,6 +117,10 @@ class MainActivity : FlutterActivity() {
 
     override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
         super.onRequestPermissionsResult(code, perms, res)
+        if (code == ANFRAGE + 2) {
+            val alle = kalenderWartend.toList().also { kalenderWartend.clear() }
+            for (r in alle) r.success(kalenderErlaubt())
+        }
         if (code != ANFRAGE) return
         val alle = wartend.toList().also { wartend.clear() }
         for (r in alle) if (erlaubt()) holen(r) else r.success(null)
@@ -110,6 +133,8 @@ class MainActivity : FlutterActivity() {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), ANFRAGE + 1)
         }
     }
+
+    private fun kalenderErlaubt() = checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
 
     private fun erlaubt() = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
         checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED

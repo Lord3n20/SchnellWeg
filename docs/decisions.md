@@ -365,3 +365,18 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - `.github/workflows/app.yml`: Tag `app-v<version>` → Tests, signierte Release-APK, check-apk.sh, Fingerabdruck in
   der Zusammenfassung, APK als Workflow-Artefakt (30 Tage). Flutter per git-Tag (kein fremdes Action-Paket).
 - Status: umgesetzt; CI braucht die Secrets SCHNELLWEG_KEYSTORE_B64 und SCHNELLWEG_KEYSTORE_PASSWORT.
+
+## D-29 Losgeh-Wecker aus dem Android-Kalender (28.10.)
+- Betreiber 28.10.: Termine aus dem Android-Kalender (nicht über HA/Server); Meldung vorerst ohne Ton und Vibration.
+- Nächster Termin mit Ort heute in den nächsten 12 h (ganztägige zählen nicht; nur heute, weil der Server nur den
+  heutigen Betriebstag kennt, D-27) → Ortstext über /v1/search (mit `near`, wie eine eingetippte Suche) →
+  /v1/route mit `ankunft` = Beginn − Puffer → späteste passende Abfahrt → AlarmManager zur Losgehzeit − Vorlauf
+  (exakt, wenn erlaubt; sonst ±1 min Fenster). Termine, Titel und Zeiten verlassen das Handy nicht.
+- Gerechnet wird nur bei offener App (Start/Rückkehr, höchstens alle 5 min, CLAUDE.md: kein Polling ohne offene App);
+  der gestellte Wecker meldet sich auch bei geschlossener App, Echtzeit ist dann aber so alt wie die letzte Rechnung.
+  Später denkbar: einmal kurz vor der Meldung im Hintergrund neu rechnen.
+- Startseite: oberste Zeile der Haltestellenliste zeigt Termin + „Los hh:mm · Linie X ab Halt hh:mm · an hh:mm“,
+  Antippen setzt ihn als Ziel mit Ankunftszeit. Einstellungen → Losgeh-Wecker: an/aus (fragt READ_CALENDAR),
+  Vorlauf, Puffer (je 0–20 min, Vorgabe 5/5). Kanal „Losgeh-Wecker“ ohne Ton/Vibration (in Android umstellbar).
+- Läuft neben dem HA-Kalender-Wecker (Aufwachen), ersetzt ihn nicht.
+- Status: umgesetzt (App).

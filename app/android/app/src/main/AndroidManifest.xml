@@ -10,6 +10,8 @@
     <!-- Ausstiegs-Erinnerung (AusstiegDienst.kt) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
+    <uses-permission android:name="android.permission.READ_CALENDAR"/>
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
     <application
         android:label="SchnellWeg"
         android:name="${applicationName}"
@@ -36,6 +38,7 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <receiver android:name=".LosgehWecker$Melder" android:exported="false"/>
         <service
             android:name=".KartenDienst"
             android:exported="false"

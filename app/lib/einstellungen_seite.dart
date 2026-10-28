@@ -1,5 +1,5 @@
 // Einstellungen als Menü mit Unterpunkten: Tempo-Profile, Offline-Karten (laden/löschen, belegter Platz), Darstellung,
-// Favoriten, Zugang.
+// Losgeh-Wecker, Favoriten, Zugang.
 import 'package:flutter/material.dart';
 
 import 'api.dart';
@@ -8,6 +8,7 @@ import 'einstellungen.dart';
 import 'favoriten.dart';
 import 'karte.dart' show groesse;
 import 'kartenlager.dart';
+import 'losgehen.dart';
 import 'tempo.dart';
 import 'tempo_messen.dart';
 import 'zugang.dart';
@@ -83,6 +84,15 @@ class _EinstellungenSeiteState extends State<EinstellungenSeite> with _LagerBeob
             titel: 'Darstellung',
             unter: Darstellung.instanz.text,
             onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DarstellungSeite())),
+          ),
+        ),
+        ListenableBuilder(
+          listenable: Losgehen.instanz,
+          builder: (context, _) => _Punkt(
+            icon: Icons.alarm,
+            titel: 'Losgeh-Wecker',
+            unter: Losgehen.instanz.an ? 'an · ${Losgehen.instanz.vorlauf} min vorher' : 'aus',
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LosgehSeite())),
           ),
         ),
         _Punkt(
