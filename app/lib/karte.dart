@@ -17,7 +17,8 @@ import 'darstellung.dart';
 import 'kartenlager.dart';
 
 const _detailAb = 10.0; // ab dieser Zoomstufe fällt die grobe Übersicht auf
-const _feinAb = 9.0; // darunter reicht die Übersicht (bis Zoom 9), die Bundesländer werden nicht gezeichnet
+const _feinAb = 10.0; // darunter reicht die Übersicht (bis Z9 + Hochskalieren), die Bundesländer werden nicht gezeichnet –
+// bei 9–10 kosteten beide Vektorebenen zusammen zu viel (lange Verbindungen, App „reagiert nicht“)
 final _aachen = LatLng(50.7753, 6.0839); // Hbf, bis der Standort da ist
 
 /// Protomaps-Stile mit vereinfachten Beschriftungen: die Originale bauen den Text mit `format` (zweisprachig,
@@ -174,8 +175,13 @@ class _KarteState extends State<Karte> {
     final stil = Theme.of(context).brightness == Brightness.dark ? (oledAktiv(context) ? _schwarz : _dunkel) : hellerStil;
     // Kein Dateicache (Quelle liegt lokal, die Kachel-IDs beider Ebenen würden sich mischen), dafür größere
     // Speicher-Caches als die Vorgabe (10 MB / 20 Kacheln), damit Verschieben nicht neu liest und parst.
+    // Die Übersicht als Raster: herausgezoomt (lange Verbindung, ganz DE im Bild) zeichnete der Vektormodus jedes
+    // Bild alle Kacheln samt Beschriftung neu, auf dem Haupt-Thread → Android meldete „reagiert nicht“. Raster rendert
+    // jede Kachel einmal zu einem Bild.
     Widget ebene(String name, VectorTileProvider quelle) => VectorTileLayer(
           key: ValueKey('$name${_lager.stand}${identityHashCode(stil)}'), // Stilwechsel (hell/dunkel/OLED) zeichnet neu
+          layerMode: name == 'grob' ? VectorTileLayerMode.raster : VectorTileLayerMode.vector,
+          maximumZoom: name == 'grob' ? 9 : null, // Übersicht reicht bis Z9, darüber nur hochskaliert
           theme: stil,
           tileProviders: TileProviders({'protomaps': quelle}),
           fileCacheTtl: Duration.zero,
