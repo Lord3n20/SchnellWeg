@@ -120,7 +120,8 @@ func TestFahrradUndEinrad(t *testing.T) {
 		t.Errorf("Rad mit Bahn: erwartet Fahrt mit Fahrradticket: %s", w.Body)
 	}
 	for k, code := range map[string]int{
-		`,"art":"einrad","kmh":13`: 200, `,"art":"einrad","kmh":25`: 400, `,"art":"rad","kmh":30`: 200,
+		`,"art":"einrad","kmh":13`: 200, `,"art":"einrad","kmh":25`: 200, `,"art":"einrad","kmh":500`: 200, `,"art":"einrad","kmh":0.5`: 200,
+		`,"art":"einrad","kmh":0`: 400, `,"art":"einrad","kmh":-3`: 400, `,"art":"rad","kmh":30`: 200,
 		`,"kmh":13`: 400, `,"art":"auto","kmh":5`: 400,
 	} {
 		if w, _ := post(s, fmt.Sprintf(body, k)); w.Code != code {

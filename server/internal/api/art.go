@@ -1,13 +1,16 @@
 package api
 
-import "time"
+import (
+	"math"
+	"time"
+)
 
 // Fortbewegungsarten (D-21, D-22, D-30). Zu Fuß und Einrad rechnen mit Valhallas Fußgänger-Kosten (Wege wie zu
 // Fuß) und skalieren die Zeit aufs gewählte Tempo. Die Räder fahren mit Fahrrad-Kosten ihres Typs (Straßen und
 // Radwege, keine reinen Fußwege, keine Treppen) und fallen nur dann auf Fußwege mit Treppenstrafe zurück, wenn es
 // sonst keinen Weg gibt (Ziel mitten in der Fußgängerzone, Bahnsteig nur über Treppen).
 type Art struct {
-	Min, Max float64 // km/h
+	Min, Max float64 // km/h; Min gilt ausschließlich, wenn er 0 ist (Custom: jedes Tempo über 0)
 	Rad      bool    // Fahrrad: direkter Weg steht vorn, ÖV nur, wenn nötig
 	NurBahn  bool    // nur Schiene, Fahrten brauchen ein Fahrradticket
 	RadTyp   string  // Valhalla bicycle_type (Road | Hybrid | City | Mountain); "" = nur Fußgänger-Kosten
@@ -21,7 +24,7 @@ type Art struct {
 var arten = map[string]Art{
 	"":       {Min: 2, Max: 8},
 	"fuss":   {Min: 2, Max: 8},
-	"einrad": {Min: 4, Max: 20},
+	"einrad": {Min: 0, Max: math.Inf(1)}, // App „Custom“: frei wählbar (Enzo 28.10.), 0 und weniger ergäbe keine Wegzeit
 	// zusammengeklappt in Bus und Bahn, kein Ticket
 	"klapprad": {Min: 6, Max: 30, Rad: true, BusMalus: 5 * time.Minute, RadTyp: "City", Belag: 0.5, Stufen: 120},
 	"fixie":    {Min: 6, Max: 40, Rad: true, NurBahn: true, RadTyp: "Hybrid", Belag: 0.5, Stufen: 300},

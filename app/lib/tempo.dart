@@ -10,10 +10,10 @@ import 'package:path_provider/path_provider.dart';
 
 const standardKmh = 4.3;
 
-/// Art → (min, max) km/h; außerhalb antwortet /v1/route mit 400.
+/// Art → (min, max) km/h; außerhalb antwortet /v1/route mit 400. Custom: alles über 0 (min ausschließlich).
 const grenzen = {
   'fuss': (2.0, 8.0),
-  'einrad': (4.0, 20.0),
+  'einrad': (0.0, double.infinity),
   'klapprad': (6.0, 30.0),
   'fixie': (6.0, 40.0),
   'rennrad': (10.0, 45.0),
@@ -73,6 +73,8 @@ class TempoProfil {
   /// Name für die Anzeige; `name` bleibt der feste Schlüssel in tempo.json.
   String get anzeige => titel ?? _customTitel[name] ?? name;
   bool get umbenennbar => art == 'einrad';
+  bool get frei => max.isInfinite; // Tempo per Eingabe statt Regler
+  bool erlaubt(double v) => v > 0 && v >= min && v <= max;
 
   double get min => grenzen[art]!.$1;
   double get max => grenzen[art]!.$2;
@@ -102,7 +104,7 @@ class Tempo {
         final e = (p[x.name] ?? p[_alteNamen[x.name]]) as Map<String, dynamic>?;
         if (x.umbenennbar) x.titel = e?['titel'] as String?;
         final v = (e?['kmh'] as num?)?.toDouble();
-        if (v == null || v < x.min || v > x.max) continue;
+        if (v == null || !x.erlaubt(v)) continue;
         x.kmh = v;
         x.gemessen = DateTime.tryParse(e!['gemessen'] as String? ?? '');
       }
@@ -159,6 +161,13 @@ class _TempoBlatt extends StatefulWidget {
 
 class _TempoBlattState extends State<_TempoBlatt> {
   late double _kmh = widget.p.kmh;
+  late final _feld = TextEditingController(text: widget.p.kmh.toString().replaceAll('.', ','));
+
+  @override
+  void dispose() {
+    _feld.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -168,6 +177,18 @@ class _TempoBlattState extends State<_TempoBlatt> {
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('${p.anzeige}: ${tempoText(_kmh)}', style: Theme.of(context).textTheme.titleMedium),
+          if (p.frei)
+            TextField(
+              controller: _feld,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(suffixText: 'km/h', helperText: 'jedes Tempo über 0'),
+              onChanged: (t) {
+                final v = double.tryParse(t.replaceAll(',', '.'));
+                if (v != null && p.erlaubt(v)) setState(() => _kmh = v);
+              },
+            )
+          else
           Slider(
             value: _kmh,
             min: p.min,

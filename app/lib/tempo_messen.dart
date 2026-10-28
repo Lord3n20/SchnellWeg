@@ -207,7 +207,7 @@ class _MessSeiteState extends State<MessSeite> {
   void _fertig() {
     final kmh = (_kmh * 10).round() / 10;
     final p = widget.profil;
-    if (kmh < p.min || kmh > p.max) {
+    if (!p.erlaubt(kmh)) {
       setState(() => _fehler = 'Gemessen ${tempoText(kmh)} – für ${artName[p.art]} gehen ${tempoText(p.min)} bis ${tempoText(p.max)}.');
       return;
     }

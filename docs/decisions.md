@@ -247,6 +247,8 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   Fahrten tragen `"rad": true`; der direkte Weg steht vorn. Valhalla rechnet weiter mit Fußgänger-Kosten
   (Annahme: Wegewahl wie zu Fuß, siehe oben); eigene Fahrrad-Kosten erst mit Fahrradnavigation.
 - Status: umgesetzt (routing-core 0.1.14); App-Profile folgen.
+- 28.10. (Betreiber): Einrad heißt in der App „Custom“ (zwei selbst benannte Profile), Tempo frei: Server nimmt für
+  `einrad` jedes `kmh` > 0 an (0 und negativ ergäben keine Wegzeit), routing-core 0.1.28.
 
 ## D-22 Fahrradtypen: Klapprad, Fixie, Rennrad, Mountainbike (28.10.)
 - Betreiber 28.10.: Fußwege sind nur mit dem Rennrad doof. Klapprad kann in Bus und Bahn mit; Fixie leicht, kann

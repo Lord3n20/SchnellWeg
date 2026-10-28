@@ -140,7 +140,7 @@ func (q routeReq) walkScale() (float64, bool) {
 		return 1, true
 	}
 	a, ok := arten[q.Art]
-	if k := *q.KMH; ok && k >= a.Min && k <= a.Max {
+	if k := *q.KMH; ok && k > 0 && k >= a.Min && k <= a.Max && BaseKMH/k < 1e4 {
 		return BaseKMH / k, true
 	}
 	return 0, false
