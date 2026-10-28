@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -89,6 +90,9 @@ func (s *Server) mapFile(w http.ResponseWriter, r *http.Request) {
 type searchReq struct {
 	Q string `json:"q"`
 	N int    `json:"n"` // höchstens 20, Standard 10
+	// Near: ungefährer Standort [Breite, Länge] (App rundet auf 0,05°), nahe Treffer zuerst; fehlt bei alten Apps.
+	// Wird nur für die Wertung genutzt, nie protokolliert.
+	Near []float64 `json:"near,omitempty"`
 }
 
 type searchHit struct {
@@ -110,7 +114,8 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	var req searchReq
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024))
 	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil || utf8.RuneCountInString(req.Q) > 100 || req.N < 0 || req.N > 20 {
+	if err := dec.Decode(&req); err != nil || utf8.RuneCountInString(req.Q) > 100 || req.N < 0 || req.N > 20 ||
+		len(req.Near) != 0 && (len(req.Near) != 2 || math.Abs(req.Near[0]) > 90 || math.Abs(req.Near[1]) > 180) {
 		fail(w, http.StatusBadRequest, "anfrage_ungueltig")
 		return
 	}
@@ -118,7 +123,11 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 		req.N = 10
 	}
 	t0 := time.Now()
-	hs := ix.Search(req.Q, req.N)
+	lat, lon := math.NaN(), math.NaN()
+	if len(req.Near) == 2 {
+		lat, lon = req.Near[0], req.Near[1]
+	}
+	hs := ix.SearchNear(req.Q, req.N, lat, lon)
 	out := make([]searchHit, len(hs))
 	for i, h := range hs {
 		out[i] = searchHit{h.Kind, h.Name, h.Detail, h.Lat, h.Lon}

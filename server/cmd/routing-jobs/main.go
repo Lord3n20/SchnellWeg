@@ -13,8 +13,8 @@
 //	          danach wird das Valhalla-Add-on neu gestartet, falls es läuft
 //	footpaths Umstiegswege zwischen nahen Halten (GTFS-Stand) mit einem kurz gestarteten Valhalla auf dem
 //	          Tile-Stand rechnen (D-12) → footpaths/current/footpaths.csv
-//	geocode   Suchliste (Adressen, Straßen, Orte, Einrichtungen in gtfs_box) aus dem OSM-Stand
-//	          → geocode/current/geocode.tsv
+//	geocode   Suchliste (Adressen, Straßen, Orte, Einrichtungen) aus ganzen Ländern (geocode_sources), höchstens
+//	          alle osm_tage → geocode/current/geocode.tsv + geocode.idx
 //	map       Kartenausschnitt (Protomaps-Basiskarte, PMTiles) für die App, höchstens alle osm_tage
 //	          → map/current/region.pmtiles
 //
@@ -53,6 +53,7 @@ var (
 	dir         = flag.String("dir", "/config", "Ablage (HA: Konfigurationsordner des Job-Add-ons)")
 	jobList     = flag.String("job", "gtfs,osm,valhalla,footpaths,geocode,map,rwth", "Jobs, durch Komma getrennt, in dieser Reihenfolge")
 	sources     = flag.String("osm_sources", "", "Geofabrik-Pfade ohne -latest.osm.pbf, durch Komma getrennt")
+	geoSources  = flag.String("geocode_sources", "europe/germany,europe/netherlands/limburg,europe/belgium", "Adresssuche: ganze Geofabrik-Gebiete, durch Komma getrennt (D-26)")
 	region      = flag.String("region", "/etc/schnellweg/region.geojson", "Regionspolygon (GeoJSON)")
 	maxMem      = flag.Int64("max_mem_mb", 2048, "Speicherspitze je Job in MB (zusätzlich ≤ MemAvailable − 1 GB)")
 	concurrency = flag.Int("concurrency", 4, "Threads für den Valhalla-Bau (≤ 4)")

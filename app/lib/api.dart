@@ -3,6 +3,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'standort.dart';
 import 'zugang.dart';
 
 class ApiFehler implements Exception {
@@ -225,9 +226,15 @@ class Api {
     return (out, j['rt'] == true);
   }
 
-  /// Adressen und Orte; der Suchtext geht nur im Body raus.
-  Future<List<Ort>> suche(String q, {int n = 10}) async {
-    final (_, _, daten) = await _anfrage('POST', '/v1/search', body: {'q': q, 'n': n});
+  /// Adressen und Orte; der Suchtext geht nur im Body raus. [nahe]: ungefährer Standort, damit nahe Treffer
+  /// vorn stehen – auf 0,05° (~4 km) gerundet, genauer muss der Server es nicht wissen.
+  Future<List<Ort>> suche(String q, {int n = 10, Position? nahe}) async {
+    double grob(double x) => (x * 20).round() / 20;
+    final (_, _, daten) = await _anfrage('POST', '/v1/search', body: {
+      'q': q,
+      'n': n,
+      if (nahe != null) 'near': [grob(nahe.lat), grob(nahe.lon)],
+    });
     final hits = (jsonDecode(utf8.decode(daten)) as Map)['hits'] as List? ?? const [];
     return [for (final h in hits.cast<Map<String, dynamic>>()) Ort.json(h)];
   }

@@ -10,6 +10,7 @@ import 'favoriten.dart';
 import 'halte_db.dart';
 import 'namen.dart';
 import 'rwth.dart';
+import 'standort.dart';
 
 const _warten = Duration(milliseconds: 250);
 final _osmTag = RegExp(r'^[a-z_]+$'); // Orte ohne Adresse tragen als Detail nur ihren OSM-Typ („charging_station“)
@@ -30,11 +31,13 @@ class _ZielSucheState extends State<ZielSuche> {
   List<Ort> _halte = [], _orte = [], _gebaeude = [];
   String? _fehler;
   bool _laeuft = false;
+  Position? _nahe;
 
   @override
   void initState() {
     super.initState();
     Favoriten.instanz.laden();
+    Standort.holen().then((p) => _nahe = p); // für die Adresssuche: nahe Treffer zuerst
   }
 
   @override
@@ -67,7 +70,7 @@ class _ZielSucheState extends State<ZielSuche> {
       if (nr == _nr && mounted) setState(() => _gebaeude = g);
     });
     try {
-      final orte = await widget.api.suche(q);
+      final orte = await widget.api.suche(q, nahe: _nahe);
       if (nr != _nr || !mounted) return;
       setState(() {
         _orte = orte;

@@ -147,6 +147,12 @@ func TestSearch(t *testing.T) {
 	if c := postTo(s, "/v1/search", `{"q":"x","n":50}`).Code; c != 400 {
 		t.Fatalf("n=50: %d", c)
 	}
+	if b := postTo(s, "/v1/search", `{"q":"pontstr 5","near":[50.75,6.1]}`).Body.String(); !strings.Contains(b, "Pontstraße 5") {
+		t.Fatalf("near: %s", b)
+	}
+	if c := postTo(s, "/v1/search", `{"q":"pontstr","near":[50.75]}`).Code; c != 400 {
+		t.Fatalf("near mit einem Wert: %d", c)
+	}
 }
 
 func TestMap(t *testing.T) {

@@ -1,136 +1,14 @@
 package geocode
 
 import (
-	"bytes"
-	"io"
-	"os"
+	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 	"unicode"
 	"unicode/utf8"
-	"unsafe"
 )
-
-// Index durchsucht die Einträge über die Wortanfänge: jedes Wort eines Suchtexts muss Anfang eines Worts im
-// Eintrag (Name + Detail) sein. Sortierte Wortliste + Trefferlisten. Die Einträge selbst bleiben als TSV-Zeilen in
-// den (per mmap eingeblendeten) Dateien; im Speicher stehen je Eintrag nur Lage der Zeile und Koordinaten
-// (D-24: ~1 Mio. Einträge kosteten als Strings ~130 MB Heap, so liest das System nur die gebrauchten Seiten).
-type Index struct {
-	blobs  [][]byte
-	ents   []ent
-	words  []string  // sortiert, eindeutig
-	posts  [][]int32 // je Wort die Einträge (Wort in Name oder Detail)
-	nposts [][]int32 // je Wort die Einträge, in deren Namen es steht (Kandidaten zuerst hieraus)
-}
-
-type ent struct {
-	blob     uint16
-	off, n   uint32 // Zeile ohne Zeilenende
-	lat, lon float64
-}
-
-// Load liest die TSVs aus Write (Suchliste aus OSM, Gebäudeliste RWTH …) in einen gemeinsamen Index.
-func Load(rs ...io.Reader) (*Index, error) {
-	var blobs [][]byte
-	for _, r := range rs {
-		b, err := io.ReadAll(r)
-		if err != nil {
-			return nil, err
-		}
-		blobs = append(blobs, b)
-	}
-	return index(blobs), nil
-}
-
-// LoadFiles blendet die TSVs per mmap ein (nur lesend, nie wieder ausgeblendet) und baut daraus den Index.
-func LoadFiles(paths ...string) (*Index, error) {
-	var blobs [][]byte
-	for _, p := range paths {
-		f, err := os.Open(p)
-		if err != nil {
-			return nil, err
-		}
-		st, err := f.Stat()
-		if err == nil && st.Size() > 0 {
-			var b []byte
-			b, err = syscall.Mmap(int(f.Fd()), 0, int(st.Size()), syscall.PROT_READ, syscall.MAP_SHARED)
-			blobs = append(blobs, b)
-		}
-		f.Close()
-		if err != nil {
-			return nil, err
-		}
-	}
-	return index(blobs), nil
-}
-
-func index(blobs [][]byte) *Index {
-	ix := &Index{blobs: blobs}
-	for bi, b := range blobs {
-		for off := 0; off < len(b); {
-			n := bytes.IndexByte(b[off:], '\n')
-			if n < 0 {
-				n = len(b) - off
-			}
-			f := bytes.Split(b[off:off+n], []byte{'\t'})
-			if len(f) == 5 {
-				lat, e1 := strconv.ParseFloat(string(f[3]), 64)
-				lon, e2 := strconv.ParseFloat(string(f[4]), 64)
-				if e1 == nil && e2 == nil {
-					ix.ents = append(ix.ents, ent{uint16(bi), uint32(off), uint32(n), lat, lon})
-				}
-			}
-			off += n + 1
-		}
-	}
-	ix.build()
-	return ix
-}
-
-// Len ist die Zahl der Einträge.
-func (ix *Index) Len() int { return len(ix.ents) }
-
-// entry liest Eintrag i aus seiner Zeile; die Strings zeigen ohne Kopie in die Datei.
-func (ix *Index) entry(i int32) Entry {
-	e := ix.ents[i]
-	line := ix.blobs[e.blob][e.off : e.off+e.n]
-	var f [3]string
-	for k := range f {
-		t := bytes.IndexByte(line, '\t')
-		f[k] = unsafe.String(unsafe.SliceData(line), t)
-		line = line[t+1:]
-	}
-	return Entry{Kind: f[0], Name: f[1], Detail: f[2], Lat: e.lat, Lon: e.lon}
-}
-
-func (ix *Index) build() {
-	m, nm := map[string][]int32{}, map[string][]int32{}
-	for i := range ix.ents {
-		e := ix.entry(int32(i))
-		seen := map[string]bool{}
-		name := words(Normalize(e.Name))
-		for k, w := range append(name, words(Normalize(e.Detail))...) {
-			if !seen[w] {
-				seen[w] = true
-				m[w] = append(m[w], int32(i))
-				if k < len(name) {
-					nm[w] = append(nm[w], int32(i))
-				}
-			}
-		}
-	}
-	ix.words = make([]string, 0, len(m))
-	for w := range m {
-		ix.words = append(ix.words, w)
-	}
-	sort.Strings(ix.words)
-	ix.posts, ix.nposts = make([][]int32, len(ix.words)), make([][]int32, len(ix.words))
-	for i, w := range ix.words {
-		ix.posts[i], ix.nposts[i] = m[w], nm[w]
-	}
-}
 
 // Normalize: klein, Umlaute/ß gefaltet, Satzzeichen zu Leerzeichen; ein Durchlauf, eine Zuweisung (läuft je
 // Kandidat, also oft).
@@ -170,43 +48,187 @@ func Normalize(s string) string {
 
 func words(s string) []string { return strings.Fields(s) }
 
-// maxCand begrenzt die geprüften Einträge je Suche (Zeitbudget 30 ms auf dem Server).
-const maxCand = 5000
+const (
+	maxCand  = 5000    // geprüfte Einträge je Durchgang (Zeitbudget 30 ms auf dem Server)
+	maxUnion = 1 << 21 // größte Trefferliste eines Suchworts, die noch zusammengeführt wird
+	maxWords = 20000   // Wörter zu einem Wortanfang, darüber zu allgemein („s“, „ha“)
+)
 
-// candidates liefert die Einträge des Suchworts mit den wenigsten Treffern in posts (höchstens maxCand).
-func (ix *Index) candidates(qw []string, posts [][]int32) []int32 {
-	var cand []int32
-	best := -1
-	for _, w := range qw {
-		if len(w) < 2 {
-			continue // nur prüfen, nicht als Kandidatenquelle
+func isNum(w string) bool { return w != "" && w[0] >= '0' && w[0] <= '9' }
+
+// term sind die Wörter des Index mit dem Suchwort als Anfang (beim Tippen: „5“ findet auch 50).
+func (p *part) term(w string) (ids []int, total int, ok bool) {
+	lo := sort.Search(len(p.wordOff)-1, func(i int) bool { return p.word(i) >= w })
+	for i := lo; i < len(p.wordOff)-1; i++ {
+		x := p.word(i)
+		if !strings.HasPrefix(x, w) {
+			break
 		}
-		lo := sort.SearchStrings(ix.words, w)
-		total := 0
-		for i := lo; i < len(ix.words) && strings.HasPrefix(ix.words[i], w) && total <= maxCand; i++ {
-			total += len(posts[i])
+		if len(ids) == maxWords {
+			return nil, 0, false
 		}
-		if best >= 0 && total >= best {
+		ids = append(ids, i)
+		total += int(p.postOff[i+1] - p.postOff[i])
+	}
+	return ids, total, true
+}
+
+// list führt die Trefferlisten der Wörter zusammen, beschränkt auf die Eintragsbereiche rs (nil = alle);
+// aufsteigend nach Eintrag, Namensmarke bei Dopplung verodert.
+func (p *part) list(ids []int, rs [][2]uint32) []uint32 {
+	var ls [][]uint32
+	for _, i := range ids {
+		l := p.posts[p.postOff[i]:p.postOff[i+1]]
+		if rs == nil {
+			ls = append(ls, l)
 			continue
 		}
-		var c []int32
-		for i := lo; i < len(ix.words) && strings.HasPrefix(ix.words[i], w) && len(c) < maxCand; i++ {
-			c = append(c, posts[i]...)
+		for _, r := range rs {
+			a := sort.Search(len(l), func(k int) bool { return l[k]>>1 >= r[0] })
+			b := sort.Search(len(l), func(k int) bool { return l[k]>>1 >= r[1] })
+			if a < b {
+				ls = append(ls, l[a:b])
+			}
 		}
-		cand, best = c, total
 	}
-	return cand
+	for len(ls) > 1 { // paarweise zusammenführen: N·log(k)
+		var next [][]uint32
+		for i := 0; i < len(ls); i += 2 {
+			if i+1 == len(ls) {
+				next = append(next, ls[i])
+			} else {
+				next = append(next, merge(ls[i], ls[i+1]))
+			}
+		}
+		ls = next
+	}
+	if len(ls) == 0 {
+		return nil
+	}
+	return slices.Clip(ls[0]) // kann direkt in die eingeblendete Datei zeigen: append darf dort nie hineinschreiben
+}
+
+func merge(a, b []uint32) []uint32 {
+	out := make([]uint32, 0, len(a)+len(b))
+	i, j := 0, 0
+	for i < len(a) && j < len(b) {
+		switch x, y := a[i]>>1, b[j]>>1; {
+		case x < y:
+			out = append(out, a[i])
+			i++
+		case x > y:
+			out = append(out, b[j])
+			j++
+		default:
+			out = append(out, a[i]|b[j])
+			i, j = i+1, j+1
+		}
+	}
+	out = append(out, a[i:]...)
+	return append(out, b[j:]...)
+}
+
+// intersect behält aus a die Einträge, die auch in b stehen (Namensmarke von a).
+func intersect(a, b []uint32) []uint32 {
+	out := a[:0:0]
+	j := 0
+	for _, v := range a {
+		for j < len(b) && b[j]>>1 < v>>1 {
+			j++
+		}
+		if j < len(b) && b[j]>>1 == v>>1 {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// candidates sucht die Einträge, die zu allen Suchwörtern passen könnten, in den Bereichen rs (nil = alle):
+// Trefferliste des seltensten Worts, geschnitten mit den nächsten, bis höchstens maxCand übrig sind; sonst zuerst
+// die mit dem Wort im Namen (Orte und Postleitzahlen im Detail stehen bei Tausenden Adressen).
+func (p *part) candidates(qw []string, rs [][2]uint32) []uint32 {
+	type t struct {
+		ids   []int
+		total int
+	}
+	var ts []t
+	for _, w := range qw {
+		if len(w) < 2 && !isNum(w) {
+			continue // ein Buchstabe: nur prüfen
+		}
+		ids, total, ok := p.term(w)
+		if !ok {
+			continue
+		}
+		if total == 0 {
+			return nil
+		}
+		ts = append(ts, t{ids, total})
+	}
+	sort.Slice(ts, func(i, j int) bool { return ts[i].total < ts[j].total })
+	var c []uint32
+	started := false
+	for i, x := range ts {
+		if x.total > maxUnion && i > 0 {
+			break // „5“ (auch 5xxxx-Postleitzahlen): Zusammenführen kostete ~0,5 s; die Wertung prüft es ohnehin
+		}
+		l := p.list(x.ids, rs)
+		if !started {
+			c, started = l, true
+		} else {
+			c = intersect(c, l)
+		}
+		if len(c) <= maxCand {
+			break
+		}
+	}
+	if len(c) > maxCand {
+		out := make([]uint32, 0, maxCand)
+		for _, flag := range []uint32{1, 0} {
+			for _, v := range c {
+				if v&1 == flag && len(out) < maxCand {
+					out = append(out, v)
+				}
+			}
+		}
+		c = out
+	}
+	return c
+}
+
+// near liefert die Eintragsbereiche der Zellen um (lat, lon), aufsteigend.
+func (p *part) near(lat, lon float64) [][2]uint32 {
+	if len(p.cells) == 0 {
+		return nil
+	}
+	c := cellOf(lat, lon)
+	var rs [][2]uint32
+	for dr := int32(-1); dr <= 1; dr++ {
+		for dc := int32(-1); dc <= 1; dc++ {
+			if r, ok := p.cells[c+dr*1000+dc]; ok {
+				rs = append(rs, r)
+			}
+		}
+	}
+	sort.Slice(rs, func(i, j int) bool { return rs[i][0] < rs[j][0] })
+	return rs
 }
 
 // Hit ist ein Suchtreffer.
 type Hit struct {
 	Entry
 	score int
+	km    float64 // Entfernung zum Nutzer, NaN ohne Standort
 }
 
-// Search liefert bis zu n Treffer für q. Wertung: alle Wörter müssen passen; genaue Wörter, Treffer am
-// Namensanfang und Adressen mit passender Hausnummer zählen mehr, kurze Namen gewinnen bei Gleichstand.
-func (ix *Index) Search(q string, n int) []Hit {
+// Search liefert bis zu n Treffer für q ohne Standort.
+func (ix *Index) Search(q string, n int) []Hit { return ix.SearchNear(q, n, math.NaN(), math.NaN()) }
+
+// SearchNear liefert bis zu n Treffer für q; mit Standort (lat, lon; NaN = keiner) zählen nahe Treffer mehr und
+// die Umgebung (~100 km) wird zuerst durchsucht. Wertung: alle Wörter müssen passen; genaue Wörter, Treffer am
+// Namensanfang und Adressen mit passender Hausnummer zählen mehr, bei Gleichstand gewinnt das Nähere, dann der
+// kürzere Name.
+func (ix *Index) SearchNear(q string, n int, lat, lon float64) []Hit {
 	var qw []string
 	for _, w := range words(Normalize(q)) { // „Pont Str 5“ → „pontstr 5“
 		if (w == "str" || w == "strasse") && len(qw) > 0 {
@@ -225,25 +247,63 @@ func (ix *Index) Search(q string, n int) []Hit {
 	if !long {
 		return nil // ein einzelnes Zeichen passt auf fast alles
 	}
-	// Kandidaten aus dem seltensten Wort, zuerst nur Einträge mit dem Wort im Namen: Orte und Postleitzahlen im
-	// Detail stehen bei Tausenden Adressen („vaals“) und würden sonst alle geprüft.
-	hits := ix.score(ix.candidates(qw, ix.nposts), qw)
-	if len(hits) == 0 {
-		hits = ix.score(ix.candidates(qw, ix.posts), qw)
+	here := !math.IsNaN(lat) && !math.IsNaN(lon)
+	var hits []Hit
+	for _, p := range ix.parts {
+		c := p.candidates(qw, nil)
+		if here {
+			if rs := p.near(lat, lon); rs != nil {
+				c = append(c, p.candidates(qw, rs)...)
+			}
+		}
+		hits = append(hits, p.score(c, qw, lat, lon)...)
 	}
 	sort.SliceStable(hits, func(a, b int) bool {
 		if hits[a].score != hits[b].score {
 			return hits[a].score > hits[b].score
+		}
+		if here {
+			if da, db := distRank(hits[a].km), distRank(hits[b].km); da != db {
+				return da < db
+			}
 		}
 		if la, lb := len(hits[a].Name), len(hits[b].Name); la != lb {
 			return la < lb
 		}
 		return natLess(hits[a].Name, hits[b].Name)
 	})
-	if len(hits) > n {
-		hits = hits[:n]
+	// Gleicher Name und gleiches Detail im Umkreis von ~200 m nur einmal (Grenzgebiete, Gebäude + Knoten)
+	out := hits[:0]
+	for _, h := range hits {
+		dup := false
+		for _, o := range out {
+			if o.Name == h.Name && o.Detail == h.Detail && math.Abs(o.Lat-h.Lat) < 0.002 && math.Abs(o.Lon-h.Lon) < 0.003 {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			out = append(out, h)
+			if len(out) == n {
+				break
+			}
+		}
 	}
-	return hits
+	return out
+}
+
+// distRank fasst Entfernungen grob zusammen (0–1, 1–3, 3–7 … km), damit „Weg 2“ vor „Weg 10“ bleibt.
+func distRank(km float64) int {
+	if math.IsNaN(km) {
+		return 99
+	}
+	return int(math.Log2(km + 1))
+}
+
+func distKm(lat1, lon1, lat2, lon2 float64) float64 {
+	dy := (lat2 - lat1) * 111.2
+	dx := (lon2 - lon1) * 111.2 * math.Cos((lat1+lat2)/2*math.Pi/180)
+	return math.Hypot(dx, dy)
 }
 
 // minor sind Kategorien, die selten Ziel einer Fahrt sind und sonst Namen wie „Uniklinik“ verdrängen.
@@ -253,7 +313,7 @@ var minor = map[string]bool{"parking": true, "charging_station": true, "car_shar
 
 func hasDigit(ws []string) bool {
 	for _, w := range ws {
-		if w != "" && w[0] >= '0' && w[0] <= '9' {
+		if isNum(w) {
 			return true
 		}
 	}
@@ -274,16 +334,18 @@ func natLess(a, b string) bool {
 }
 
 // score prüft die Kandidaten (jedes Suchwort muss passen) und bewertet sie.
-func (ix *Index) score(cand []int32, qw []string) []Hit {
+func (p *part) score(cand []uint32, qw []string, lat, lon float64) []Hit {
 	var hits []Hit
-	seen := map[int32]bool{}
+	seen := make(map[uint32]bool, len(cand))
 	digit := hasDigit(qw)
-	for _, id := range cand {
+	here := !math.IsNaN(lat) && !math.IsNaN(lon)
+	for _, v := range cand {
+		id := v >> 1
 		if seen[id] {
 			continue
 		}
 		seen[id] = true
-		e := ix.entry(id)
+		e := p.entry(id)
 		norm := Normalize(e.Name)
 		nw := len(words(norm))
 		ew := words(norm + " " + Normalize(e.Detail))
@@ -291,7 +353,7 @@ func (ix *Index) score(cand []int32, qw []string) []Hit {
 		for _, w := range qw {
 			m := 0
 			cmp := ew
-			if len(w) < 4 && w[0] >= '0' && w[0] <= '9' {
+			if len(w) < 4 && isNum(w) {
 				cmp = ew[:nw] // Hausnummer nur im Namen, nicht in der Postleitzahl suchen
 			}
 			for k, x := range cmp {
@@ -322,6 +384,9 @@ func (ix *Index) score(cand []int32, qw []string) []Hit {
 			score += 3
 		case "ort":
 			score += 3
+			if e.Detail == "city" || e.Detail == "town" {
+				score++ // „Bergneustadt“ (Stadt) vor gleichnamigen Weilern
+			}
 		case "poi":
 			if minor[e.Detail] {
 				score -= 2
@@ -337,7 +402,19 @@ func (ix *Index) score(cand []int32, qw []string) []Hit {
 				score -= 2
 			}
 		}
-		hits = append(hits, Hit{Entry: e, score: score})
+		km := math.NaN()
+		if here {
+			km = distKm(lat, lon, e.Lat, e.Lon)
+			switch {
+			case km < 3:
+				score += 3
+			case km < 15:
+				score += 2
+			case km < 60:
+				score++
+			}
+		}
+		hits = append(hits, Hit{Entry: e, score: score, km: km})
 	}
 	return hits
 }
