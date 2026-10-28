@@ -131,6 +131,41 @@ func TestFahrradUndEinrad(t *testing.T) {
 	}
 }
 
+func TestFahrradtypen(t *testing.T) {
+	body := `{"from":{"lat":50.7701,"lon":6.08},"to":{"lat":50.7799,"lon":6.08},"time":"2026-10-28T07:55:00+01:00"%s}`
+	day := time.Date(2026, 10, 28, 0, 0, 0, 0, Berlin)
+	s := testServer(day) // Linie 1 ist ein Bus
+	// Klapprad: zusammengeklappt in den Bus, ohne Fahrradticket; Fixie/Rennrad/MTB nur Bahn
+	if w, r := post(s, fmt.Sprintf(body, `,"art":"klapprad","kmh":15`)); w.Code != 200 || len(r.Journeys) != 1 || r.Journeys[0].Legs[1].Rad {
+		t.Errorf("Klapprad im Bus: %d %s", w.Code, w.Body)
+	}
+	for _, a := range []string{"fixie", "rennrad", "mtb"} {
+		if w, _ := post(s, fmt.Sprintf(body, `,"art":"`+a+`","kmh":15`)); w.Code != 422 {
+			t.Errorf("%s im Bus: Code %d, erwartet 422", a, w.Code)
+		}
+	}
+	for k, code := range map[string]int{`,"art":"rennrad","kmh":8`: 400, `,"art":"rennrad","kmh":42`: 422,
+		`,"art":"klapprad","kmh":32`: 400, `,"art":"klapprad","kmh":28`: 200, `,"art":"mtb","kmh":30`: 422} {
+		if w, _ := post(s, fmt.Sprintf(body, k)); w.Code != code {
+			t.Errorf("%s: Code %d, erwartet %d", k, w.Code, code)
+		}
+	}
+
+	// Rennrad rechnet mit Valhallas Fahrradkosten im eigenen Tempo: 60 s bleiben 60 s; das Fixie skaliert Fußzeiten.
+	s = testServer(day)
+	s.Current().TT.Routes[0].Bahn = true
+	s.Valhalla = fakeValhalla(t, 60, 0.3, 200)
+	for a, want := range map[string]time.Duration{"rennrad": time.Minute, "fixie": 13 * time.Second} {
+		w, r := post(s, fmt.Sprintf(body, `,"art":"`+a+`","kmh":20`))
+		if w.Code != 200 || len(r.Journeys) != 1 {
+			t.Fatalf("%s: %d %s", a, w.Code, w.Body)
+		}
+		if l := r.Journeys[0].Legs[2]; l.Arr.Sub(l.Dep) != want {
+			t.Errorf("%s: Abgang %v statt %v", a, l.Arr.Sub(l.Dep), want)
+		}
+	}
+}
+
 // fakeValhalla antwortet auf jede Matrix mit derselben Zeit/Strecke je Zelle; code ≠ 200 simuliert einen Fehler.
 func fakeValhalla(t *testing.T, sec, km float64, code int) *Valhalla {
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -140,7 +175,7 @@ func fakeValhalla(t *testing.T, sec, km float64, code int) *Valhalla {
 		}
 		if r.URL.Path == "/route" { // Fußweg mit Form; Zeit/Strecke wie bei der Matrix
 			var req vhRouteReq
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Locations) != 2 || req.Costing != "pedestrian" {
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Locations) != 2 || (req.Costing != "pedestrian" && req.Costing != "bicycle") {
 				t.Errorf("falsche Routenanfrage: %v", err)
 			}
 			json.NewEncoder(w).Encode(map[string]any{"trip": map[string]any{

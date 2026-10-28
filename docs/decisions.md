@@ -247,3 +247,18 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   Fahrten tragen `"rad": true`; der direkte Weg steht vorn. Valhalla rechnet weiter mit Fußgänger-Kosten
   (Annahme: Wegewahl wie zu Fuß, siehe oben); eigene Fahrrad-Kosten erst mit Fahrradnavigation.
 - Status: umgesetzt (routing-core 0.1.14); App-Profile folgen.
+
+## D-22 Fahrradtypen: Klapprad, Fixie, Rennrad, Mountainbike (28.10.)
+- Betreiber 28.10.: Fußwege sind nur mit dem Rennrad doof. Klapprad kann in Bus und Bahn mit; Fixie leicht, kann
+  Treppen getragen werden, fährt fast so schnell wie das Rennrad; Rennrad schnell, Treppen vermeiden (geht aber in
+  Ordnung); Mountainbike nicht so schnell, kann überall lang, Treppen hoch vermeiden. Je Typ 2–3 Tempostufen.
+- `art`: `klapprad` (6–30 km/h, alle Linien, kein Fahrradticket), `fixie` (6–40, nur Schiene + Fahrradticket;
+  `rad` aus D-21 gilt als Fixie), `rennrad` (10–45, Schiene + Ticket), `mtb` (6–35, Schiene + Ticket).
+  Bei allen Rädern steht der direkte Weg vorn.
+- Wege: Klapprad und Fixie wie zu Fuß (Valhalla `pedestrian`, Zeit skaliert). Mountainbike ebenso, aber
+  `step_penalty` 180 s – Valhalla unterscheidet bei Treppen nicht nach Richtung, also werden Treppen allgemein
+  gemieden, nicht nur aufwärts. Rennrad: Valhalla `bicycle` (`bicycle_type` Road, `cycling_speed` = Tempo,
+  `use_roads` 0,6, `avoid_bad_surfaces` 0,8) → keine Fußwege ohne Radfreigabe, keine Treppen, Zeit direkt von
+  Valhalla; findet das keinen Weg, Rückfall auf Fußwege mit `step_penalty` 600 s (Treppe tragen „geht in Ordnung“).
+- Umstiege zwischen Halten (Fußwege-Tabelle) bleiben für alle Arten Fußwege mit skaliertem Tempo.
+- Status: umgesetzt (routing-core 0.1.15, App).

@@ -58,12 +58,12 @@ type WalkTrace struct {
 
 func since(t time.Time) float64 { return float64(time.Since(t).Microseconds()) / 1000 }
 
-// Walk ersetzt die Gehzeiten in acc durch echte Fußwege zwischen (lat, lon) und den Halten. toStops: Weg vom
+// Walk ersetzt die Gehzeiten in acc durch echte Wege (Kostenart k, Zeiten × k.Faktor) zwischen (lat, lon) und den Halten. toStops: Weg vom
 // Ort zu den Halten (Zugang), sonst von den Halten zum Ort (Abgang). Halte ohne Weg oder mit zu langem Weg
 // entfallen.
 //
 // tr (darf nil sein) erhält die Zeiten des Aufrufs.
-func (v *Valhalla) Walk(ctx context.Context, tt *raptor.Timetable, lat, lon float64, acc []raptor.Access, toStops bool, tr *WalkTrace) ([]raptor.Access, error) {
+func (v *Valhalla) Walk(ctx context.Context, tt *raptor.Timetable, lat, lon float64, acc []raptor.Access, toStops bool, k Kosten, tr *WalkTrace) ([]raptor.Access, error) {
 	if len(acc) == 0 {
 		return acc, nil
 	}
@@ -85,8 +85,7 @@ func (v *Valhalla) Walk(ctx context.Context, tt *raptor.Timetable, lat, lon floa
 	for i, a := range acc {
 		stops[i] = loc{tt.Stops[a.Stop].Lat, tt.Stops[a.Stop].Lon}
 	}
-	req := matrixReq{Sources: here, Targets: stops, Costing: "pedestrian",
-		CostingOptions: map[string]any{"pedestrian": map[string]float64{"walking_speed": v.KMH}}}
+	req := matrixReq{Sources: here, Targets: stops, Costing: k.Costing, CostingOptions: k.Opts}
 	if !toStops {
 		req.Sources, req.Targets = stops, here
 	}
@@ -126,7 +125,7 @@ func (v *Valhalla) Walk(ctx context.Context, tt *raptor.Timetable, lat, lon floa
 		if c.t == nil || c.d == nil || *c.d*1000 > v.MaxM {
 			continue
 		}
-		out = append(out, raptor.Access{Stop: a.Stop, Sec: int32(*c.t + 0.5)})
+		out = append(out, raptor.Access{Stop: a.Stop, Sec: int32(*c.t*k.Faktor + 0.5)})
 	}
 	return out, nil
 }
@@ -134,13 +133,18 @@ func (v *Valhalla) Walk(ctx context.Context, tt *raptor.Timetable, lat, lon floa
 // access liefert Zugangs- und Abgangshalte; mit Valhalla beide Matrizen gleichzeitig. vh: Dauer der beiden
 // Valhalla-Aufrufe in ms (Start, Ziel) für die Messung; tr (nil = aus) schlüsselt sie weiter auf.
 // weit vergrößert den Suchradius (schnellere Fortbewegung, D-21); nurBahn lässt nur Halte mit Schienenverkehr zu.
-func (s *Server) access(ctx context.Context, tt *raptor.Timetable, from, to point, weit float64, nurBahn bool, tr *[2]WalkTrace) (fa, ta []raptor.Access, vh [2]float64) {
+// Die Zeiten gelten fürs gewählte Tempo: Luftlinie × scale, Valhalla je Kostenart (die erste, die antwortet).
+func (s *Server) access(ctx context.Context, tt *raptor.Timetable, from, to point, weit, scale float64, nurBahn bool, ks []Kosten, tr *[2]WalkTrace) (fa, ta []raptor.Access, vh [2]float64) {
 	near := func(p point) []raptor.Access {
 		acc := tt.Near(*p.Lat, *p.Lon, s.AccessM*weit)
 		if nurBahn {
 			acc = slices.DeleteFunc(acc, func(a raptor.Access) bool { return !tt.HatBahn(a.Stop) })
 		}
-		return tt.PerRoute(acc)
+		acc = tt.PerRoute(acc)
+		for i := range acc {
+			acc[i].Sec = int32(float64(acc[i].Sec)*scale + 0.5)
+		}
+		return acc
 	}
 	fa, ta = near(from), near(to)
 	if s.Valhalla == nil {
@@ -153,8 +157,10 @@ func (s *Server) access(ctx context.Context, tt *raptor.Timetable, from, to poin
 		if tr != nil {
 			t = &tr[k]
 		}
-		if r, err := s.Valhalla.Walk(ctx, tt, *p.Lat, *p.Lon, acc, toStops, t); err == nil {
-			return r
+		for _, k := range ks {
+			if r, err := s.Valhalla.Walk(ctx, tt, *p.Lat, *p.Lon, acc, toStops, k, t); err == nil {
+				return r
+			}
 		}
 		return acc
 	}

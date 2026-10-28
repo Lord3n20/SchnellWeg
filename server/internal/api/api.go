@@ -104,11 +104,8 @@ type routeReq struct {
 	Fern  bool       `json:"fern"`  // Fernverkehr zulassen; sonst nur, was das Deutschlandsemesterticket abdeckt
 	Debug bool       `json:"debug"` // Zeiten der Valhalla-Aufrufe aufschlüsseln (nur Messung, keine Orte)
 	KMH   *float64   `json:"kmh"`   // Gehtempo (App-Einstellung, D-12); fehlt es, gilt BaseKMH
-	Art   string     `json:"art"`   // fuss (Standard) | einrad | rad (D-21)
+	Art   string     `json:"art"`   // fuss (Standard) | einrad | klapprad | fixie | rennrad | mtb (D-21, D-22); rad = fixie
 }
-
-// Tempogrenzen je Fortbewegungsart (D-21). Einrad und Rad nutzen dieselben Wege wie zu Fuß, nur schneller.
-var kmhGrenzen = map[string][2]float64{"": {2, 8}, "fuss": {2, 8}, "einrad": {4, 20}, "rad": {6, 35}}
 
 // reichweite: Faktor für Zugangsradius und direkten Weg; schneller unterwegs = weiter, höchstens das Vierfache.
 func (q routeReq) reichweite() float64 {
@@ -126,8 +123,8 @@ func (q routeReq) walkScale() (float64, bool) {
 	if q.KMH == nil {
 		return 1, true
 	}
-	g, ok := kmhGrenzen[q.Art]
-	if k := *q.KMH; ok && k >= g[0] && k <= g[1] {
+	a, ok := arten[q.Art]
+	if k := *q.KMH; ok && k >= a.Min && k <= a.Max {
 		return BaseKMH / k, true
 	}
 	return 0, false
@@ -148,7 +145,7 @@ type legOut struct {
 	Headsign string    `json:"headsign,omitempty"`
 	TripID   string    `json:"trip_id,omitempty"`
 	Fern     bool      `json:"fern,omitempty"`  // nicht im Deutschlandticket
-	Rad      bool      `json:"rad,omitempty"`   // Fahrrad fährt mit: Fahrradticket nötig (D-21)
+	Rad      bool      `json:"rad,omitempty"`   // Fahrrad fährt mit: Fahrradticket nötig (D-21; nicht beim Klapprad)
 	Risk     bool      `json:"risk,omitempty"`  // Anschluss an diese Fahrt laut Prognose gefährdet
 	Shape    string    `json:"shape,omitempty"` // Fußweg: Wegform (encoded polyline, Genauigkeit 6)
 	Stops    []string  `json:"stops,omitempty"` // Fahrt: Halte-IDs vom Ein- bis zum Ausstieg
@@ -192,7 +189,8 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	dec.DisallowUnknownFields()
 	err := dec.Decode(&req)
 	scale, okKMH := req.walkScale()
-	if _, okArt := kmhGrenzen[req.Art]; err != nil || !req.From.ok() || !req.To.ok() || !okKMH || !okArt {
+	art, okArt := arten[req.Art]
+	if err != nil || !req.From.ok() || !req.To.ok() || !okKMH || !okArt {
 		fail(w, http.StatusBadRequest, "anfrage_ungueltig")
 		return
 	}
@@ -214,9 +212,13 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	liveC := make(chan *rt.Snapshot, 1) // Echtzeit parallel zu den Zugangswegen holen
 	go func() { liveC <- s.live(r.Context()) }()
 	directC := make(chan *journeyOut, 1) // reiner Fußweg, ebenfalls parallel
-	weit, rad := req.reichweite(), req.Art == "rad"
-	go func() { directC <- s.directWalk(r.Context(), req.From, req.To, t, scale, weit) }()
-	from, to, vh := s.access(r.Context(), p.TT, req.From, req.To, weit, rad, tr)
+	weit, kmh := req.reichweite(), BaseKMH/scale
+	var ks []Kosten
+	if s.Valhalla != nil {
+		ks = art.kosten(s.Valhalla.KMH, kmh, scale)
+	}
+	go func() { directC <- s.directWalk(r.Context(), req.From, req.To, t, scale, weit, ks) }()
+	from, to, vh := s.access(r.Context(), p.TT, req.From, req.To, weit, scale, art.NurBahn, ks, tr)
 	walkMs := float64(time.Since(tw).Microseconds()) / 1000
 	if len(from) == 0 || len(to) == 0 {
 		if d := <-directC; d != nil { // keine Haltestelle, aber zu Fuß erreichbar
@@ -228,14 +230,6 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusUnprocessableEntity, "keine_haltestelle_in_reichweite")
 		return
 	}
-	if scale != 1 { // Zugangswege kommen mit BaseKMH (Valhalla bzw. Luftlinie)
-		for _, acc := range [][]raptor.Access{from, to} {
-			for i := range acc {
-				acc[i].Sec = int32(float64(acc[i].Sec)*scale + 0.5)
-			}
-		}
-	}
-
 	var rt *raptor.Router
 	select {
 	case rt = <-p.routers:
@@ -245,7 +239,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	case <-r.Context().Done():
 		return
 	}
-	rt.NoFern, rt.WalkScale, rt.NurBahn = !req.Fern, scale, rad
+	rt.NoFern, rt.WalkScale, rt.NurBahn = !req.Fern, scale, art.NurBahn
 	t0 := time.Now()
 	res := rt.Query(int32(dep/time.Second), from, to, s.MaxTrips)
 	ms := float64(time.Since(t0).Microseconds()) / 1000
@@ -255,16 +249,16 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	for _, j := range res.Journeys {
 		jo := convert(p.TT, base, j)
 		for i := range jo.Legs {
-			jo.Legs[i].Rad = rad && jo.Legs[i].Mode == "ride"
+			jo.Legs[i].Rad = art.NurBahn && jo.Legs[i].Mode == "ride"
 		}
 		p.annotate(snap, j, &jo)
 		rideStops(p.TT, j, &jo)
 		out.Journeys = append(out.Journeys, jo)
 	}
 	ts := time.Now()
-	s.shapes(r.Context(), p.TT, req.From, req.To, res.Journeys, out.Journeys)
+	s.shapes(r.Context(), p.TT, req.From, req.To, res.Journeys, out.Journeys, ks)
 	out.ShapeMs = since(ts)
-	if d := <-directC; d != nil && rad {
+	if d := <-directC; d != nil && art.Rad {
 		out.Journeys = append([]journeyOut{*d}, out.Journeys...) // Rad: Bahn nur, wenn nötig → direkter Weg zuerst
 	} else if d != nil {
 		out.Journeys = append(out.Journeys, *d) // als Vergleich hinten, die App wählt zuerst die erste Verbindung

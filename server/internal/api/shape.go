@@ -39,17 +39,27 @@ type vhRouteResp struct {
 	} `json:"trip"`
 }
 
-// WalkRoute ist ein Fußweg von Valhalla: Form, Gehzeit bei v.KMH und Länge.
+// WalkRoute ist ein Weg von Valhalla: Form, Zeit im gewählten Tempo und Länge.
 type WalkRoute struct {
 	Shape string
 	Sec   float64
 	M     float64
 }
 
-// Route holt den Fußweg zwischen zwei Punkten.
-func (v *Valhalla) Route(ctx context.Context, aLat, aLon, bLat, bLon float64) (WalkRoute, error) {
-	req := vhRouteReq{Locations: []routeLoc{{aLat, aLon}, {bLat, bLon}}, Costing: "pedestrian",
-		CostingOptions: map[string]any{"pedestrian": map[string]float64{"walking_speed": v.KMH}}, DirectionsType: "none"}
+// Route holt den Weg zwischen zwei Punkten mit der ersten Kostenart aus ks, die einen findet.
+func (v *Valhalla) Route(ctx context.Context, aLat, aLon, bLat, bLon float64, ks []Kosten) (r WalkRoute, err error) {
+	err = errMatrix
+	for _, k := range ks {
+		if r, err = v.route(ctx, aLat, aLon, bLat, bLon, k); err == nil {
+			return r, nil
+		}
+	}
+	return r, err
+}
+
+func (v *Valhalla) route(ctx context.Context, aLat, aLon, bLat, bLon float64, k Kosten) (WalkRoute, error) {
+	req := vhRouteReq{Locations: []routeLoc{{aLat, aLon}, {bLat, bLon}}, Costing: k.Costing, CostingOptions: k.Opts,
+		DirectionsType: "none"}
 	body, _ := json.Marshal(req)
 	ctx, cancel := context.WithTimeout(ctx, v.Timeout)
 	defer cancel()
@@ -73,14 +83,14 @@ func (v *Valhalla) Route(ctx context.Context, aLat, aLon, bLat, bLon float64) (W
 	if len(r.Trip.Legs) != 1 || r.Trip.Legs[0].Shape == "" {
 		return WalkRoute{}, errMatrix
 	}
-	return WalkRoute{r.Trip.Legs[0].Shape, r.Trip.Summary.Time, r.Trip.Summary.Length * 1000}, nil
+	return WalkRoute{r.Trip.Legs[0].Shape, r.Trip.Summary.Time * k.Faktor, r.Trip.Summary.Length * 1000}, nil
 }
 
 type pt struct{ lat, lon float64 }
 
 // shapes ergänzt die Fußabschnitte aller Verbindungen um ihre Wegform; gleiche Wege werden einmal geholt, alle
 // gleichzeitig. Ohne Valhalla oder bei Fehlern bleibt die Form leer (die App zeichnet dann gerade).
-func (s *Server) shapes(ctx context.Context, tt *raptor.Timetable, from, to point, js []raptor.Journey, out []journeyOut) {
+func (s *Server) shapes(ctx context.Context, tt *raptor.Timetable, from, to point, js []raptor.Journey, out []journeyOut, ks []Kosten) {
 	if s.Valhalla == nil {
 		return
 	}
@@ -109,7 +119,7 @@ func (s *Server) shapes(ctx context.Context, tt *raptor.Timetable, from, to poin
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			r, err := s.Valhalla.Route(ctx, p.a.lat, p.a.lon, p.b.lat, p.b.lon)
+			r, err := s.Valhalla.Route(ctx, p.a.lat, p.a.lon, p.b.lat, p.b.lon, ks)
 			if err != nil {
 				return
 			}
@@ -148,20 +158,20 @@ func rideStops(tt *raptor.Timetable, j raptor.Journey, out *journeyOut) {
 
 // directWalk liefert den reinen Fußweg Start → Ziel als eigene Verbindung (Vergleich in der App), wenn er
 // höchstens s.DirectMax dauert. Mit Valhalla echter Weg samt Form, sonst Luftlinien-Schätzung ohne Form.
-// scale: Gehtempo-Faktor wie bei den Zugangswegen.
-func (s *Server) directWalk(ctx context.Context, from, to point, dep time.Time, scale, weit float64) *journeyOut {
+// scale: Gehtempo-Faktor wie bei den Zugangswegen; ks: Valhalla-Kostenarten der Fortbewegungsart (D-22).
+func (s *Server) directWalk(ctx context.Context, from, to point, dep time.Time, scale, weit float64, ks []Kosten) *journeyOut {
 	m := raptor.Dist(*from.Lat, *from.Lon, *to.Lat, *to.Lon)
 	if s.DirectM <= 0 || m > s.DirectM*weit {
 		return nil
 	}
-	sec, shape := float64(raptor.WalkSec(m)), ""
+	sec, shape := float64(raptor.WalkSec(m))*scale, ""
 	if s.Valhalla != nil {
-		r, err := s.Valhalla.Route(ctx, *from.Lat, *from.Lon, *to.Lat, *to.Lon)
+		r, err := s.Valhalla.Route(ctx, *from.Lat, *from.Lon, *to.Lat, *to.Lon, ks)
 		if err == nil {
 			sec, shape = r.Sec, r.Shape
 		}
 	}
-	d := time.Duration(sec*scale+0.5) * time.Second
+	d := time.Duration(sec+0.5) * time.Second
 	if d > s.DirectMax {
 		return nil
 	}
