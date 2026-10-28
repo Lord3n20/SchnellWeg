@@ -1,7 +1,8 @@
 // Detailansicht einer Verbindung: Karte mit genau dieser Verbindung, darunter Schritt für Schritt
 // Fußwege (Dauer, Länge) und Fahrten (Einstieg mit Bahnsteig, alle Halte unterwegs, Ausstieg hervorgehoben).
 // Halt-Namen kommen aus der lokalen SQLite; Zeiten je Zwischenhalt liefert der Server nicht.
-// Die Glocke oben startet die Ausstiegs-Erinnerung (aussteigen.dart).
+// Die Glocke oben startet die Ausstiegs-Erinnerung (aussteigen.dart). Die Seite erscheint auch über dem
+// Sperrbildschirm (sperrbildschirm.dart).
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
@@ -10,6 +11,7 @@ import 'aussteigen.dart';
 import 'halte_db.dart';
 import 'karte.dart';
 import 'namen.dart';
+import 'sperrbildschirm.dart';
 
 String _uhr(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
@@ -32,7 +34,7 @@ class Details extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final umstiege = v.fahrten - 1;
-    return Scaffold(
+    return UeberSperrbildschirm(child: Scaffold(
       appBar: AppBar(
         title: Text('${_uhr(v.ab)} – ${_uhr(v.ankunft)} · ${v.ankunft.difference(v.ab).inMinutes} min'),
         actions: [if (v.fahrten > 0) ErinnerungKnopf(v: v, halte: halte)],
@@ -73,7 +75,7 @@ class Details extends StatelessWidget {
           ]),
         ),
       ]),
-    );
+    ));
   }
 }
 
