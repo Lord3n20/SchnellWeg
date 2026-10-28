@@ -1,7 +1,9 @@
 // Losgeh-Wecker (D-29): nächster Termin mit Ort aus dem Android-Kalender → Ort suchen → Verbindung mit Ankunft bis
 // Terminbeginn − Puffer → Meldung zur Losgehzeit − Vorlauf. Gerechnet wird nur, wenn die App offen ist (Start und
-// Rückkehr, höchstens alle 5 min); der gestellte Wecker klingelt auch bei geschlossener App. Termine bleiben auf dem
-// Handy, der Server sieht nur den Ortstext (wie eine Suche) und die Route. Einstellungen in losgehen.json.
+// Rückkehr, höchstens alle 5 min); der gestellte Wecker klingelt auch bei geschlossener App. 10 min vor der Meldung
+// rechnet die App einmal im Hintergrund mit Echtzeit nach (gleicher Start wie bei der letzten Rechnung, siehe
+// [losgehNachrechnen]). Termine bleiben auf dem Handy, der Server sieht nur den Ortstext (wie eine Suche) und die
+// Route. Einstellungen und der letzte Auftrag in losgehen.json.
 import 'dart:convert';
 import 'dart:io';
 
@@ -12,9 +14,24 @@ import 'package:path_provider/path_provider.dart';
 import 'api.dart';
 import 'standort.dart';
 import 'tempo.dart';
+import 'zugang.dart';
 
 const _kanal = MethodChannel('schnellweg/losgehen');
 const _vorschau = 12; // Stunden: so weit voraus zählt ein Termin (und nur heute)
+const _nachrechnenVorher = Duration(minutes: 10); // so lange vor der Meldung im Hintergrund nachrechnen
+
+/// Einstieg für den Hintergrund (LosgehWecker.Nachrechner startet dafür eine Flutter-Engine ohne Oberfläche).
+@pragma('vm:entry-point')
+Future<void> losgehNachrechnen() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await Losgehen.instanz.nachrechnen();
+  } catch (_) {
+    // alter Wecker bleibt stehen
+  } finally {
+    await _kanal.invokeMethod('fertig');
+  }
+}
 
 class Termin {
   final String titel, ort;
@@ -38,6 +55,7 @@ class Losgehen extends ChangeNotifier {
   int vorlauf = 5; // Minuten vor der Losgehzeit melden
   int puffer = 5; // Minuten vor Terminbeginn ankommen
   Losgehplan? plan;
+  Map<String, dynamic>? _auftrag; // letzte Rechnung: Start, Ziel, Ankunft, Tempo, Termin (für das Nachrechnen)
   DateTime? _zuletzt;
   final _orte = <String, Ort?>{}; // Ortstext → Suchtreffer, solange die App läuft
 
@@ -49,6 +67,7 @@ class Losgehen extends ChangeNotifier {
       an = j['an'] == true;
       vorlauf = (j['vorlauf'] as int?) ?? vorlauf;
       puffer = (j['puffer'] as int?) ?? puffer;
+      _auftrag = j['auftrag'] as Map<String, dynamic>?;
     } on FileSystemException {
       // noch nie gespeichert
     } on FormatException {
@@ -66,12 +85,16 @@ class Losgehen extends ChangeNotifier {
     _zuletzt = null; // neu rechnen
     if (!this.an) {
       plan = null;
+      _auftrag = null;
       await _kanal.invokeMethod('loeschen');
     }
     notifyListeners();
-    await (await _datei()).writeAsString(jsonEncode({'an': this.an, 'vorlauf': this.vorlauf, 'puffer': this.puffer}));
+    await _speichern();
     return this.an;
   }
+
+  Future<void> _speichern() async => (await _datei()).writeAsString(
+      jsonEncode({'an': an, 'vorlauf': vorlauf, 'puffer': puffer, 'auftrag': ?_auftrag}));
 
   /// Nächsten Termin neu planen und den Wecker stellen; [immer] auch, wenn die letzte Rechnung frisch ist.
   Future<void> pruefen(Api api, Position pos, TempoProfil tempo, {bool immer = false}) async {
@@ -94,31 +117,75 @@ class Losgehen extends ChangeNotifier {
       if (!_orte.containsKey(t.ort)) _orte[t.ort] = (await api.suche(t.ort, n: 1, nahe: pos)).firstOrNull;
       final ziel = _orte[t.ort];
       Verbindung? v;
+      _auftrag = null;
       if (ziel != null) {
-        final (vs, _) = await api.route(pos.lat, pos.lon, ziel.lat, ziel.lon,
-            ab: t.beginn.subtract(Duration(minutes: puffer)), ankunft: true, kmh: tempo.kmh, art: tempo.art);
-        // späteste Abfahrt, die noch reicht; bei Gleichstand weniger Umstiege (Liste ist danach sortiert)
-        for (final x in vs) {
-          if (v == null || x.ab.isAfter(v.ab)) v = x;
-        }
+        _auftrag = {
+          'von': [pos.lat, pos.lon],
+          'ziel': {'kind': ziel.art, 'name': ziel.name, 'detail': ziel.detail, 'lat': ziel.lat, 'lon': ziel.lon},
+          'bis': t.beginn.subtract(Duration(minutes: puffer)).millisecondsSinceEpoch,
+          'kmh': tempo.kmh,
+          'art': tempo.art,
+          'titel': t.titel,
+          'ort': t.ort,
+          'beginn': t.beginn.millisecondsSinceEpoch,
+        };
+        v = await _spaeteste(api, _auftrag!);
       }
       plan = Losgehplan(t, ziel, v);
     } on ApiFehler {
       plan = Losgehplan(t, null, null);
     }
+    await _speichern();
     await _weckerStellen();
     notifyListeners();
   }
 
-  Future<void> _weckerStellen() async {
-    final p = plan, v = p?.v;
+  /// Im Hintergrund kurz vor der Meldung: letzten Auftrag mit aktueller Echtzeit neu rechnen und den Wecker
+  /// umstellen. Ohne Ergebnis (Netz, keine Verbindung) bleibt der alte Wecker.
+  Future<void> nachrechnen() async {
+    await laden();
+    final a = _auftrag, zugang = await Zugang.laden();
+    if (!an || a == null || zugang == null) return;
+    final v = await _spaeteste(Api(zugang), a);
+    if (v == null) return;
+    final t = Termin(a['titel'] as String, a['ort'] as String, DateTime.fromMillisecondsSinceEpoch(a['beginn'] as int));
+    plan = Losgehplan(t, Ort.json(a['ziel'] as Map<String, dynamic>), v);
+    await _weckerStellen(hintergrund: true);
+  }
+
+  /// Späteste Abfahrt, die noch reicht; bei Gleichstand weniger Umstiege (Liste ist danach sortiert).
+  static Future<Verbindung?> _spaeteste(Api api, Map<String, dynamic> a) async {
+    final von = (a['von'] as List).cast<num>(), ziel = a['ziel'] as Map;
+    final (vs, _) = await api.route(von[0].toDouble(), von[1].toDouble(), (ziel['lat'] as num).toDouble(),
+        (ziel['lon'] as num).toDouble(),
+        ab: DateTime.fromMillisecondsSinceEpoch(a['bis'] as int),
+        ankunft: true,
+        kmh: (a['kmh'] as num).toDouble(),
+        art: a['art'] as String);
+    Verbindung? v;
+    for (final x in vs) {
+      if (v == null || x.ab.isAfter(v.ab)) v = x;
+    }
+    return v;
+  }
+
+  /// Meldung zur Losgehzeit − Vorlauf stellen, aus der App mit Nachrechnen vorher. Im Hintergrund meldet er sich
+  /// sofort, wenn die neue Zeit schon vorbei ist, man aber noch los kann (z. B. Bus fährt früher).
+  Future<void> _weckerStellen({bool hintergrund = false}) async {
+    final p = plan, v = p?.v, jetzt = DateTime.now();
     if (p == null || v == null) return _kanal.invokeMethod('loeschen');
-    final wann = v.ab.subtract(Duration(minutes: vorlauf));
-    if (wann.isBefore(DateTime.now())) return _kanal.invokeMethod('loeschen');
+    var wann = v.ab.subtract(Duration(minutes: vorlauf));
+    if (wann.isBefore(jetzt)) {
+      if (!hintergrund || !v.ab.isAfter(jetzt)) return _kanal.invokeMethod('loeschen');
+      wann = jetzt;
+    }
+    final rest = v.ab.difference(wann).inMinutes, vorher = wann.subtract(_nachrechnenVorher);
     await _kanal.invokeMethod('stellen', {
       'zeit': wann.millisecondsSinceEpoch,
-      'titel': vorlauf == 0 ? 'Jetzt los: ${p.termin.titel}' : 'In $vorlauf min los: ${p.termin.titel}',
+      'titel': rest <= 0 ? 'Jetzt los: ${p.termin.titel}' : 'In $rest min los: ${p.termin.titel}',
       'text': losText(p),
+      if (!hintergrund && vorher.isAfter(jetzt.add(const Duration(minutes: 1))))
+        'nachrechnen': vorher.millisecondsSinceEpoch,
     });
   }
 }
@@ -176,7 +243,8 @@ class LosgehSeite extends StatelessWidget {
           minuten('Puffer', 'so lange vor Terminbeginn ankommen', l.puffer, (m) => l.setzen(puffer: m)),
           const ListTile(
             leading: Icon(Icons.info_outline),
-            subtitle: Text('Gerechnet wird, wenn du die App öffnest; die Meldung kommt auch bei geschlossener App. '
+            subtitle: Text('Gerechnet wird, wenn du die App öffnest, und 10 min vor der Meldung noch einmal mit '
+                'aktueller Echtzeit; die Meldung kommt auch bei geschlossener App. '
                 'Sie ist lautlos – Ton und Vibration lassen sich in den Android-Einstellungen der App unter '
                 'Benachrichtigungen → Losgeh-Wecker einschalten.'),
           ),

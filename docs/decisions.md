@@ -378,7 +378,9 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   (exakt, wenn erlaubt; sonst ±1 min Fenster). Termine, Titel und Zeiten verlassen das Handy nicht.
 - Gerechnet wird nur bei offener App (Start/Rückkehr, höchstens alle 5 min, CLAUDE.md: kein Polling ohne offene App);
   der gestellte Wecker meldet sich auch bei geschlossener App, Echtzeit ist dann aber so alt wie die letzte Rechnung.
-  Später denkbar: einmal kurz vor der Meldung im Hintergrund neu rechnen.
+  Nachtrag 28.10.: 10 min vor der Meldung rechnet ein zweiter Wecker einmal im Hintergrund nach (Flutter-Engine ohne
+  Oberfläche, gleicher Start/Ziel/Tempo wie bei der letzten Rechnung in losgehen.json, aktuelle Echtzeit); einmal je
+  Plan, kein Polling. Fährt die Verbindung früher, kommt die Meldung sofort; ohne Netz bleibt der alte Wecker.
 - Startseite: oberste Zeile der Haltestellenliste zeigt Termin + „Los hh:mm · Linie X ab Halt hh:mm · an hh:mm“,
   Antippen setzt ihn als Ziel mit Ankunftszeit. Einstellungen → Losgeh-Wecker: an/aus (fragt READ_CALENDAR),
   Vorlauf, Puffer (je 0–20 min, Vorgabe 5/5). Kanal „Losgeh-Wecker“ ohne Ton/Vibration (in Android umstellbar).

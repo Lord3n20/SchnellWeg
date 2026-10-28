@@ -39,6 +39,7 @@
             </intent-filter>
         </activity>
         <receiver android:name=".LosgehWecker$Melder" android:exported="false"/>
+        <receiver android:name=".LosgehWecker$Nachrechner" android:exported="false"/>
         <service
             android:name=".KartenDienst"
             android:exported="false"

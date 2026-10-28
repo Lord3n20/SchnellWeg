@@ -9,11 +9,19 @@ import android.content.BroadcastReceiver
 import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import android.provider.CalendarContract
+import io.flutter.FlutterInjector
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.embedding.engine.dart.DartExecutor
+import io.flutter.plugin.common.MethodCall
+import io.flutter.plugin.common.MethodChannel
 
 // Losgeh-Wecker (D-29): liest Termine mit Ort aus dem Android-Kalender (bleiben auf dem Handy; die App sucht nur den
 // Ortstext wie eine eingetippte Suche) und meldet sich zur berechneten Losgehzeit. Die Zeit rechnet die App, sobald
-// sie geöffnet wird; hier liegt nur der Wecker (AlarmManager) und die Meldung. Vorerst lautlos (Kanal ohne Ton und
+// sie geöffnet wird; hier liegen der Wecker (AlarmManager), die Meldung und ein zweiter Wecker 10 min vorher, der die
+// Zeit einmal im Hintergrund nachrechnen lässt (Nachrechner: Flutter-Engine ohne Oberfläche, Dart losgehNachrechnen). Vorerst lautlos (Kanal ohne Ton und
 // Vibration, Betreiber 28.10.); Ton lässt sich in den Android-Einstellungen des Kanals einschalten.
 object LosgehWecker {
     private const val KANAL = "losgehen"
@@ -39,19 +47,67 @@ object LosgehWecker {
         return out
     }
 
-    /** Wecker auf [zeit] (ms) stellen; ersetzt einen vorherigen. Exakt, wenn das System es erlaubt, sonst ungefähr. */
-    fun stellen(c: Context, zeit: Long, titel: String, text: String) {
+    /** Wecker auf [zeit] (ms) stellen; ersetzt einen vorherigen. Exakt, wenn das System es erlaubt, sonst ungefähr.
+     *  [nachrechnen] (ms) stellt zusätzlich den Nachrechner, null löscht ihn. */
+    fun stellen(c: Context, zeit: Long, titel: String, text: String, nachrechnen: Long?) {
         val am = c.getSystemService(AlarmManager::class.java)
         val pi = absicht(c, titel, text)
         if (am.canScheduleExactAlarms()) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, zeit, pi)
         else am.setWindow(AlarmManager.RTC_WAKEUP, zeit - 60_000, 120_000, pi)
+        if (nachrechnen == null) am.cancel(nachrechnenAbsicht(c))
+        else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, nachrechnen, nachrechnenAbsicht(c))
     }
 
-    fun loeschen(c: Context) = c.getSystemService(AlarmManager::class.java).cancel(absicht(c, "", ""))
+    fun loeschen(c: Context) = c.getSystemService(AlarmManager::class.java).run {
+        cancel(absicht(c, "", ""))
+        cancel(nachrechnenAbsicht(c))
+    }
+
+    /** stellen/loeschen vom Kanal schnellweg/losgehen (App und Nachrechner). */
+    fun kanal(c: Context, call: MethodCall, result: MethodChannel.Result) = when (call.method) {
+        "stellen" -> result.success(stellen(c, call.argument<Number>("zeit")!!.toLong(), call.argument<String>("titel")!!,
+            call.argument<String>("text")!!, call.argument<Number>("nachrechnen")?.toLong()).let { null })
+        "loeschen" -> result.success(loeschen(c).let { null })
+        else -> result.notImplemented()
+    }
 
     private fun absicht(c: Context, titel: String, text: String) = PendingIntent.getBroadcast(c, 0,
         Intent(c, Melder::class.java).putExtra("titel", titel).putExtra("text", text),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+
+    private fun nachrechnenAbsicht(c: Context) = PendingIntent.getBroadcast(c, 1,
+        Intent(c, Nachrechner::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+
+    /** Startet Dart losgehNachrechnen in einer Engine ohne Oberfläche; die stellt den Wecker neu und meldet „fertig“.
+     *  Nach 45 s wird spätestens aufgeräumt (Broadcast darf im Hintergrund knapp eine Minute laufen). */
+    class Nachrechner : BroadcastReceiver() {
+        override fun onReceive(c: Context, i: Intent) {
+            val fertig = goAsync()
+            val app = c.applicationContext
+            val haupt = Handler(Looper.getMainLooper())
+            val loader = FlutterInjector.instance().flutterLoader()
+            loader.startInitialization(app)
+            loader.ensureInitializationCompleteAsync(app, null, haupt) {
+                val engine = FlutterEngine(app)
+                var aus = false
+                val ende = Runnable {
+                    if (!aus) {
+                        aus = true
+                        engine.destroy()
+                        fertig.finish()
+                    }
+                }
+                haupt.postDelayed(ende, 45_000)
+                MethodChannel(engine.dartExecutor.binaryMessenger, "schnellweg/losgehen").setMethodCallHandler { call, result ->
+                    if (call.method != "fertig") return@setMethodCallHandler kanal(app, call, result)
+                    result.success(null)
+                    haupt.post(ende)
+                }
+                engine.dartExecutor.executeDartEntrypoint(
+                    DartExecutor.DartEntrypoint(loader.findAppBundlePath(), "losgehNachrechnen"))
+            }
+        }
+    }
 
     class Melder : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {

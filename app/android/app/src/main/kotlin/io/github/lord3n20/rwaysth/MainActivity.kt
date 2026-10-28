@@ -97,12 +97,9 @@ class MainActivity : FlutterActivity() {
                 "termine" -> result.success(if (kalenderErlaubt()) LosgehWecker.termine(this, call.argument<Int>("stunden")!!) else null)
                 "stellen" -> {
                     meldungenErbitten()
-                    LosgehWecker.stellen(this, call.argument<Number>("zeit")!!.toLong(),
-                        call.argument<String>("titel")!!, call.argument<String>("text")!!)
-                    result.success(null)
+                    LosgehWecker.kanal(this, call, result)
                 }
-                "loeschen" -> result.success(LosgehWecker.loeschen(this).let { null })
-                else -> result.notImplemented()
+                else -> LosgehWecker.kanal(this, call, result)
             }
         }
         MethodChannel(engine.dartExecutor.binaryMessenger, "schnellweg/standort").setMethodCallHandler { call, result ->

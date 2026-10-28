@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'darstellung.dart';
+import 'losgehen.dart' as losgehen;
 import 'start.dart';
 
 Future<void> main() async {
@@ -8,6 +9,10 @@ Future<void> main() async {
   await Darstellung.instanz.laden();
   runApp(const SchnellWeg());
 }
+
+/// Hintergrund-Einstieg des Losgeh-Weckers (muss in der Hauptbibliothek liegen, damit die Engine ihn findet).
+@pragma('vm:entry-point')
+Future<void> losgehNachrechnen() => losgehen.losgehNachrechnen();
 
 class SchnellWeg extends StatelessWidget {
   const SchnellWeg({super.key});
