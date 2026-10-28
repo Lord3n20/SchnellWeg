@@ -1,7 +1,9 @@
-// Einstellungen als Menü mit Unterpunkten: Tempo-Profile, Offline-Karten (laden/löschen, belegter Platz), Zugang.
+// Einstellungen als Menü mit Unterpunkten: Tempo-Profile, Offline-Karten (laden/löschen, belegter Platz), Darstellung,
+// Favoriten, Zugang.
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'darstellung.dart';
 import 'einstellungen.dart';
 import 'favoriten.dart';
 import 'karte.dart' show groesse;
@@ -73,6 +75,15 @@ class _EinstellungenSeiteState extends State<EinstellungenSeite> with _LagerBeob
             if (laeuft) 'lädt …',
           ].join(' · '),
           onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const KartenSeite())),
+        ),
+        ListenableBuilder(
+          listenable: Darstellung.instanz,
+          builder: (context, _) => _Punkt(
+            icon: Icons.contrast,
+            titel: 'Darstellung',
+            unter: Darstellung.instanz.text,
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DarstellungSeite())),
+          ),
         ),
         _Punkt(
           icon: Icons.star_outline,

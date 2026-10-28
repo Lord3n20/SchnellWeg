@@ -13,6 +13,7 @@ import 'package:vector_map_tiles_pmtiles/vector_map_tiles_pmtiles.dart';
 import 'package:vector_map_tiles_pmtiles/src/themes/v4/_package.dart' as v4;
 
 import 'api.dart';
+import 'darstellung.dart';
 import 'kartenlager.dart';
 
 const _detailAb = 10.0; // ab dieser Zoomstufe fällt die grobe Übersicht auf
@@ -36,7 +37,21 @@ List<Map<String, Object>> _stil(List<Map<String, Object>> ebenen) => [
           e,
     ];
 
+/// OLED-Schwarz: Hintergrund und Land schwarz, Wasser fast schwarz; Straßen, Grün und Beschriftung wie im dunklen Stil.
+List<Map<String, Object>> _oled(List<Map<String, Object>> ebenen) => [
+      for (final e in ebenen)
+        if (const {'background': 'background-color', 'earth': 'fill-color', 'water': 'fill-color'}[e['id']]
+            case final String k)
+          {
+            ...e,
+            'paint': {...(e['paint'] as Map<String, Object>), k: e['id'] == 'water' ? '#0d1520' : '#000000'},
+          }
+        else
+          e,
+    ];
+
 final hellerStil = ProtomapsThemes().build(_stil(v4.themeLight)), _dunkel = ProtomapsThemes().build(_stil(v4.themeDark));
+final _schwarz = ProtomapsThemes().build(_oled(_stil(v4.themeDark)));
 
 /// Ein Stück der Verbindung auf der Karte.
 class Strecke {
@@ -156,11 +171,11 @@ class _KarteState extends State<Karte> {
             style: TextStyle(color: farbe.onSurfaceVariant)),
       );
     }
-    final stil = Theme.of(context).brightness == Brightness.dark ? _dunkel : hellerStil;
+    final stil = Theme.of(context).brightness == Brightness.dark ? (oledAktiv(context) ? _schwarz : _dunkel) : hellerStil;
     // Kein Dateicache (Quelle liegt lokal, die Kachel-IDs beider Ebenen würden sich mischen), dafür größere
     // Speicher-Caches als die Vorgabe (10 MB / 20 Kacheln), damit Verschieben nicht neu liest und parst.
     Widget ebene(String name, VectorTileProvider quelle) => VectorTileLayer(
-          key: ValueKey('$name${_lager.stand}'),
+          key: ValueKey('$name${_lager.stand}${identityHashCode(stil)}'), // Stilwechsel (hell/dunkel/OLED) zeichnet neu
           theme: stil,
           tileProviders: TileProviders({'protomaps': quelle}),
           fileCacheTtl: Duration.zero,
