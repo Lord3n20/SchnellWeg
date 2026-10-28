@@ -261,4 +261,9 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   `use_roads` 0,6, `avoid_bad_surfaces` 0,8) → keine Fußwege ohne Radfreigabe, keine Treppen, Zeit direkt von
   Valhalla; findet das keinen Weg, Rückfall auf Fußwege mit `step_penalty` 600 s (Treppe tragen „geht in Ordnung“).
 - Umstiege zwischen Halten (Fußwege-Tabelle) bleiben für alle Arten Fußwege mit skaliertem Tempo.
-- Status: umgesetzt (routing-core 0.1.15, App).
+- Zugangsradius: mit allen Linien (Fuß, Einrad, Klapprad) höchstens ×2,5 statt ×4 – das Klapprad mit ×4 brachte so
+  viele Bushalte in die Valhalla-Matrix, dass sie 111 ms brauchte (Grenze 100). Steht der direkte Weg vorn, entfallen
+  RAPTOR-Wege ohne Fahrt (sonst doppelt).
+- Profile und Tempo bleiben auf dem Handy; der Server bekommt je Anfrage nur `art` + `kmh` (Betreiber 28.10.: „reicht,
+  wenn die Geschwindigkeit vom Handy vorgegeben wird … dann lässt sich die App auch teilen“).
+- Status: umgesetzt (routing-core 0.1.16, App).

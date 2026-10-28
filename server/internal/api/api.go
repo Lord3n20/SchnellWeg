@@ -5,6 +5,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -108,11 +109,17 @@ type routeReq struct {
 }
 
 // reichweite: Faktor für Zugangsradius und direkten Weg; schneller unterwegs = weiter, höchstens das Vierfache.
+// Mit allen Linien (nicht nur Bahn) höchstens das 2,5-Fache: sonst kämen so viele Bushalte in die Valhalla-Matrix,
+// dass sie über 100 ms braucht (Klapprad mit 4× gemessen 111 ms, D-22).
 func (q routeReq) reichweite() float64 {
 	if q.KMH == nil {
 		return 1
 	}
-	return min(4, max(1, *q.KMH/BaseKMH))
+	grenze := 2.5
+	if arten[q.Art].NurBahn {
+		grenze = 4
+	}
+	return min(grenze, max(1, *q.KMH/BaseKMH))
 }
 
 // BaseKMH ist das Tempo, mit dem Fußwege und Zugangswege gerechnet sind (D-12: „gemütlich“).
@@ -259,7 +266,9 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	s.shapes(r.Context(), p.TT, req.From, req.To, res.Journeys, out.Journeys, ks)
 	out.ShapeMs = since(ts)
 	if d := <-directC; d != nil && art.Rad {
-		out.Journeys = append([]journeyOut{*d}, out.Journeys...) // Rad: Bahn nur, wenn nötig → direkter Weg zuerst
+		// Rad: ÖV nur, wenn nötig → direkter Weg zuerst; RAPTOR-Wege ohne Fahrt sind dann doppelt
+		out.Journeys = slices.DeleteFunc(out.Journeys, func(j journeyOut) bool { return j.Trips == 0 })
+		out.Journeys = append([]journeyOut{*d}, out.Journeys...)
 	} else if d != nil {
 		out.Journeys = append(out.Journeys, *d) // als Vergleich hinten, die App wählt zuerst die erste Verbindung
 	}
