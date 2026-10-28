@@ -380,3 +380,13 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   Vorlauf, Puffer (je 0–20 min, Vorgabe 5/5). Kanal „Losgeh-Wecker“ ohne Ton/Vibration (in Android umstellbar).
 - Läuft neben dem HA-Kalender-Wecker (Aufwachen), ersetzt ihn nicht.
 - Status: umgesetzt (App).
+
+## D-30 Alle Räder mit Valhallas Fahrradkosten (28.10.)
+- Bisher fuhr nur das Rennrad mit Fahrradkosten; Klapprad, Fixie und MTB gingen Fußwege mit skalierter Zeit
+  (zu kurze Wege durch Fußgängerzonen und Parks, Zeiten aus dem Gehtempo hochgerechnet).
+- Jetzt je Typ `bicycle_type`: Klapprad City, Fixie Hybrid, Rennrad Road, MTB Mountain; `avoid_bad_surfaces`
+  0,5 / 0,5 / 0,8 / 0. Rückfall auf Fußwege mit Treppenstrafe (120 / 300 / 600 / 180 s), wenn es keinen Radweg gibt.
+  Einrad bleibt bei Fußgänger-Kosten.
+- Messung am Server (Markt → Hbf, 18 km/h): Fuß 1,30 km; Rad 1,59 km, 340 s (alle Typen gleich, Unterschiede erst
+  bei Schotter/Straßentypen).
+- Status: umgesetzt (routing-core 0.1.26).

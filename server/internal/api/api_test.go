@@ -152,11 +152,12 @@ func TestFahrradtypen(t *testing.T) {
 		}
 	}
 
-	// Rennrad rechnet mit Valhallas Fahrradkosten im eigenen Tempo: 60 s bleiben 60 s; das Fixie skaliert Fußzeiten.
+	// Räder rechnen mit Valhallas Fahrradkosten im eigenen Tempo: 60 s bleiben 60 s (D-30); das Einrad skaliert
+	// Fußzeiten.
 	s = testServer(day)
 	s.Current().TT.Routes[0].Bahn = true
 	s.Valhalla = fakeValhalla(t, 60, 0.3, 200)
-	for a, want := range map[string]time.Duration{"rennrad": time.Minute, "fixie": 13 * time.Second} {
+	for a, want := range map[string]time.Duration{"rennrad": time.Minute, "fixie": time.Minute, "mtb": time.Minute, "einrad": 13 * time.Second} {
 		w, r := post(s, fmt.Sprintf(body, `,"art":"`+a+`","kmh":20`))
 		if w.Code != 200 || len(r.Journeys) != 1 {
 			t.Fatalf("%s: %d %s", a, w.Code, w.Body)
