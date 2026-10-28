@@ -13,6 +13,7 @@ import 'halte_db.dart';
 import 'karte.dart';
 import 'namen.dart';
 import 'standort.dart';
+import 'tempo.dart';
 import 'zugang.dart';
 import 'ziel.dart';
 
@@ -54,6 +55,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
   File? _karteDatei;
   int _karteStand = 0;
   String? _karteHinweis;
+  double _kmh = standardKmh;
 
   @override
   void initState() {
@@ -82,6 +84,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
 
   Future<void> _starten() async {
     _db = await HalteDb.oeffnen();
+    _kmh = await Tempo.laden();
     final z = await Zugang.laden();
     if (z == null) return _zugangEinrichten();
     _setzeZugang(z);
@@ -117,6 +120,14 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
     } on ApiFehler catch (e) {
       if (!da && mounted) setState(() => _karteHinweis = 'Karte nicht geladen ($e)');
     }
+  }
+
+  Future<void> _tempoEinstellen() async {
+    final k = await tempoWaehlen(context, _kmh);
+    if (k == null || !mounted) return;
+    setState(() => _kmh = k);
+    await Tempo.speichern(k);
+    await _routeBerechnen();
   }
 
   Future<void> _zugangEinrichten() async {
@@ -215,7 +226,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
     if (p == null) return setState(() => _routeHinweis = 'Kein Standort (Berechtigung oder GPS aus?)');
     _pos = p;
     try {
-      final (v, rt) = await _api!.route(p.lat, p.lon, ziel.lat, ziel.lon);
+      final (v, rt) = await _api!.route(p.lat, p.lon, ziel.lat, ziel.lon, kmh: _kmh);
       if (!mounted || _ziel != ziel) return;
       setState(() {
         _verbindungen = v;
@@ -289,7 +300,10 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
     return Scaffold(
       appBar: AppBar(
         title: const Text('SchnellWeg'),
-        actions: [IconButton(icon: const Icon(Icons.settings), tooltip: 'Zugang', onPressed: _zugangEinrichten)],
+        actions: [
+          IconButton(icon: const Icon(Icons.directions_walk), tooltip: 'Gehtempo ${tempoText(_kmh)}', onPressed: _tempoEinstellen),
+          IconButton(icon: const Icon(Icons.settings), tooltip: 'Zugang', onPressed: _zugangEinrichten),
+        ],
       ),
       body: Column(children: [
         Padding(
