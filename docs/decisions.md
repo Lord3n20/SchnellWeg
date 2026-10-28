@@ -308,5 +308,11 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   echte Wege bis 2× Radius, Valhalla-Zeitlimit wächst mit (höchstens 8×). Der Normalfall bleibt unverändert.
 - Findet sich auch bis 15 km nichts, liegt der Ort außerhalb des Fahrplangebiets (bisher NRW, D-24). Die Antwort
   bleibt `keine_haltestelle_in_reichweite` (alte Apps), neu mit `seite` (start | ziel | beide); die App nennt die Seite.
+- Betreiber 28.10.: „bei mehr als 5km fußweg soll ne grobe zeitschätzung angezeigt werden und ob die route wirklich
+  im detail berechnet werden soll“. Liegt der nächste Halt einer Seite weiter als `-lang` (5 km Luftlinie ×
+  Reichweite), rechnet der Server weder Valhalla noch RAPTOR, sondern antwortet 422 `fussweg_lang` mit `start`/`ziel`
+  = {km, min} (Luftlinie × 1,3, auf 0,5 km / 5 min gerundet). Die App zeigt die Schätzung und „Trotzdem genau
+  berechnen“ → dieselbe Anfrage mit `"lang": true`. Ist Start→Ziel direkt zu Fuß möglich, kommt der Fußweg.
+  Alte Apps zeigen dann „Route nicht berechnet (fussweg_lang)“ (vorher kam dort ohnehin kein Ergebnis).
 - Ganz Deutschland erreichbar wird es erst mit dem DE-Fahrplan (zweistufiger Plan in D-24).
-- Status: umgesetzt (routing-core 0.1.23).
+- Status: umgesetzt (routing-core 0.1.24; 0.1.23 ohne Nachfrage nicht ausgerollt).

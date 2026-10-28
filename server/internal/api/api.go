@@ -4,6 +4,7 @@ package api
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"os"
 	"runtime"
@@ -58,6 +59,7 @@ type Server struct {
 	plan      atomic.Pointer[Plan]
 	AccessM   float64   // Suchradius für Zugangshalte (Luftlinie)
 	FarM      float64   // ohne Halt im Suchradius weitersuchen bis zu dieser Luftlinie (D-25), ≤ AccessM = aus
+	LangM     float64   // ab dieser Luftlinie zum nächsten Halt erst nachfragen ("lang"), 0 = nie
 	Valhalla  *Valhalla // echte Zugangswege; nil = Luftlinie
 	MaxTrips  int
 	WaitLimit time.Duration  // so lange wartet eine Anfrage höchstens auf einen freien Router
@@ -110,6 +112,7 @@ type routeReq struct {
 	Debug bool       `json:"debug"` // Zeiten der Valhalla-Aufrufe aufschlüsseln (nur Messung, keine Orte)
 	KMH   *float64   `json:"kmh"`   // Gehtempo (App-Einstellung, D-12); fehlt es, gilt BaseKMH
 	Art   string     `json:"art"`   // fuss (Standard) | einrad | klapprad | fixie | rennrad | mtb (D-21, D-22); rad = fixie
+	Lang  bool       `json:"lang"`  // auch mit sehr langem Zugangsweg (> LangM) genau rechnen (D-25)
 }
 
 // reichweite: Faktor für Zugangsradius und direkten Weg; schneller unterwegs = weiter, höchstens das Vierfache.
@@ -229,13 +232,17 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 		ks = art.kosten(s.Valhalla.KMH, kmh, scale)
 	}
 	go func() { directC <- s.directWalk(r.Context(), req.From, req.To, t, scale, weit, ks) }()
-	from, to, vh := s.access(r.Context(), p.TT, req.From, req.To, weit, scale, art.NurBahn, ks, tr)
+	from, to, vh, grob := s.access(r.Context(), p.TT, req.From, req.To, weit, scale, art.NurBahn, req.Lang, ks, tr)
 	walkMs := float64(time.Since(tw).Microseconds()) / 1000
 	if len(from) == 0 || len(to) == 0 {
 		if d := <-directC; d != nil { // keine Haltestelle, aber zu Fuß erreichbar
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Cache-Control", "no-store")
 			json.NewEncoder(w).Encode(routeResp{Journeys: []journeyOut{*d}, WalkMs: walkMs, VhMs: vh, Vh: tr})
+			return
+		}
+		if grob[0] > 0 || grob[1] > 0 {
+			fussLang(w, grob, kmh)
 			return
 		}
 		seite := "beide" // für die App: welche Seite liegt außerhalb (alte Apps lesen nur "error")
@@ -290,6 +297,38 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
+	json.NewEncoder(w).Encode(out)
+}
+
+// umweg: echte Fußwege sind im Mittel so viel länger als die Luftlinie (grobe Schätzung ohne Valhalla).
+const umweg = 1.3
+
+// fussLang meldet einen sehr langen Zugangs-/Abgangsweg mit grober Schätzung (gerundet, keine Orte), statt ihn
+// teuer zu rechnen; die App fragt nach und schickt die Anfrage dann mit "lang": true (D-25).
+func fussLang(w http.ResponseWriter, grob [2]float64, kmh float64) {
+	type seite struct {
+		KM  float64 `json:"km"`  // geschätzter Weg (Luftlinie × umweg), auf 0,5 km gerundet
+		Min int     `json:"min"` // geschätzte Dauer beim gewählten Tempo, auf 5 min gerundet
+	}
+	out := struct {
+		Error string `json:"error"`
+		Start *seite `json:"start,omitempty"`
+		Ziel  *seite `json:"ziel,omitempty"`
+	}{Error: "fussweg_lang"}
+	for k, m := range grob {
+		if m == 0 {
+			continue
+		}
+		km := m * umweg / 1000
+		sd := &seite{KM: math.Round(km*2) / 2, Min: int(math.Round(km/kmh*12)) * 5}
+		if k == 0 {
+			out.Start = sd
+		} else {
+			out.Ziel = sd
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusUnprocessableEntity)
 	json.NewEncoder(w).Encode(out)
 }
 

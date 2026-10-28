@@ -52,6 +52,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
   List<Verbindung>? _verbindungen; // null = wird berechnet
   bool _routeRt = false;
   String? _routeHinweis;
+  bool _langFrage = false; // Hinweis ist eine grobe Schätzung (Fußweg > 5 km): Knopf „trotzdem genau berechnen“
   int _gewaehlt = 0; // Verbindung, die die Karte zeigt
   List<Strecke> _strecken = [];
   Map<String, Halt> _halteDerVerbindung = {};
@@ -206,18 +207,19 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
     ));
   }
 
-  Future<void> _routeBerechnen() async {
+  Future<void> _routeBerechnen({bool lang = false}) async {
     final ziel = _ziel;
     if (ziel == null || _api == null) return;
     setState(() {
       _verbindungen = null;
       _routeHinweis = null;
+      _langFrage = false;
     });
     final p = await Standort.holen() ?? _pos;
     if (p == null) return setState(() => _routeHinweis = 'Kein Standort (Berechtigung oder GPS aus?)');
     _pos = p;
     try {
-      final (v, rt) = await _api!.route(p.lat, p.lon, ziel.lat, ziel.lon, kmh: _tempo.kmh, art: _tempo.art);
+      final (v, rt) = await _api!.route(p.lat, p.lon, ziel.lat, ziel.lon, kmh: _tempo.kmh, art: _tempo.art, lang: lang);
       if (!mounted || _ziel != ziel) return;
       setState(() {
         _verbindungen = v;
@@ -229,7 +231,9 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
       if (!mounted || _ziel != ziel) return;
       setState(() {
         _verbindungen = [];
+        _langFrage = e.art == 'fussweg_lang';
         _routeHinweis = switch (e.art) {
+          'fussweg_lang' => _langText(e.daten),
           'keine_haltestelle_in_reichweite' => switch (e.seite) {
               'start' => 'Start liegt außerhalb des Fahrplangebiets (bisher NRW)',
               'ziel' => 'Ziel liegt außerhalb des Fahrplangebiets (bisher NRW)',
@@ -241,6 +245,21 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
         };
       });
     }
+  }
+
+  /// Grobe Schätzung des Servers (Luftlinie × 1,3) als Text, z. B. „Vom Start bis zum nächsten Halt ca. 6,5 km zu Fuß (~1 h 30 min).“
+  static String _langText(Map? d) {
+    String teil(String wer, Map? s) {
+      if (s == null) return '';
+      final km = (s['km'] as num).toDouble();
+      final min = (s['min'] as num).toInt();
+      final dauer = min >= 60 ? '${min ~/ 60} h ${min % 60} min' : '$min min';
+      return '$wer ca. ${km.toStringAsFixed(km % 1 == 0 ? 0 : 1).replaceAll('.', ',')} km zu Fuß (~$dauer).\n';
+    }
+
+    return '${teil('Vom Start bis zum nächsten Halt', d?['start'] as Map?)}'
+        '${teil('Vom letzten Halt bis zum Ziel', d?['ziel'] as Map?)}'
+        'Das dauert zu Fuß lange (grobe Schätzung).';
   }
 
   Future<void> _aktualisieren({bool standortNeu = false}) async {
@@ -388,6 +407,18 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
   Widget _routeListe() {
     final v = _verbindungen;
     if (v == null) return const Center(child: CircularProgressIndicator());
+    if (v.isEmpty && _langFrage) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text(_routeHinweis ?? '', textAlign: TextAlign.center),
+            const SizedBox(height: 16),
+            FilledButton(onPressed: () => _routeBerechnen(lang: true), child: const Text('Trotzdem genau berechnen')),
+          ]),
+        ),
+      );
+    }
     if (v.isEmpty) return Center(child: Text(_routeHinweis ?? 'Keine Verbindung gefunden'));
     return RefreshIndicator(
       onRefresh: _routeBerechnen,

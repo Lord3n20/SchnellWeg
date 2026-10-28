@@ -139,7 +139,9 @@ func (v *Valhalla) Walk(ctx context.Context, tt *raptor.Timetable, lat, lon floa
 //
 // Bleibt auf einer Seite kein Halt übrig, sucht sie mit doppeltem Radius weiter bis FarM (D-25): auch auf dem
 // Land findet sich so der nächste Halt, nur mit langem Fußweg. Dann zählen nur die nächsten Halte (farSlack).
-func (s *Server) access(ctx context.Context, tt *raptor.Timetable, from, to point, weit, scale float64, nurBahn bool, ks []Kosten, tr *[2]WalkTrace) (fa, ta []raptor.Access, vh [2]float64) {
+// Liegt der nächste weiter als LangM × weit (Luftlinie) und ist lang nicht gesetzt, bricht die Seite vor Valhalla
+// ab: grob[k] = Luftlinie zum nächsten Halt in m, damit die App erst nachfragt (D-25).
+func (s *Server) access(ctx context.Context, tt *raptor.Timetable, from, to point, weit, scale float64, nurBahn, lang bool, ks []Kosten, tr *[2]WalkTrace) (fa, ta []raptor.Access, vh, grob [2]float64) {
 	near := func(p point, r float64) []raptor.Access {
 		acc := tt.Near(*p.Lat, *p.Lon, r)
 		if nurBahn {
@@ -163,6 +165,13 @@ func (s *Server) access(ctx context.Context, tt *raptor.Timetable, from, to poin
 		}
 		for r := s.AccessM * weit; ; r *= 2 {
 			acc := near(p, r)
+			if r > s.AccessM*weit && len(acc) > 0 && !lang && s.LangM > 0 {
+				h := &tt.Stops[acc[0].Stop]
+				if m := raptor.Dist(*p.Lat, *p.Lon, h.Lat, h.Lon); m > s.LangM*weit {
+					grob[k] = m
+					return nil
+				}
+			}
 			if s.Valhalla != nil && len(acc) > 0 {
 				for _, kk := range ks {
 					if w, err := s.Valhalla.Walk(ctx, tt, *p.Lat, *p.Lon, acc, toStops, kk, 2*r, t); err == nil {
@@ -183,7 +192,7 @@ func (s *Server) access(ctx context.Context, tt *raptor.Timetable, from, to poin
 	}()
 	ta = side(to, false, 1)
 	<-done
-	return fa, ta, vh
+	return fa, ta, vh, grob
 }
 
 // farSlack: bei der erweiterten Suche zählen nur Halte bis zu dieser Gehzeit über dem nächsten (Luftlinie), höchstens

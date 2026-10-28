@@ -62,6 +62,7 @@ func main() {
 	footpaths := flag.String("footpaths", "", "Valhalla-Fußwege (CSV, Job footpaths), soweit vorhanden; Glob erlaubt, ohne Treffer gilt die Luftlinie")
 	walk := flag.Float64("walk", 400, "max. Umstiegsfußweg in m (Luftlinie); Valhalla-Wege bis 2×walk")
 	access := flag.Float64("access", 800, "Suchradius für Zugangshalte in m (Luftlinie); echte Wege bis 2×access")
+	lang := flag.Float64("lang", 5000, "ab dieser Luftlinie zum nächsten Halt erst nachfragen (App: \"lang\": true), 0 = nie")
 	far := flag.Float64("far", 15000, "ohne Halt im Suchradius bis zu dieser Luftlinie in m weitersuchen (0 = aus)")
 	valhalla := flag.String("valhalla", "", "Valhalla-URL für echte Zugangswege (leer = Luftlinie)")
 	kmh := flag.Float64("kmh", 4.3, "Gehtempo für Zugangswege in km/h")
@@ -163,7 +164,7 @@ func main() {
 	} else if *geo != "" {
 		log.Print("Keine Suchliste gefunden, /v1/search ist aus")
 	}
-	srv := &api.Server{Geocode: geoIx, MapDir: rel(*mapDir), DirectM: *direct, DirectMax: *directMax, AccessM: *access, FarM: *far, MaxTrips: 6, WaitLimit: 2 * time.Second, LiveWait: *rtWait}
+	srv := &api.Server{Geocode: geoIx, MapDir: rel(*mapDir), DirectM: *direct, DirectMax: *directMax, AccessM: *access, FarM: *far, LangM: *lang, MaxTrips: 6, WaitLimit: 2 * time.Second, LiveWait: *rtWait}
 	if *rtURL != "" {
 		// Zeitbudget der Quelle 6 s je Versuch (CLAUDE.md), Stände älter als 5 min gelten nicht mehr
 		srv.Live = &rt.Live{URL: *rtURL, Client: &http.Client{Timeout: 6 * time.Second}, MinAge: 30 * time.Second,

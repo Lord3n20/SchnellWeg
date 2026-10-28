@@ -328,6 +328,15 @@ func TestWeitWeg(t *testing.T) {
 	if d := r.Journeys[0].Legs[0].Arr.Sub(r.Journeys[0].Legs[0].Dep); d < 25*time.Minute {
 		t.Errorf("Zugangsweg %v, erwartet ~30 min", d)
 	}
+	// Ab LangM erst nachfragen: grobe Schätzung statt Route, mit "lang" die volle Rechnung
+	s.LangM = 2000
+	if w, _ := post(s, body); w.Code != 422 || !strings.Contains(w.Body.String(), `"start":{"km":3,"min":40}`) {
+		t.Errorf("LangM: Code %d, %s", w.Code, w.Body)
+	}
+	if w, _ := post(s, strings.TrimSuffix(body, "}")+`,"lang":true}`); w.Code != 200 {
+		t.Errorf("lang: Code %d, %s", w.Code, w.Body)
+	}
+	s.LangM = 0
 	// Ziel weit außerhalb (Gebiet ohne Fahrplan): auch mit FarM kein Halt
 	if w, _ := post(s, strings.Replace(body, `"lat":50.7799`, `"lat":48.1`, 1)); w.Code != 422 || !strings.Contains(w.Body.String(), `"seite":"ziel"`) {
 		t.Errorf("Ziel außerhalb: Code %d, %s", w.Code, w.Body)

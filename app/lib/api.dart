@@ -7,8 +7,9 @@ import 'zugang.dart';
 
 class ApiFehler implements Exception {
   final String art; // Fehlertyp vom Server ("fahrplan_laedt" …) oder "netz"
-  final String? seite; // bei keine_haltestelle_in_reichweite: start | ziel | beide
-  ApiFehler(this.art, [this.seite]);
+  final Map? daten; // ganze Fehlerantwort (z. B. "seite", bei fussweg_lang die Schätzung "start"/"ziel")
+  ApiFehler(this.art, [this.daten]);
+  String? get seite => daten?['seite'] as String?;
   @override
   String toString() => art;
 }
@@ -186,13 +187,12 @@ class Api {
       final daten = await res.fold<List<int>>(<int>[], (a, b) => a..addAll(b)).timeout(zeit);
       if (res.statusCode >= 400) {
         String art = 'http_${res.statusCode}';
-        String? seite;
+        Map? m;
         try {
-          final m = jsonDecode(utf8.decode(daten)) as Map;
+          m = jsonDecode(utf8.decode(daten)) as Map;
           art = m['error'] as String? ?? art;
-          seite = m['seite'] as String?;
         } catch (_) {}
-        throw ApiFehler(art, seite);
+        throw ApiFehler(art, m);
       }
       return (res.statusCode, res.headers.value('etag'), daten);
     } on ApiFehler {
@@ -234,7 +234,7 @@ class Api {
 
   /// Verbindungen (Pareto nach Umstiegen) und ob der Echtzeitstand verfügbar war.
   Future<(List<Verbindung>, bool)> route(double vonLat, double vonLon, double nachLat, double nachLon,
-      {DateTime? ab, bool fern = false, double? kmh, String? art}) async {
+      {DateTime? ab, bool fern = false, double? kmh, String? art, bool lang = false}) async {
     final (_, _, daten) = await _anfrage('POST', '/v1/route',
         body: {
           'from': {'lat': vonLat, 'lon': vonLon},
@@ -243,6 +243,7 @@ class Api {
           if (fern) 'fern': true,
           'kmh': ?kmh,
           'art': ?art, // fuss | einrad | klapprad | fixie | rennrad | mtb (D-21, D-22)
+          if (lang) 'lang': true, // auch mit Fußweg > 5 km genau rechnen (D-25)
         },
         zeit: const Duration(seconds: 15));
     final j = jsonDecode(utf8.decode(daten)) as Map<String, dynamic>;
