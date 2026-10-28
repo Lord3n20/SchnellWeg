@@ -55,7 +55,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
   List<Strecke> _strecken = [];
   Map<String, Halt> _halteDerVerbindung = {};
   List<LatLng> _naheHalte = [];
-  double _kmh = standardKmh;
+  TempoProfil _tempo = TempoProfil('entspannt', 'fuss', standardKmh); // bis tempo.json gelesen ist
 
   @override
   void initState() {
@@ -84,7 +84,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
 
   Future<void> _starten() async {
     _db = await HalteDb.oeffnen();
-    _kmh = await Tempo.laden();
+    _tempo = await Tempo.laden();
     final z = await Zugang.laden();
     if (z == null) return _zugangEinrichten();
     _setzeZugang(z);
@@ -212,7 +212,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
     if (p == null) return setState(() => _routeHinweis = 'Kein Standort (Berechtigung oder GPS aus?)');
     _pos = p;
     try {
-      final (v, rt) = await _api!.route(p.lat, p.lon, ziel.lat, ziel.lon, kmh: _kmh);
+      final (v, rt) = await _api!.route(p.lat, p.lon, ziel.lat, ziel.lon, kmh: _tempo.kmh, art: _tempo.art);
       if (!mounted || _ziel != ziel) return;
       setState(() {
         _verbindungen = v;
@@ -292,10 +292,10 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
             tooltip: 'Einstellungen',
             onPressed: () => Navigator.of(context).push(MaterialPageRoute(
               builder: (_) => EinstellungenSeite(
-                kmh: _kmh,
+                tempo: _tempo,
                 zugang: _zugang,
-                tempoGeaendert: (k) {
-                  setState(() => _kmh = k);
+                tempoGeaendert: (p) {
+                  setState(() => _tempo = p);
                   _routeBerechnen();
                 },
                 zugangGeaendert: _setzeZugang,

@@ -1,4 +1,4 @@
-// Einstellungen als Menü mit Unterpunkten: Gehtempo, Offline-Karten (laden/löschen, belegter Platz), Zugang.
+// Einstellungen als Menü mit Unterpunkten: Tempo-Profile, Offline-Karten (laden/löschen, belegter Platz), Zugang.
 import 'package:flutter/material.dart';
 
 import 'api.dart';
@@ -6,17 +6,18 @@ import 'einstellungen.dart';
 import 'karte.dart' show groesse;
 import 'kartenlager.dart';
 import 'tempo.dart';
+import 'tempo_messen.dart';
 import 'zugang.dart';
 
 class EinstellungenSeite extends StatefulWidget {
-  final double kmh;
+  final TempoProfil tempo;
   final Zugang? zugang;
-  final ValueChanged<double> tempoGeaendert;
+  final ValueChanged<TempoProfil> tempoGeaendert;
   final ValueChanged<Zugang> zugangGeaendert;
 
   const EinstellungenSeite({
     super.key,
-    required this.kmh,
+    required this.tempo,
     required this.zugang,
     required this.tempoGeaendert,
     required this.zugangGeaendert,
@@ -27,15 +28,15 @@ class EinstellungenSeite extends StatefulWidget {
 }
 
 class _EinstellungenSeiteState extends State<EinstellungenSeite> with _LagerBeobachten {
-  late double _kmh = widget.kmh;
+  late TempoProfil _tempo = widget.tempo;
   late Zugang? _zugang = widget.zugang;
 
-  Future<void> _tempo() async {
-    final k = await tempoWaehlen(context, _kmh);
-    if (k == null || !mounted) return;
-    setState(() => _kmh = k);
-    await Tempo.speichern(k);
-    widget.tempoGeaendert(k);
+  Future<void> _tempoAendern() async {
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TempoSeite()));
+    final p = await Tempo.laden();
+    if (!mounted || (p.name == _tempo.name && p.kmh == _tempo.kmh)) return;
+    setState(() => _tempo = p);
+    widget.tempoGeaendert(p);
   }
 
   Future<void> _zugangAendern() async {
@@ -53,10 +54,10 @@ class _EinstellungenSeiteState extends State<EinstellungenSeite> with _LagerBeob
       appBar: AppBar(title: const Text('Einstellungen')),
       body: ListView(children: [
         _Punkt(
-          icon: Icons.directions_walk,
-          titel: 'Gehtempo',
-          unter: tempoText(_kmh),
-          onTap: _tempo,
+          icon: switch (_tempo.art) { 'rad' => Icons.directions_bike, 'einrad' => Icons.circle_outlined, _ => Icons.directions_walk },
+          titel: 'Tempo',
+          unter: '${_tempo.name} · ${tempoText(_tempo.kmh)}',
+          onTap: _tempoAendern,
         ),
         _Punkt(
           icon: Icons.map_outlined,
