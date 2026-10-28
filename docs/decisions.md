@@ -264,6 +264,9 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - Zugangsradius: mit allen Linien (Fuß, Einrad, Klapprad) höchstens ×2,5 statt ×4 – das Klapprad mit ×4 brachte so
   viele Bushalte in die Valhalla-Matrix, dass sie 111 ms brauchte (Grenze 100). Steht der direkte Weg vorn, entfallen
   RAPTOR-Wege ohne Fahrt (sonst doppelt).
+- Klapprad meidet Busse leicht (Betreiber 28.10.: „kann minimal schneller sein als ein Bus bei ein paar
+  Stationen“): Verbindungen mit Bus entfallen, wenn sie nicht mindestens 3 min vor dem direkten Weg ankommen
+  (`BusMalus`); Bahnen bleiben ohne Malus.
 - Profile und Tempo bleiben auf dem Handy; der Server bekommt je Anfrage nur `art` + `kmh` (Betreiber 28.10.: „reicht,
   wenn die Geschwindigkeit vom Handy vorgegeben wird … dann lässt sich die App auch teilen“).
-- Status: umgesetzt (routing-core 0.1.16, App).
+- Status: umgesetzt (routing-core 0.1.17, App).

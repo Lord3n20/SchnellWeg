@@ -1,5 +1,7 @@
 package api
 
+import "time"
+
 // Fortbewegungsarten (D-21, D-22). Zu Fuß, Einrad, Klapprad, Fixie und Mountainbike rechnen mit Valhallas
 // Fußgänger-Kosten (Wege wie zu Fuß, Treppen trag- bzw. schiebbar) und skalieren die Zeit aufs gewählte Tempo;
 // das Rennrad fährt mit Fahrrad-Kosten (Straßen und Radwege, keine Fußwege, keine Treppen) und fällt nur dann auf
@@ -10,13 +12,16 @@ type Art struct {
 	NurBahn  bool    // nur Schiene, Fahrten brauchen ein Fahrradticket
 	Strasse  bool    // Valhalla-Fahrradkosten (Rennrad)
 	Stufen   float64 // step_penalty für die Fußgänger-Kosten in s (0 = Treppen wie zu Fuß)
+	// BusMalus: Verbindungen mit Bus entfallen, wenn sie nicht mindestens so viel früher ankommen als der direkte
+	// Weg (Klapprad: ein paar Stationen Bus sind kaum schneller als selbst fahren, Betreiber 28.10.).
+	BusMalus time.Duration
 }
 
 var arten = map[string]Art{
 	"":         {Min: 2, Max: 8},
 	"fuss":     {Min: 2, Max: 8},
 	"einrad":   {Min: 4, Max: 20},
-	"klapprad": {Min: 6, Max: 30, Rad: true}, // zusammengeklappt in Bus und Bahn, kein Fahrradticket
+	"klapprad": {Min: 6, Max: 30, Rad: true, BusMalus: 3 * time.Minute}, // zusammengeklappt in Bus und Bahn, kein Ticket
 	"fixie":    {Min: 6, Max: 40, Rad: true, NurBahn: true},
 	"rad":      {Min: 6, Max: 40, Rad: true, NurBahn: true}, // App vor D-22 = Fixie
 	"rennrad":  {Min: 10, Max: 45, Rad: true, NurBahn: true, Strasse: true, Stufen: 600},

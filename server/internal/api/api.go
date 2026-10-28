@@ -5,7 +5,6 @@ package api
 import (
 	"encoding/json"
 	"net/http"
-	"slices"
 	"sync/atomic"
 	"time"
 
@@ -253,7 +252,11 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	p.routers <- rt
 	snap := <-liveC
 	out := routeResp{Journeys: []journeyOut{}, Ms: ms, WalkMs: walkMs, VhMs: vh, Vh: tr, RT: snap != nil}
-	for _, j := range res.Journeys {
+	bus := make([]bool, len(res.Journeys)) // Verbindung nutzt einen Bus (für BusMalus)
+	for k, j := range res.Journeys {
+		for _, l := range j.Legs {
+			bus[k] = bus[k] || l.Kind == raptor.Ride && !p.TT.Routes[l.Route].Bahn
+		}
 		jo := convert(p.TT, base, j)
 		for i := range jo.Legs {
 			jo.Legs[i].Rad = art.NurBahn && jo.Legs[i].Mode == "ride"
@@ -266,8 +269,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	s.shapes(r.Context(), p.TT, req.From, req.To, res.Journeys, out.Journeys, ks)
 	out.ShapeMs = since(ts)
 	if d := <-directC; d != nil && art.Rad {
-		// Rad: ÖV nur, wenn nötig → direkter Weg zuerst; RAPTOR-Wege ohne Fahrt sind dann doppelt
-		out.Journeys = slices.DeleteFunc(out.Journeys, func(j journeyOut) bool { return j.Trips == 0 })
+		out.Journeys = radVergleich(out.Journeys, bus, *d, art.BusMalus)
 		out.Journeys = append([]journeyOut{*d}, out.Journeys...)
 	} else if d != nil {
 		out.Journeys = append(out.Journeys, *d) // als Vergleich hinten, die App wählt zuerst die erste Verbindung
@@ -276,6 +278,18 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	json.NewEncoder(w).Encode(out)
+}
+
+// radVergleich behält beim Rad nur die Verbindungen, die gegenüber dem direkten Weg d etwas bringen: RAPTOR-Wege
+// ohne Fahrt sind doppelt, solche mit Bus (bus[k]) müssen mindestens malus früher ankommen.
+func radVergleich(js []journeyOut, bus []bool, d journeyOut, malus time.Duration) []journeyOut {
+	var out []journeyOut
+	for k, j := range js {
+		if j.Trips > 0 && !(bus[k] && j.Arr.After(d.Arr.Add(-malus))) {
+			out = append(out, j)
+		}
+	}
+	return out
 }
 
 // convert übersetzt einen Weg in die Ausgabe. Der Zugangsweg wird ans Ende verschoben, sodass man so spät wie

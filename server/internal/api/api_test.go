@@ -280,3 +280,15 @@ func TestNurFussweg(t *testing.T) {
 		t.Fatalf("ohne Fußweg: Code %d", w.Code)
 	}
 }
+
+func TestRadVergleich(t *testing.T) {
+	at := func(m int) time.Time { return time.Date(2026, 10, 28, 8, m, 0, 0, Berlin) }
+	d := journeyOut{Arr: at(10)}
+	js := []journeyOut{{Trips: 0, Arr: at(9)}, {Trips: 1, Arr: at(8)}, {Trips: 1, Arr: at(7)}, {Trips: 1, Arr: at(9)}}
+	bus := []bool{false, true, true, false}
+	got := radVergleich(js, bus, d, 3*time.Minute)
+	// ohne Fahrt: weg; Bus 2 min früher: weg; Bus 3 min früher: bleibt; Bahn 1 min früher: bleibt
+	if len(got) != 2 || !got[0].Arr.Equal(at(7)) || !got[1].Arr.Equal(at(9)) {
+		t.Errorf("radVergleich: %+v", got)
+	}
+}
