@@ -270,9 +270,7 @@ func (r *Router) journey(k int, to []Access) (Journey, bool) {
 // Near liefert Halte mit Abfahrten im Umkreis maxM um einen Ort (Luftlinie). Die Gehzeit ist eine Schätzung;
 // mit Valhalla ersetzt die API sie durch den echten Weg.
 func (tt *Timetable) Near(lat, lon, maxM float64) []Access {
-	if tt.byLat == nil {
-		tt.buildByLat() // von Hand gebaute Fahrpläne (Tests)
-	}
+	tt.byLatOnce.Do(tt.buildByLat)
 	dLat := maxM / 111195
 	lo := sort.Search(len(tt.byLat), func(k int) bool { return tt.Stops[tt.byLat[k]].Lat >= lat-dLat })
 	var out []Access

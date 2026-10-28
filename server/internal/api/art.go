@@ -19,9 +19,9 @@ type Art struct {
 }
 
 var arten = map[string]Art{
-	"":         {Min: 2, Max: 8},
-	"fuss":     {Min: 2, Max: 8},
-	"einrad":   {Min: 4, Max: 20},
+	"":       {Min: 2, Max: 8},
+	"fuss":   {Min: 2, Max: 8},
+	"einrad": {Min: 4, Max: 20},
 	// zusammengeklappt in Bus und Bahn, kein Ticket
 	"klapprad": {Min: 6, Max: 30, Rad: true, BusMalus: 5 * time.Minute, RadTyp: "City", Belag: 0.5, Stufen: 120},
 	"fixie":    {Min: 6, Max: 40, Rad: true, NurBahn: true, RadTyp: "Hybrid", Belag: 0.5, Stufen: 300},
