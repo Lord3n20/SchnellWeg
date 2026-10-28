@@ -15,7 +15,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -144,27 +143,22 @@ func main() {
 	}
 
 	var geoIx *geocode.Index
-	var geoFiles []io.Reader
+	var geoFiles []string
 	for _, g := range strings.Split(*geo, ",") {
 		m, _ := filepath.Glob(rel(strings.TrimSpace(g)))
 		if g == "" || len(m) == 0 {
 			continue
 		}
-		f, err := os.Open(m[0])
-		if err != nil {
-			log.Fatal("Fehler beim Laden der Suchliste: ", err)
-		}
-		defer f.Close()
-		geoFiles = append(geoFiles, f)
+		geoFiles = append(geoFiles, m[0])
 	}
 	if len(geoFiles) > 0 {
 		t0 := time.Now()
-		ix, err := geocode.Load(geoFiles...)
+		ix, err := geocode.LoadFiles(geoFiles...) // per mmap: die Zeilen bleiben in der Datei (D-24)
 		if err != nil {
 			log.Fatal("Fehler beim Laden der Suchliste: ", err)
 		}
 		geoIx = ix
-		log.Printf("Suchliste geladen in %v: %d Einträge aus %d Dateien", time.Since(t0).Round(time.Millisecond), len(ix.Entries), len(geoFiles))
+		log.Printf("Suchliste geladen in %v: %d Einträge aus %d Dateien", time.Since(t0).Round(time.Millisecond), ix.Len(), len(geoFiles))
 	} else if *geo != "" {
 		log.Print("Keine Suchliste gefunden, /v1/search ist aus")
 	}

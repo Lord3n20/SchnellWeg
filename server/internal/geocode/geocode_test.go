@@ -25,8 +25,8 @@ func testIndex(t *testing.T) *Index {
 		t.Fatal(err)
 	}
 	ix, err := Load(&b)
-	if err != nil || len(ix.Entries) != len(es) {
-		t.Fatalf("%v, %d Einträge", err, len(ix.Entries))
+	if err != nil || ix.Len() != len(es) {
+		t.Fatalf("%v, %d Einträge", err, ix.Len())
 	}
 	return ix
 }

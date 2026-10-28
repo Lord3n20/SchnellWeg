@@ -1,57 +1,114 @@
 package geocode
 
 import (
-	"bufio"
+	"bytes"
 	"io"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"unicode"
 	"unicode/utf8"
+	"unsafe"
 )
 
 // Index durchsucht die Einträge über die Wortanfänge: jedes Wort eines Suchtexts muss Anfang eines Worts im
-// Eintrag (Name + Detail) sein. Sortierte Wortliste + Trefferlisten, keine Kopien der Einträge.
+// Eintrag (Name + Detail) sein. Sortierte Wortliste + Trefferlisten. Die Einträge selbst bleiben als TSV-Zeilen in
+// den (per mmap eingeblendeten) Dateien; im Speicher stehen je Eintrag nur Lage der Zeile und Koordinaten
+// (D-24: ~1 Mio. Einträge kosteten als Strings ~130 MB Heap, so liest das System nur die gebrauchten Seiten).
 type Index struct {
-	Entries []Entry
-	words   []string  // sortiert, eindeutig
-	posts   [][]int32 // je Wort die Einträge (Wort in Name oder Detail)
-	nposts  [][]int32 // je Wort die Einträge, in deren Namen es steht (Kandidaten zuerst hieraus)
+	blobs  [][]byte
+	ents   []ent
+	words  []string  // sortiert, eindeutig
+	posts  [][]int32 // je Wort die Einträge (Wort in Name oder Detail)
+	nposts [][]int32 // je Wort die Einträge, in deren Namen es steht (Kandidaten zuerst hieraus)
+}
+
+type ent struct {
+	blob     uint16
+	off, n   uint32 // Zeile ohne Zeilenende
+	lat, lon float64
 }
 
 // Load liest die TSVs aus Write (Suchliste aus OSM, Gebäudeliste RWTH …) in einen gemeinsamen Index.
 func Load(rs ...io.Reader) (*Index, error) {
-	ix := &Index{}
+	var blobs [][]byte
 	for _, r := range rs {
-		if err := ix.read(r); err != nil {
+		b, err := io.ReadAll(r)
+		if err != nil {
+			return nil, err
+		}
+		blobs = append(blobs, b)
+	}
+	return index(blobs), nil
+}
+
+// LoadFiles blendet die TSVs per mmap ein (nur lesend, nie wieder ausgeblendet) und baut daraus den Index.
+func LoadFiles(paths ...string) (*Index, error) {
+	var blobs [][]byte
+	for _, p := range paths {
+		f, err := os.Open(p)
+		if err != nil {
+			return nil, err
+		}
+		st, err := f.Stat()
+		if err == nil && st.Size() > 0 {
+			var b []byte
+			b, err = syscall.Mmap(int(f.Fd()), 0, int(st.Size()), syscall.PROT_READ, syscall.MAP_SHARED)
+			blobs = append(blobs, b)
+		}
+		f.Close()
+		if err != nil {
 			return nil, err
 		}
 	}
-	ix.build()
-	return ix, nil
+	return index(blobs), nil
 }
 
-func (ix *Index) read(r io.Reader) error {
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 64<<10), 1<<20)
-	for sc.Scan() {
-		f := strings.Split(sc.Text(), "\t")
-		if len(f) != 5 {
-			continue
+func index(blobs [][]byte) *Index {
+	ix := &Index{blobs: blobs}
+	for bi, b := range blobs {
+		for off := 0; off < len(b); {
+			n := bytes.IndexByte(b[off:], '\n')
+			if n < 0 {
+				n = len(b) - off
+			}
+			f := bytes.Split(b[off:off+n], []byte{'\t'})
+			if len(f) == 5 {
+				lat, e1 := strconv.ParseFloat(string(f[3]), 64)
+				lon, e2 := strconv.ParseFloat(string(f[4]), 64)
+				if e1 == nil && e2 == nil {
+					ix.ents = append(ix.ents, ent{uint16(bi), uint32(off), uint32(n), lat, lon})
+				}
+			}
+			off += n + 1
 		}
-		lat, e1 := strconv.ParseFloat(f[3], 64)
-		lon, e2 := strconv.ParseFloat(f[4], 64)
-		if e1 != nil || e2 != nil {
-			continue
-		}
-		ix.Entries = append(ix.Entries, Entry{Kind: f[0], Name: f[1], Detail: f[2], Lat: lat, Lon: lon})
 	}
-	return sc.Err()
+	ix.build()
+	return ix
+}
+
+// Len ist die Zahl der Einträge.
+func (ix *Index) Len() int { return len(ix.ents) }
+
+// entry liest Eintrag i aus seiner Zeile; die Strings zeigen ohne Kopie in die Datei.
+func (ix *Index) entry(i int32) Entry {
+	e := ix.ents[i]
+	line := ix.blobs[e.blob][e.off : e.off+e.n]
+	var f [3]string
+	for k := range f {
+		t := bytes.IndexByte(line, '\t')
+		f[k] = unsafe.String(unsafe.SliceData(line), t)
+		line = line[t+1:]
+	}
+	return Entry{Kind: f[0], Name: f[1], Detail: f[2], Lat: e.lat, Lon: e.lon}
 }
 
 func (ix *Index) build() {
 	m, nm := map[string][]int32{}, map[string][]int32{}
-	for i, e := range ix.Entries {
+	for i := range ix.ents {
+		e := ix.entry(int32(i))
 		seen := map[string]bool{}
 		name := words(Normalize(e.Name))
 		for k, w := range append(name, words(Normalize(e.Detail))...) {
@@ -226,7 +283,7 @@ func (ix *Index) score(cand []int32, qw []string) []Hit {
 			continue
 		}
 		seen[id] = true
-		e := ix.Entries[id]
+		e := ix.entry(id)
 		norm := Normalize(e.Name)
 		nw := len(words(norm))
 		ew := words(norm + " " + Normalize(e.Detail))
