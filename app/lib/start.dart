@@ -2,7 +2,6 @@
 // Abfahrten werden nur abgefragt, solange die Seite sichtbar ist (alle 30 s, kein Hintergrund-Polling).
 // Ziel per Suche oder durch Antippen der Karte. Mit gewähltem Ziel zeigt die Seite statt der Haltestellen kurze Zusammenfassungen der Verbindungen.
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
@@ -10,8 +9,10 @@ import 'package:latlong2/latlong.dart';
 import 'api.dart';
 import 'details.dart';
 import 'einstellungen.dart';
+import 'einstellungen_seite.dart';
 import 'halte_db.dart';
 import 'karte.dart';
+import 'kartenlager.dart';
 import 'namen.dart';
 import 'standort.dart';
 import 'tempo.dart';
@@ -54,9 +55,6 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
   List<Strecke> _strecken = [];
   Map<String, Halt> _halteDerVerbindung = {};
   List<LatLng> _naheHalte = [];
-  File? _karteDatei;
-  int _karteStand = 0;
-  String? _karteHinweis;
   double _kmh = standardKmh;
 
   @override
@@ -78,7 +76,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState s) {
     if (s == AppLifecycleState.resumed) {
       _aktualisieren(standortNeu: true);
-      if (_karteDatei == null && _api != null) _karteSichern(); // letzter Versuch gescheitert
+      if (_api != null) KartenLager.instanz.start(_api!); // prüft höchstens täglich
     } else if (s == AppLifecycleState.paused || s == AppLifecycleState.hidden) {
       _timer?.cancel();
     }
@@ -97,39 +95,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
     _zugang = z;
     _api = Api(z);
     _halteAbgleichen().then((_) => _aktualisieren(standortNeu: true));
-    _karteSichern();
-  }
-
-  /// Vorhandene Karte sofort zeigen, im Hintergrund auf neuen Stand prüfen.
-  Future<void> _karteSichern() async {
-    final f = await KartenDatei.datei();
-    final da = await f.exists();
-    if (da) setState(() => _karteDatei = f);
-    var prozent = -1;
-    try {
-      final neu = await KartenDatei.sichern(_api!, fortschritt: da ? null : (n, gesamt) {
-        final p = gesamt > 0 ? n * 100 ~/ gesamt : -1;
-        if (p == prozent || !mounted) return;
-        prozent = p;
-        setState(() => _karteHinweis = 'Karte wird geladen … ${p >= 0 ? '$p %' : '${n >> 20} MB'}');
-      });
-      if (neu && mounted) {
-        setState(() {
-          _karteDatei = f;
-          _karteStand++;
-        });
-      }
-    } on ApiFehler catch (e) {
-      if (!da && mounted) setState(() => _karteHinweis = 'Karte nicht geladen ($e)');
-    }
-  }
-
-  Future<void> _tempoEinstellen() async {
-    final k = await tempoWaehlen(context, _kmh);
-    if (k == null || !mounted) return;
-    setState(() => _kmh = k);
-    await Tempo.speichern(k);
-    await _routeBerechnen();
+    KartenLager.instanz.start(_api!);
   }
 
   Future<void> _zugangEinrichten() async {
@@ -231,8 +197,6 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
         zielName: ziel.name,
         standort: _pos == null ? null : LatLng(_pos!.lat, _pos!.lon),
         ziel: LatLng(ziel.lat, ziel.lon),
-        karte: _karteDatei,
-        karteStand: _karteStand,
       ),
     ));
   }
@@ -323,8 +287,21 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
       appBar: AppBar(
         title: const Text('SchnellWeg'),
         actions: [
-          IconButton(icon: const Icon(Icons.directions_walk), tooltip: 'Gehtempo ${tempoText(_kmh)}', onPressed: _tempoEinstellen),
-          IconButton(icon: const Icon(Icons.settings), tooltip: 'Zugang', onPressed: _zugangEinrichten),
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: 'Einstellungen',
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => EinstellungenSeite(
+                kmh: _kmh,
+                zugang: _zugang,
+                tempoGeaendert: (k) {
+                  setState(() => _kmh = k);
+                  _routeBerechnen();
+                },
+                zugangGeaendert: _setzeZugang,
+              ),
+            )),
+          ),
         ],
       ),
       body: Column(children: [
@@ -346,9 +323,6 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
         Expanded(
           flex: 5,
           child: Karte(
-            datei: _karteDatei,
-            stand: _karteStand,
-            hinweis: _karteHinweis,
             standort: _pos == null ? null : LatLng(_pos!.lat, _pos!.lon),
             ziel: _ziel == null ? null : LatLng(_ziel!.lat, _ziel!.lon),
             halte: _naheHalte,

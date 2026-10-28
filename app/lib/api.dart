@@ -54,6 +54,33 @@ class Ort {
         lon = (j['lon'] as num).toDouble();
 }
 
+class KartenRegion {
+  final String id, name;
+  final double west, sued, ost, nord;
+  final int zoom, bytes;
+  final DateTime stand;
+
+  KartenRegion.json(Map<String, dynamic> j)
+      : id = j['id'] as String,
+        name = j['name'] as String,
+        west = _box(j, 0),
+        sued = _box(j, 1),
+        ost = _box(j, 2),
+        nord = _box(j, 3),
+        zoom = j['zoom'] as int,
+        bytes = j['bytes'] as int,
+        stand = DateTime.parse(j['stand'] as String);
+
+  Map<String, dynamic> toJson() => {
+        'id': id, 'name': name, 'box': '$west,$sued,$ost,$nord', 'zoom': zoom, 'bytes': bytes,
+        'stand': stand.toUtc().toIso8601String(),
+      };
+
+  static double _box(Map<String, dynamic> j, int i) => double.parse((j['box'] as String).split(',')[i]);
+
+  bool enthaelt(double lat, double lon) => lat >= sued && lat <= nord && lon >= west && lon <= ost;
+}
+
 class HaltRef {
   final String id, name;
   HaltRef.json(Map<String, dynamic> j)
@@ -218,41 +245,61 @@ class Api {
     );
   }
 
-  /// Lädt die Karte (PMTiles) nach [ziel], wenn sie neuer ist als [stand]; schreibt erst in eine .part-Datei
-  /// und benennt dann um, damit eine offene Karte nie eine halbe Datei sieht. Liefert true bei neuer Datei.
-  Future<bool> karte(File ziel, DateTime? stand, {void Function(int geladen, int gesamt)? fortschritt}) async {
+  /// Kartendateien, die der Server anbietet (D-20): Übersicht + Bundesländer.
+  Future<List<KartenRegion>> kartenRegionen() async {
+    final (_, _, daten) = await _anfrage('GET', '/v1/map');
+    final l = (jsonDecode(utf8.decode(daten)) as Map)['regions'] as List? ?? const [];
+    return [for (final r in l.cast<Map<String, dynamic>>()) KartenRegion.json(r)];
+  }
+
+  /// Lädt die Kartendatei [id] nach [ziel], wenn sie neuer ist als [stand]. Geschrieben wird in eine .part-Datei,
+  /// die bei Abbruch liegen bleibt und beim nächsten Versuch per Range fortgesetzt wird (If-Range: nur wenn der
+  /// Serverstand gleich geblieben ist); erst die fertige Datei wird umbenannt. true = neue Datei.
+  Future<bool> karte(String id, File ziel, DateTime? stand, {void Function(int geladen, int gesamt)? fortschritt}) async {
     final teil = File('${ziel.path}.part');
+    final teilStand = File('${ziel.path}.part.stand'); // Last-Modified des angefangenen Downloads
     try {
-      final req = await _http.getUrl(zugang.basis.resolve('/v1/map'));
+      var schon = await teil.exists() && await teilStand.exists() ? await teil.length() : 0;
+      final req = await _http.getUrl(zugang.basis.resolve('/v1/map/${Uri.encodeComponent(id)}'));
       if (stand != null) req.headers.ifModifiedSince = stand;
+      if (schon > 0) {
+        req.headers.set('Range', 'bytes=$schon-');
+        req.headers.set('If-Range', (await teilStand.readAsString()).trim());
+      }
       final res = await req.close().timeout(const Duration(seconds: 15));
       if (res.statusCode == 304) {
         await res.drain<void>();
         return false;
       }
-      if (res.statusCode != 200) {
+      if (res.statusCode == 200) {
+        schon = 0; // neu oder Serverstand geändert
+      } else if (res.statusCode != 206) {
         await res.drain<void>();
         throw ApiFehler('http_${res.statusCode}');
       }
-      final aus = teil.openWrite();
-      var n = 0;
-      await for (final b in res.timeout(const Duration(seconds: 30))) {
-        aus.add(b);
-        n += b.length;
-        fortschritt?.call(n, res.contentLength);
+      final lm = res.headers.value('last-modified') ?? HttpDate.format(DateTime.now());
+      await teilStand.writeAsString(lm);
+      final gesamt = res.contentLength < 0 ? -1 : schon + res.contentLength;
+      final aus = teil.openWrite(mode: schon > 0 ? FileMode.append : FileMode.write);
+      var n = schon;
+      try {
+        await for (final b in res.timeout(const Duration(seconds: 30))) {
+          aus.add(b);
+          n += b.length;
+          fortschritt?.call(n, gesamt);
+        }
+      } finally {
+        await aus.close();
       }
-      await aus.close();
-      if (res.contentLength >= 0 && n != res.contentLength) throw ApiFehler('karte_unvollstaendig');
-      await teil.setLastModified(res.headers.value('last-modified') == null
-          ? DateTime.now()
-          : HttpDate.parse(res.headers.value('last-modified')!));
+      if (gesamt >= 0 && n != gesamt) throw ApiFehler('karte_unvollstaendig');
+      await teil.setLastModified(HttpDate.parse(lm));
       await teil.rename(ziel.path);
+      await teilStand.delete();
       return true;
     } on ApiFehler {
-      if (await teil.exists()) await teil.delete();
       rethrow;
     } on Exception catch (e) {
-      if (await teil.exists()) await teil.delete();
+      // .part bleibt für den nächsten Versuch
       throw ApiFehler(e is HandshakeException || e is TlsException ? 'zertifikat' : 'netz');
     }
   }

@@ -1,8 +1,6 @@
 // Detailansicht einer Verbindung: Karte mit genau dieser Verbindung, darunter Schritt für Schritt
 // Fußwege (Dauer, Länge) und Fahrten (Einstieg mit Bahnsteig, alle Halte unterwegs, Ausstieg hervorgehoben).
 // Halt-Namen kommen aus der lokalen SQLite; Zeiten je Zwischenhalt liefert der Server nicht.
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
@@ -19,8 +17,6 @@ class Details extends StatelessWidget {
   final List<Strecke> strecken;
   final String zielName;
   final LatLng? standort, ziel;
-  final File? karte;
-  final int karteStand;
   const Details({
     super.key,
     required this.v,
@@ -29,8 +25,6 @@ class Details extends StatelessWidget {
     required this.zielName,
     required this.standort,
     required this.ziel,
-    required this.karte,
-    required this.karteStand,
   });
 
   @override
@@ -56,7 +50,7 @@ class Details extends StatelessWidget {
       body: Column(children: [
         Expanded(
           flex: 4,
-          child: Karte(datei: karte, stand: karteStand, standort: standort, ziel: ziel, strecken: strecken),
+          child: Karte(standort: standort, ziel: ziel, strecken: strecken),
         ),
         Expanded(
           flex: 6,
