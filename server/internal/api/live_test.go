@@ -151,8 +151,8 @@ func TestSearch(t *testing.T) {
 
 func TestMap(t *testing.T) {
 	s := testServer(time.Date(2026, 10, 28, 0, 0, 0, 0, Berlin))
-	get := func(h map[string]string) *httptest.ResponseRecorder {
-		r := httptest.NewRequest(http.MethodGet, "/v1/map", nil)
+	get := func(pfad string, h map[string]string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodGet, pfad, nil)
 		for k, v := range h {
 			r.Header.Set(k, v)
 		}
@@ -160,20 +160,32 @@ func TestMap(t *testing.T) {
 		s.Handler().ServeHTTP(w, r)
 		return w
 	}
-	if c := get(nil).Code; c != 503 {
+	if c := get("/v1/map", nil).Code; c != 503 {
 		t.Fatalf("ohne Karte: %d", c)
 	}
-	p := t.TempDir() + "/region.pmtiles"
-	os.WriteFile(p, []byte("PMTiles-Testinhalt"), 0o644)
-	s.MapPath = p
-	w := get(nil)
+	d := t.TempDir()
+	os.WriteFile(d+"/regionen.json", []byte(`[{"id":"uebersicht","name":"Übersicht","box":"5,47,15,55","zoom":9},{"id":"nw","name":"NRW","box":"5.8,50.3,9.5,52.5","zoom":15},{"id":"by","name":"Bayern","box":"9,47,14,51","zoom":15}]`), 0o644)
+	os.WriteFile(d+"/uebersicht.pmtiles", []byte("PMTiles-Testinhalt"), 0o644)
+	os.WriteFile(d+"/nw.pmtiles", []byte("NRW"), 0o644)
+	s.MapDir = d
+	w := get("/v1/map", nil)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"id":"nw"`) || strings.Contains(w.Body.String(), `"by"`) ||
+		!strings.Contains(w.Body.String(), `"bytes":3`) {
+		t.Fatalf("Liste %d %s", w.Code, w.Body.String())
+	}
+	w = get("/v1/map/uebersicht", nil)
 	if w.Code != 200 || w.Body.String() != "PMTiles-Testinhalt" {
 		t.Fatalf("Code %d", w.Code)
 	}
-	if w2 := get(map[string]string{"Range": "bytes=0-6"}); w2.Code != 206 || w2.Body.String() != "PMTiles" {
+	if w2 := get("/v1/map/uebersicht", map[string]string{"Range": "bytes=0-6"}); w2.Code != 206 || w2.Body.String() != "PMTiles" {
 		t.Fatalf("Range: %d %q", w2.Code, w2.Body.String())
 	}
-	if w3 := get(map[string]string{"If-Modified-Since": w.Header().Get("Last-Modified")}); w3.Code != 304 {
+	if w3 := get("/v1/map/uebersicht", map[string]string{"If-Modified-Since": w.Header().Get("Last-Modified")}); w3.Code != 304 {
 		t.Fatalf("If-Modified-Since: %d", w3.Code)
+	}
+	for _, p := range []string{"/v1/map/by", "/v1/map/..%2Fx", "/v1/map/regionen"} {
+		if c := get(p, nil).Code; c != 404 && c != 503 {
+			t.Fatalf("%s: %d", p, c)
+		}
 	}
 }

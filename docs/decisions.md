@@ -215,3 +215,22 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   parallel zu den Zugangsmatrizen, nur bis 3 km Luftlinie (`-direct`) und höchstens 60 min beim gewählten Tempo
   (`-direct_max`). Ohne Halt in Reichweite, aber zu Fuß erreichbar, kommt nur der Fußweg statt Fehler 422.
 - Status: umgesetzt (routing-core 0.1.12, App).
+
+## D-20 Karte für ganz Deutschland: Übersicht + Bundesländer zum Nachladen (28.10.)
+- Betreiber 28.10.: „NRW komplett, Rest von DE grob und downloadbar bei Reinzoomen, so wie Organic Maps“.
+- Job `map` holt einmal je `map_tage` (Standard 30) Deutschland samt Grenzgebiet (`map_box` 5.8,47.2,15.1,55.1)
+  bis Zoom 15 aus dem neuesten Protomaps-Build (~8 GB Übertragung, D-17-Lizenz unverändert) und schneidet daraus
+  lokal ohne Netz: `uebersicht.pmtiles` (ganze Box bis `map_uebersicht_zoom` 9) und je Bundesland eine Datei bis
+  Zoom 15 (Rechtecke, Stadtstaaten beim Nachbarn: 13 Regionen, Liste in `maptiles.go`). Die Gesamtdatei wird danach
+  gelöscht; `regionen.json` beschreibt den Stand. Platzbedarf mit Rollback ~25 GB, Prüfung auf 40 GB frei.
+- Dry-Run 28.10. (Build 20261027): Übersicht Zoom 9 = 64 MB (Zoom 10 wäre 176 MB), NRW Zoom 15 = 1,4 GB,
+  Gesamtbox Zoom 15 = 7,8 GB.
+- routing-core: `GET /v1/map` → Liste `{regions:[{id,name,box,zoom,bytes,stand}]}`, `GET /v1/map/{id}` → Datei
+  (Range, Last-Modified). Option `map` zeigt jetzt auf den Ordner `map/current`.
+- App: lädt Übersicht und NRW selbst, weitere Regionen auf Wunsch (Hinweis beim Hineinzoomen in eine fehlende
+  Region). Zwei Kartenebenen: Übersicht unten (wird über Zoom 9 hinaus vergrößert), Regionen darüber; fehlt eine
+  Kachel in allen Regionen, scheint die Übersicht durch. Kein Kachelabruf übers Netz → der Server erfährt nur,
+  welches Bundesland geladen wird, nie den Kartenausschnitt.
+- Beschriftungen: Die Protomaps-Stile bauen Namen mit `format`, das der Renderer nicht kennt (→ keine
+  Beschriftung). Die App ersetzt `text-field` durch deutschen Namen, sonst Namen vor Ort.
+- Status: umgesetzt (routing-jobs 0.1.9, routing-core 0.1.13, App).

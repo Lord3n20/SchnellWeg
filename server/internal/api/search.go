@@ -4,18 +4,73 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"path/filepath"
+	"slices"
 	"time"
 	"unicode/utf8"
 )
 
-// mapFile liefert den Kartenausschnitt (PMTiles) mit Range-Anfragen und Last-Modified, damit die App ihn nur
-// bei Änderung neu lädt. Der Pfad zeigt über current/ auf den neuesten Stand, ohne Neustart.
-func (s *Server) mapFile(w http.ResponseWriter, r *http.Request) {
-	if s.MapPath == "" {
-		fail(w, http.StatusServiceUnavailable, "karte_aus")
+// Karte (D-20): MapDir zeigt auf map/current des Kartenjobs (Glob erlaubt, wird je Anfrage aufgelöst, damit
+// ein neuer Stand oder die erste Karte ohne Neustart greift). regionen.json listet Übersicht + Bundesländer.
+
+type mapRegion struct {
+	ID    string    `json:"id"`
+	Name  string    `json:"name"`
+	Box   string    `json:"box"`
+	Zoom  int       `json:"zoom"`
+	Bytes int64     `json:"bytes"`
+	Stand time.Time `json:"stand"`
+}
+
+func (s *Server) mapDir() (string, []mapRegion, bool) {
+	if s.MapDir == "" {
+		return "", nil, false
+	}
+	m, _ := filepath.Glob(s.MapDir)
+	if len(m) == 0 {
+		return "", nil, false
+	}
+	b, err := os.ReadFile(filepath.Join(m[0], "regionen.json"))
+	var regs []mapRegion
+	if err != nil || json.Unmarshal(b, &regs) != nil {
+		return "", nil, false
+	}
+	return m[0], regs, true
+}
+
+// mapIndex listet die Kartendateien mit Größe und Stand; die App lädt davon, was sie braucht.
+func (s *Server) mapIndex(w http.ResponseWriter, r *http.Request) {
+	dir, regs, ok := s.mapDir()
+	if !ok {
+		fail(w, http.StatusServiceUnavailable, "karte_fehlt")
 		return
 	}
-	f, err := os.Open(s.MapPath)
+	out := regs[:0]
+	for _, g := range regs {
+		if st, err := os.Stat(filepath.Join(dir, g.ID+".pmtiles")); err == nil {
+			g.Bytes, g.Stand = st.Size(), st.ModTime().UTC().Truncate(time.Second)
+			out = append(out, g)
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache")
+	json.NewEncoder(w).Encode(map[string]any{"regions": out})
+}
+
+// mapFile liefert eine Kartendatei (PMTiles) mit Range-Anfragen und Last-Modified, damit die App sie nur
+// bei Änderung neu lädt und abgebrochene Downloads fortsetzen kann.
+func (s *Server) mapFile(w http.ResponseWriter, r *http.Request) {
+	dir, regs, ok := s.mapDir()
+	if !ok {
+		fail(w, http.StatusServiceUnavailable, "karte_fehlt")
+		return
+	}
+	id := r.PathValue("id")
+	if !slices.ContainsFunc(regs, func(g mapRegion) bool { return g.ID == id }) {
+		fail(w, http.StatusNotFound, "region_unbekannt")
+		return
+	}
+	f, err := os.Open(filepath.Join(dir, id+".pmtiles"))
 	if err != nil {
 		fail(w, http.StatusServiceUnavailable, "karte_fehlt")
 		return
@@ -28,7 +83,7 @@ func (s *Server) mapFile(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/vnd.pmtiles")
 	w.Header().Set("Cache-Control", "no-cache") // immer mit If-Modified-Since nachfragen
-	http.ServeContent(w, r, "region.pmtiles", st.ModTime(), f)
+	http.ServeContent(w, r, id+".pmtiles", st.ModTime(), f)
 }
 
 type searchReq struct {

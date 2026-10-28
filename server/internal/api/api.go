@@ -59,7 +59,7 @@ type Server struct {
 	Live      *rt.Live       // Echtzeit-Feed, nil = nur Fahrplan
 	LiveWait  time.Duration  // so lange wartet eine Anfrage höchstens auf einen Echtzeit-Abruf
 	Geocode   *geocode.Index // Adresssuche, nil = aus
-	MapPath   string         // Kartenausschnitt (PMTiles), "" = aus
+	MapDir    string         // Kartenstand des Jobs (Ordner mit regionen.json, Glob erlaubt), "" = aus
 	DirectM   float64        // reiner Fußweg als Vergleich bis zu dieser Luftlinie, 0 = aus
 	DirectMax time.Duration  // … und höchstens so lange (beim gewählten Tempo)
 }
@@ -83,7 +83,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/departures", s.departures)
 	mux.HandleFunc("GET /v1/stops", s.stops)
 	mux.HandleFunc("POST /v1/search", s.search)
-	mux.HandleFunc("GET /v1/map", s.mapFile)
+	mux.HandleFunc("GET /v1/map", s.mapIndex)
+	mux.HandleFunc("GET /v1/map/{id}", s.mapFile)
 	return mux
 }
 

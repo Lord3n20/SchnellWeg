@@ -69,7 +69,7 @@ func main() {
 	directMax := flag.Duration("direct_max", time.Hour, "… und höchstens so lange beim gewählten Gehtempo")
 	rtURL := flag.String("rt", "https://realtime.gtfs.de/realtime-free.pb", "GTFS-RT-Feed (leer = nur Fahrplan); Abruf nur bei Anfragen, höchstens alle 30 s")
 	rtWait := flag.Duration("rt_wait", 6*time.Second, "so lange wartet eine Anfrage höchstens auf den Echtzeit-Abruf")
-	mapPath := flag.String("map", "", "Kartenausschnitt (PMTiles, Job map) für /v1/map; Glob erlaubt, wird beim Start aufgelöst")
+	mapDir := flag.String("map", "", "Kartenstand des Jobs map (Ordner mit regionen.json) für /v1/map; Glob erlaubt, wird je Anfrage aufgelöst")
 	geo := flag.String("geocode", "", "Suchlisten (TSV, Jobs geocode und rwth) für /v1/search, durch Komma getrennt; Globs erlaubt, ohne Treffer keine Suche")
 	listen := flag.String("listen", ":8090", "Adresse der API")
 	par := flag.Int("par", 2, "gleichzeitige Anfragen (je ein Router)")
@@ -168,14 +168,7 @@ func main() {
 	} else if *geo != "" {
 		log.Print("Keine Suchliste gefunden, /v1/search ist aus")
 	}
-	if m, _ := filepath.Glob(rel(*mapPath)); *mapPath != "" && len(m) > 0 {
-		*mapPath = m[0]
-	} else if *mapPath != "" && strings.ContainsAny(*mapPath, "*?[") {
-		// Glob ohne Treffer: Karte kommt mit dem nächsten Job-Lauf; Ordner auflösen, sobald er existiert
-		log.Print("Noch keine Karte gefunden, /v1/map antwortet 503")
-		*mapPath = ""
-	}
-	srv := &api.Server{Geocode: geoIx, MapPath: *mapPath, DirectM: *direct, DirectMax: *directMax, AccessM: *access, MaxTrips: 6, WaitLimit: 2 * time.Second, LiveWait: *rtWait}
+	srv := &api.Server{Geocode: geoIx, MapDir: rel(*mapDir), DirectM: *direct, DirectMax: *directMax, AccessM: *access, MaxTrips: 6, WaitLimit: 2 * time.Second, LiveWait: *rtWait}
 	if *rtURL != "" {
 		// Zeitbudget der Quelle 6 s je Versuch (CLAUDE.md), Stände älter als 5 min gelten nicht mehr
 		srv.Live = &rt.Live{URL: *rtURL, Client: &http.Client{Timeout: 6 * time.Second}, MinAge: 30 * time.Second,

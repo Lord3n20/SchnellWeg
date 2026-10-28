@@ -125,9 +125,12 @@ func linkOrCopy(src, dst string) error {
 
 // fresh meldet, ob der aktuelle Stand einer Komponente jünger als osm_tage ist (Release-ID = Bauzeit in UTC).
 // Der tägliche Lauf baut OSM, Valhalla und Karte so nur etwa wöchentlich neu (D-14); force baut immer.
-func fresh(comp string) (string, bool) {
+func fresh(comp string) (string, bool) { return freshDays(comp, *osmDays) }
+
+// freshDays: wie fresh, mit eigener Frist (Karte: map_tage).
+func freshDays(comp string, days int) (string, bool) {
 	cur := jobs.Current(*dir, comp)
-	if *force || cur == "" || *osmDays <= 0 {
+	if *force || cur == "" || days <= 0 {
 		return "", false
 	}
 	built, err := time.Parse("20060102-150405", filepath.Base(cur))
@@ -136,8 +139,8 @@ func fresh(comp string) (string, bool) {
 	}
 	age := time.Since(built)
 	// halber Tag Spielraum, damit ein Lauf um 04:30 statt 04:00 die Woche nicht verpasst
-	if age >= time.Duration(*osmDays)*24*time.Hour-12*time.Hour {
+	if age >= time.Duration(days)*24*time.Hour-12*time.Hour {
 		return "", false
 	}
-	return fmt.Sprintf("Stand %s ist %d Tage alt (neu ab %d)", filepath.Base(cur), int(age.Hours()/24), *osmDays), true
+	return fmt.Sprintf("Stand %s ist %d Tage alt (neu ab %d)", filepath.Base(cur), int(age.Hours()/24), days), true
 }
