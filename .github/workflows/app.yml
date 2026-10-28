@@ -1,0 +1,51 @@
+# Baut die Release-APK bei einem Tag „app-v<version>“, signiert mit dem eigenen Schlüssel (Secrets
+# SCHNELLWEG_KEYSTORE_B64, SCHNELLWEG_KEYSTORE_PASSWORT), prüft sie mit scripts/check-apk.sh und legt sie als
+# Workflow-Artefakt ab. Flutter per git-Tag statt fremder Action; Actions per Commit-SHA festgelegt.
+name: App-APK
+
+on:
+  push:
+    tags: ["app-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    env:
+      FLUTTER_VERSION: 3.47.8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Flutter
+        run: |
+          git clone --depth 1 --branch "$FLUTTER_VERSION" https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+      - name: Tests
+        working-directory: app
+        run: flutter test
+      - name: Schlüssel
+        env:
+          B64: ${{ secrets.SCHNELLWEG_KEYSTORE_B64 }}
+        run: |
+          test -n "$B64" || { echo "Secret SCHNELLWEG_KEYSTORE_B64 fehlt"; exit 1; }
+          echo "$B64" | base64 -d > "$RUNNER_TEMP/schnellweg.jks"
+          echo "SCHNELLWEG_KEYSTORE=$RUNNER_TEMP/schnellweg.jks" >> "$GITHUB_ENV"
+      - name: APK
+        working-directory: app
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME_17_X64 }}
+          SCHNELLWEG_KEYSTORE_PASSWORT: ${{ secrets.SCHNELLWEG_KEYSTORE_PASSWORT }}
+        run: flutter build apk --release --target-platform android-arm64
+      - name: Prüfung
+        run: scripts/check-apk.sh app/build/app/outputs/flutter-apk/app-release.apk
+      - name: Signatur
+        run: |
+          bt=$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)
+          "$bt/apksigner" verify --print-certs app/build/app/outputs/flutter-apk/app-release.apk | grep -m1 SHA-256 >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: schnellweg-${{ github.ref_name }}
+          path: app/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30

@@ -353,4 +353,15 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   ein Rückwärts-RAPTOR wäre schneller, lohnt aber erst bei Bedarf.
 - App: Chip unter „Nach“ (Jetzt losgehen / Abfahrt hh:mm / Ankunft hh:mm), nur für heute, weil nur der heutige
   Betriebstag geladen ist. Alte Apps senden das Feld nicht.
-- Status: umgesetzt (routing-core 0.1.26).
+- Status: umgesetzt (routing-core 0.1.25, zusammen mit D-26 ausgerollt; 0.1.26 entfiel).
+
+## D-28 Eigener Signierschlüssel, APK aus der CI (28.10.)
+- Betreiber 28.10.: jetzt umstellen (vorher Debug-Schlüssel). Wer die alte APK hat, muss einmal deinstallieren
+  (Favoriten, Einstellungen, Offline-Karten gehen dabei verloren).
+- RSA 4096, PKCS12, Alias `schnellweg`, CN=SchnellWeg, SHA-256 des Zertifikats
+  10:63:32:fa:1c:dd:a1:7a:6c:48:bc:64:f3:21:17:d0:af:21:75:25:c8:05:8d:6f:c3:f8:23:54:7c:ff:98:20.
+  Keystore und Passwort liegen nur beim Betreiber (außerhalb des Repos, Sicherung im Passwortmanager);
+  `android/key.properties` (gitignored) zeigt lokal darauf, die CI liest Secrets.
+- `.github/workflows/app.yml`: Tag `app-v<version>` → Tests, signierte Release-APK, check-apk.sh, Fingerabdruck in
+  der Zusammenfassung, APK als Workflow-Artefakt (30 Tage). Flutter per git-Tag (kein fremdes Action-Paket).
+- Status: umgesetzt; CI braucht die Secrets SCHNELLWEG_KEYSTORE_B64 und SCHNELLWEG_KEYSTORE_PASSWORT.

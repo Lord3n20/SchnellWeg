@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
@@ -28,11 +30,29 @@ android {
         versionName = flutter.versionName
     }
 
+    // Eigener Schlüssel (seit 28.10.): lokal aus android/key.properties (gitignored, zeigt auf den Keystore außerhalb
+    // des Repos), in der CI aus Umgebungsvariablen. Ohne beides: Debug-Schlüssel – so eine APK lässt sich nicht
+    // über die echte installieren.
+    val schluessel = Properties().apply {
+        rootProject.file("key.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+        System.getenv("SCHNELLWEG_KEYSTORE")?.let {
+            setProperty("storeFile", it)
+            setProperty("storePassword", System.getenv("SCHNELLWEG_KEYSTORE_PASSWORT"))
+            setProperty("keyAlias", "schnellweg")
+        }
+    }
+    signingConfigs {
+        if (schluessel.containsKey("storeFile")) create("eigen") {
+            storeFile = file(schluessel.getProperty("storeFile"))
+            storePassword = schluessel.getProperty("storePassword")
+            keyAlias = schluessel.getProperty("keyAlias")
+            keyPassword = schluessel.getProperty("storePassword")
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("eigen") ?: signingConfigs.getByName("debug")
         }
     }
 }
