@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Lord3n20/SchnellWeg/server/internal/jobs"
@@ -47,7 +48,10 @@ type mapRegion struct {
 // Byte-Bereiche, ~8 GB) und schneidet daraus lokal die Übersicht (bis map_uebersicht_zoom) und je
 // Bundesland eine Detaildatei. Die große Zwischendatei wird danach gelöscht. Höchstens alle map_tage neu.
 func jobMap(ctx context.Context, w *jobs.Watch) (string, error) {
-	if info, fresh := freshDays("map", *mapDays); fresh {
+	// Frist nur, wenn der vorhandene Stand mit denselben Einstellungen gebaut wurde
+	cfg := fmt.Sprintf("box=%s;zoom=%d;uebersicht=%d;regionen=%d", *mapBox, *mapZoom, *mapOverview, len(mapRegions))
+	cur := jobs.Current(*dir, "map")
+	if info, fresh := freshDays("map", *mapDays); fresh && cur != "" && strings.HasSuffix(jobs.ReadStamp(cur, "eingang"), ";"+cfg) {
 		return info, errSkip
 	}
 	if _, err := jobs.ParseBox(*mapBox); err != nil {
@@ -65,8 +69,7 @@ func jobMap(ctx context.Context, w *jobs.Watch) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	sig := fmt.Sprintf("build=%s;box=%s;zoom=%d;uebersicht=%d;regionen=%d", build, *mapBox, *mapZoom, *mapOverview, len(mapRegions))
-	cur := jobs.Current(*dir, "map")
+	sig := "build=" + build + ";" + cfg
 	if !*force && cur != "" && jobs.ReadStamp(cur, "eingang") == sig {
 		return "Build " + build + " schon ausgeschnitten", errSkip
 	}
