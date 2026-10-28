@@ -59,6 +59,10 @@ func Fetch(ctx context.Context, url, md5url, dst string) (changed bool, err erro
 	}
 	if md5url != "" {
 		want, err := fetchMD5(ctx, md5url)
+		if fin := resp.Request.URL.String(); err != nil && fin != url && md5url == url+".md5" {
+			// Geofabrik leitet große Länder (germany) auf einen Spiegel um; die .md5 gibt es nur dort (28.10.)
+			want, err = fetchMD5(ctx, fin+".md5")
+		}
 		if err != nil {
 			os.Remove(part)
 			return false, fmt.Errorf("Prüfsumme: %w", err)
