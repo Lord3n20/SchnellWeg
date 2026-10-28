@@ -345,7 +345,17 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   Einrichtungen; Job 10:30 min (Liste 4:20, Index 0:49, Rest Download), Spitze 1,49 GB von 2 GB. Suche mit `near`
   1–15 ms (erste Anfrage nach dem Laden bis 46 ms, Seiten kommen von der SSD); routing-core danach 172 MB anonym
   (vorher 346 MB). Geofabrik leitet germany-latest auf einen Spiegel um, die .md5 liegt nur dort (routing-jobs 0.1.13).
-- Status: umgesetzt (routing-core 0.1.25, routing-jobs 0.1.13).
+- Speicher des Jobs (28.10., Betreiber: < 1 GB): Der Index entsteht direkt in seiner eingeblendeten Datei (erst
+  zählen, dann Zeilen, Koordinaten und Trefferlisten an ihren Platz schreiben), im Heap steht nur die Wortzählung.
+  Knoten-IDs mit 4 statt 8 Byte (untere 32 Bit, Grenzen je oberem Teil), gesammelt in Blöcken statt Verdoppeln;
+  Zellen werden über Zeilennummern sortiert statt über Entry-Strings. Go-Grenze im Job höchstens 800 MiB statt
+  ¾ von max_mem_mb (der Heap wuchs sonst bis 1,5 GiB, lebendig ist weit weniger). NRW auf dem Laptop:
+  Index-Spitze 517 → 72 MB (gleiche Datei, byte-gleich), Extraktion 376 → 362 MB und 1:22 → 1:13 min; lebendig
+  in der Extraktion ~90 MB PBF-Puffer (wachsen nicht mit dem Gebiet) plus eigene Listen.
+- RWTH-Gebäude bekommen ihren Vorrang (+3) nur, wenn ein Suchwort im Namen oder der Nummer steht, nicht bei
+  „aachen“ oder „52062“ (vorher kamen dort fast nur Gebäude).
+- Status: umgesetzt (routing-core 0.1.25, routing-jobs 0.1.13); Speicher und Gebäude-Wertung in routing-core 0.1.27,
+  routing-jobs 0.1.14.
 
 ## D-27 Planung nach Ankunftszeit (28.10.)
 - Betreiber 28.10.: „ich würde gerne noch ankunfts-/abfahrtszeit planen können“.

@@ -1,14 +1,13 @@
 package geocode
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -40,88 +39,179 @@ type part struct {
 	cells   map[int32][2]uint32 // Zelle → Eintragsbereich [von, bis)
 }
 
-// BuildIndex schreibt den Index zur TSV tsv nach w. Speicher: Wortzählung + alle Trefferlisten (~4 B je Wort und
-// Eintrag; ganz DE ~0,8 GB).
+// BuildIndex schreibt den Index zur TSV tsv nach w (Tests, kleine Listen).
 func BuildIndex(tsv []byte, w io.Writer) error {
-	if len(tsv) >= 1<<32 {
-		return errors.New("Suchliste über 4 GB")
+	idx, err := buildIndex(tsv, func(n int) ([]byte, error) { return aligned(n), nil })
+	if err != nil {
+		return err
 	}
-	var offs []uint32
-	var coord []int32
-	var cellList []uint32
-	sorted := true
-	last := int32(-1)
+	_, err = w.Write(idx)
+	return err
+}
+
+// BuildIndexFile schreibt den Index direkt in die eingeblendete Datei path: Zeilenanfänge, Koordinaten und
+// Trefferlisten (ganz DE ~0,7 GB) liegen so im Page Cache statt im Heap. Im Speicher steht nur die Wortzählung.
+func BuildIndexFile(tsv []byte, path string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	var m []byte
+	_, err = buildIndex(tsv, func(n int) ([]byte, error) {
+		if err := f.Truncate(int64(n)); err != nil {
+			return nil, err
+		}
+		var err error
+		m, err = syscall.Mmap(int(f.Fd()), 0, n, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+		return m, err
+	})
+	if m != nil {
+		if uerr := syscall.Munmap(m); err == nil {
+			err = uerr
+		}
+	}
+	if err == nil {
+		err = f.Sync()
+	}
+	return err
+}
+
+// aligned liefert n Bytes mit 8-Byte-Ausrichtung für die uint32-Sichten.
+func aligned(n int) []byte {
+	return unsafe.Slice((*byte)(unsafe.Pointer(unsafe.SliceData(make([]uint64, (n+7)/8)))), n)
+}
+
+// eachLine ruft fn für jede gültige Zeile der TSV (5 Felder, lesbare Koordinaten) mit ihrem Anfang auf; name
+// und detail zeigen ohne Kopie in tsv.
+func eachLine(tsv []byte, fn func(off int, name, detail string, lat, lon float64)) {
+	var t [4]int
 	for off := 0; off < len(tsv); {
 		n := bytes.IndexByte(tsv[off:], '\n')
 		if n < 0 {
 			n = len(tsv) - off
 		}
-		f := bytes.Split(tsv[off:off+n], []byte{'\t'})
-		if len(f) == 5 {
-			lat, e1 := strconv.ParseFloat(string(f[3]), 64)
-			lon, e2 := strconv.ParseFloat(string(f[4]), 64)
-			if e1 == nil && e2 == nil {
-				if c := cellOf(lat, lon); c != last {
-					if c < last {
-						sorted = false
-					}
-					cellList = append(cellList, uint32(c), uint32(len(offs)))
-					last = c
+		line := tsv[off : off+n]
+		k := 0
+		for i, c := range line {
+			if c == '\t' {
+				if k == 4 {
+					k = 5
+					break
 				}
-				offs = append(offs, uint32(off))
-				coord = append(coord, int32(lat*1e6), int32(lon*1e6))
+				t[k] = i
+				k++
+			}
+		}
+		if k == 4 {
+			str := func(a, b int) string { return unsafe.String(unsafe.SliceData(line[a:]), b-a) }
+			lat, e1 := strconv.ParseFloat(str(t[2]+1, t[3]), 64)
+			lon, e2 := strconv.ParseFloat(str(t[3]+1, len(line)), 64)
+			if e1 == nil && e2 == nil {
+				fn(off, str(t[0]+1, t[1]), str(t[1]+1, t[2]), lat, lon)
 			}
 		}
 		off += n + 1
 	}
-	if !sorted {
-		cellList = nil
+}
+
+// buildIndex baut den Index in zwei Durchläufen über die TSV: zählen (Einträge, Zellen, Wörter), dann den von
+// alloc gelieferten Speicher in endgültiger Größe füllen.
+func buildIndex(tsv []byte, alloc func(n int) ([]byte, error)) ([]byte, error) {
+	if len(tsv) >= 1<<32 {
+		return nil, errors.New("Suchliste über 4 GB")
 	}
-	if len(offs) >= 1<<31 {
-		return errors.New("zu viele Einträge")
-	}
-	p := &part{tsv: tsv, offs: offs, coord: coord}
-	// Durchlauf 1: Einträge je Wort zählen
-	count := map[string]uint32{}
 	var seen []string
-	each := func(i int, fn func(w string, inName bool)) {
-		e := p.entry(uint32(i))
+	eachWord := func(name, detail string, fn func(w string, inName bool)) {
 		seen = seen[:0]
-		name := words(Normalize(e.Name))
-		for k, w := range append(name, words(Normalize(e.Detail))...) {
-			dup := false
-			for _, s := range seen {
-				dup = dup || s == w
-			}
-			if !dup {
+		nw := words(Normalize(name))
+		for k, w := range append(nw, words(Normalize(detail))...) {
+			if !slices.Contains(seen, w) {
 				seen = append(seen, w)
-				fn(w, k < len(name))
+				fn(w, k < len(nw))
 			}
 		}
 	}
-	for i := range offs {
-		each(i, func(w string, _ bool) { count[w]++ })
+	// Durchlauf 1: Einträge, Zellen und Einträge je Wort zählen
+	nEnt, nCell := 0, 0
+	sorted := true
+	last := int32(-1)
+	count := map[string]uint32{}
+	eachLine(tsv, func(_ int, name, detail string, lat, lon float64) {
+		if c := cellOf(lat, lon); c != last {
+			sorted = sorted && c > last
+			nCell++
+			last = c
+		}
+		nEnt++
+		eachWord(name, detail, func(w string, _ bool) { count[w]++ })
+	})
+	if nEnt >= 1<<31 {
+		return nil, errors.New("zu viele Einträge")
+	}
+	if !sorted {
+		nCell = 0
 	}
 	ws := make([]string, 0, len(count))
+	blobLen := 0
 	for w := range count {
 		ws = append(ws, w)
-	}
-	sort.Strings(ws)
-	wordOff := make([]uint32, len(ws)+1)
-	postOff := make([]uint32, len(ws)+1)
-	blobLen := 0
-	for i, w := range ws {
 		blobLen += len(w)
-		wordOff[i+1] = uint32(blobLen)
+	}
+	slices.Sort(ws)
+	nPost := 0
+	for _, w := range ws {
+		nPost += int(count[w])
+	}
+	if nPost >= 1<<32 {
+		return nil, errors.New("zu viele Trefferlisten")
+	}
+	nWord := len(ws)
+	size := 40 + 4*(3*nEnt+nWord+1) + pad4(blobLen) + 4*(nWord+1+nPost+2*nCell)
+	idx, err := alloc(size)
+	if err != nil {
+		return nil, err
+	}
+	le := binary.LittleEndian
+	copy(idx, idxMagic)
+	le.PutUint64(idx[8:], uint64(len(tsv)))
+	for k, v := range []int{nEnt, nWord, nPost, nCell, pad4(blobLen)} {
+		le.PutUint32(idx[16+4*k:], uint32(v))
+	}
+	off := 40
+	u32 := func(n int) []uint32 {
+		s := unsafe.Slice((*uint32)(unsafe.Pointer(unsafe.SliceData(idx[off:]))), n)
+		off += 4 * n
+		return s
+	}
+	offs, coord := u32(nEnt), u32(2*nEnt)
+	wordOff := u32(nWord + 1)
+	blob := idx[off : off+blobLen]
+	off += pad4(blobLen)
+	postOff := u32(nWord + 1)
+	posts := u32(nPost)
+	cells := u32(2 * nCell)
+	b := 0
+	for i, w := range ws {
+		b += copy(blob[b:], w)
+		wordOff[i+1] = uint32(b)
 		postOff[i+1] = postOff[i] + count[w]
 		count[w] = uint32(i) // ab hier: Wortnummer
 	}
-	// Durchlauf 2: Trefferlisten füllen (Einträge aufsteigend → Listen sortiert)
-	posts := make([]uint32, postOff[len(ws)])
-	cur := make([]uint32, len(ws))
-	copy(cur, postOff)
-	for i := range offs {
-		each(i, func(w string, inName bool) {
+	ws = nil
+	cur := slices.Clone(postOff[:nWord])
+	// Durchlauf 2: Zeilen, Koordinaten, Zellen und Trefferlisten (Einträge aufsteigend → Listen sortiert)
+	i, c := 0, 0
+	last = -1
+	eachLine(tsv, func(o int, name, detail string, lat, lon float64) {
+		if cl := cellOf(lat, lon); cl != last && nCell > 0 {
+			cells[c], cells[c+1] = uint32(cl), uint32(i)
+			c += 2
+			last = cl
+		}
+		offs[i] = uint32(o)
+		coord[2*i], coord[2*i+1] = uint32(int32(lat*1e6)), uint32(int32(lon*1e6))
+		eachWord(name, detail, func(w string, inName bool) {
 			k := count[w]
 			v := uint32(i) << 1
 			if inName {
@@ -130,29 +220,9 @@ func BuildIndex(tsv []byte, w io.Writer) error {
 			posts[cur[k]] = v
 			cur[k]++
 		})
-	}
-	count, cur = nil, nil
-
-	bw := bufio.NewWriterSize(w, 1<<20)
-	head := make([]byte, 40)
-	copy(head, idxMagic)
-	le := binary.LittleEndian
-	le.PutUint64(head[8:], uint64(len(tsv)))
-	for k, v := range []int{len(offs), len(ws), len(posts), len(cellList) / 2, pad4(blobLen)} {
-		le.PutUint32(head[16+4*k:], uint32(v))
-	}
-	bw.Write(head)
-	binary.Write(bw, le, offs)
-	binary.Write(bw, le, coord)
-	binary.Write(bw, le, wordOff)
-	for _, w := range ws {
-		bw.WriteString(w)
-	}
-	bw.Write(make([]byte, pad4(blobLen)-blobLen))
-	binary.Write(bw, le, postOff)
-	binary.Write(bw, le, posts)
-	binary.Write(bw, le, cellList)
-	return bw.Flush()
+		i++
+	})
+	return idx, nil
 }
 
 func pad4(n int) int { return (n + 3) &^ 3 }
@@ -203,13 +273,10 @@ func openPart(tsv, idx []byte) (*part, error) {
 }
 
 func memPart(tsv []byte) (*part, error) {
-	var b bytes.Buffer
-	if err := BuildIndex(tsv, &b); err != nil {
+	idx, err := buildIndex(tsv, func(n int) ([]byte, error) { return aligned(n), nil })
+	if err != nil {
 		return nil, err
 	}
-	// eigene Kopie mit 8-Byte-Ausrichtung für die uint32-Sichten
-	idx := unsafe.Slice((*byte)(unsafe.Pointer(unsafe.SliceData(make([]uint64, (b.Len()+7)/8)))), b.Len())
-	copy(idx, b.Bytes())
 	return openPart(tsv, idx)
 }
 

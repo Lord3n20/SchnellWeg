@@ -48,9 +48,10 @@ func jobGeocode(ctx context.Context, w *jobs.Watch) (string, error) {
 	if !*force && !changed && cur != "" && jobs.ReadStamp(cur, "eingang") == sig {
 		return "Quellen unverändert", errSkip
 	}
-	// Das Add-on setzt GOMEMLIMIT=100MiB; mit ~0,8 GB lebendem Speicher liefe sonst ständig der GC.
-	// Die Grenze des Jobs selbst überwacht w (max_mem_mb).
-	defer debug.SetMemoryLimit(debug.SetMemoryLimit(*maxMem << 20 * 3 / 4))
+	// Das Add-on setzt GOMEMLIMIT=100MiB; damit liefe ständig der GC. Lebendig sind ganz DE ~0,5 GB (Knoten,
+	// Straßen, PBF-Puffer; der Index liegt in seiner eingeblendeten Datei), mehr Spielraum ließe den Heap nur bis
+	// zur Grenze wachsen (Betreiber 28.10.: < 1 GB). Die harte Grenze des Jobs überwacht w (max_mem_mb).
+	defer debug.SetMemoryLimit(debug.SetMemoryLimit(min(*maxMem*3/4, 800) << 20))
 	r, err := jobs.NewRelease(*dir, "geocode", time.Now())
 	if err != nil {
 		return "", err
@@ -130,13 +131,5 @@ func buildIndex(tsv, idx string) error {
 		return err
 	}
 	defer syscall.Munmap(data)
-	out, err := os.Create(idx)
-	if err != nil {
-		return err
-	}
-	if err := geocode.BuildIndex(data, out); err != nil {
-		out.Close()
-		return err
-	}
-	return out.Close()
+	return geocode.BuildIndexFile(data, idx)
 }

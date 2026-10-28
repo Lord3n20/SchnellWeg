@@ -3,9 +3,11 @@ package geocode
 import (
 	"bytes"
 	"context"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -95,15 +97,11 @@ func TestReal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	idx, err := os.Create(filepath.Join(dir, "geocode.idx"))
-	if err != nil {
+	idx := filepath.Join(dir, "geocode.idx")
+	if err := BuildIndexFile(data, idx); err != nil {
 		t.Fatal(err)
 	}
-	if err := BuildIndex(data, idx); err != nil {
-		t.Fatal(err)
-	}
-	idx.Close()
-	st, _ = os.Stat(idx.Name())
+	st, _ = os.Stat(idx)
 	t.Logf("Index %v: %d MB, Anon-Spitze %d MB", time.Since(t0).Round(time.Second), st.Size()>>20, peak())
 	searchReal(t, tsv)
 }
@@ -213,6 +211,60 @@ func TestFileNear(t *testing.T) {
 		want := map[float64]string{50.77: "Aachen", 51.0: "Bergneustadt", 52.5: "Berlin"}[c.lat]
 		if h := ix.SearchNear("hauptstr", 3, c.lat, c.lon); len(h) != 3 || h[0].Detail != want {
 			t.Errorf("hauptstr bei %v: %+v", c, h)
+		}
+	}
+}
+
+func TestIDs(t *testing.T) {
+	var s ids
+	want := map[int64]bool{}
+	r := rand.New(rand.NewPCG(1, 2))
+	for range idBlock + idBlock/2 {
+		id := r.Int64N(3 << 32)
+		if r.IntN(4) == 0 {
+			id = 5<<32 + r.Int64N(1000)
+		}
+		s.add(id)
+		want[id] = true
+	}
+	s.finish()
+	if s.n() != len(want) {
+		t.Fatalf("%d IDs, erwartet %d", s.n(), len(want))
+	}
+	qs := make([]int64, 0, 2*len(want))
+	for id := range want {
+		qs = append(qs, id, id+1, id-1)
+	}
+	slices.Sort(qs)
+	qs = append(qs, 1<<32, 4<<32+7, 9<<32, 0, -1)
+	for _, q := range qs {
+		a, b := s.index(q), s.find(q)
+		if a != b || (a >= 0) != want[q] {
+			t.Fatalf("%d: index %d, find %d, enthalten %v", q, a, b, want[q])
+		}
+		if a >= 0 {
+			s.h = 0
+			if s.val(a) != q {
+				t.Fatalf("val(%d) = %d statt %d", a, s.val(a), q)
+			}
+		}
+	}
+}
+
+func TestGebaeudeNurMitNamen(t *testing.T) {
+	ix, err := Load(strings.NewReader("gebaeude\tSemi 90 [1580]\tTemplergraben 90, 52062 Aachen\t50.778\t6.078\n" +
+		"poi\tDom\tDomhof 1, 52062 Aachen\t50.775\t6.084\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// nur die Adresse passt: kein Vorrang für das Gebäude
+	if h := ix.Search("52062", 2); len(h) != 2 || h[0].Name != "Dom" {
+		t.Fatalf("52062: %+v", h)
+	}
+	// Nummer oder Name: Gebäude vorn
+	for _, q := range []string{"1580", "semi 90"} {
+		if h := ix.Search(q, 2); len(h) == 0 || h[0].Name != "Semi 90 [1580]" {
+			t.Fatalf("%s: %+v", q, h)
 		}
 	}
 }

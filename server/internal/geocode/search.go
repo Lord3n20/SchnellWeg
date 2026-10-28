@@ -406,7 +406,7 @@ func (p *part) score(cand []uint32, qw []string, lat, lon float64) []Hit {
 		norm := Normalize(e.Name)
 		nw := len(words(norm))
 		ew := words(norm + " " + Normalize(e.Detail))
-		score, ok := 0, true
+		score, ok, inName := 0, true, false
 		for _, w := range qw {
 			m := 0
 			cmp := ew
@@ -414,6 +414,9 @@ func (p *part) score(cand []uint32, qw []string, lat, lon float64) []Hit {
 				cmp = ew[:nw] // Hausnummer nur im Namen, nicht in der Postleitzahl suchen
 			}
 			for k, x := range cmp {
+				if k < nw && strings.HasPrefix(x, w) {
+					inName = true
+				}
 				switch {
 				case x == w:
 					m = max(m, 3)
@@ -438,7 +441,9 @@ func (p *part) score(cand []uint32, qw []string, lat, lon float64) []Hit {
 		}
 		switch e.Kind {
 		case "gebaeude": // Hochschulgebäude: gezielt gesucht (Nummer oder Name), vor gleichnamigen Einrichtungen
-			score += 3
+			if inName { // nicht, wenn nur die Adresse passt („aachen“, „52062“)
+				score += 3
+			}
 		case "ort":
 			score += 3
 			if e.Detail == "city" || e.Detail == "town" {

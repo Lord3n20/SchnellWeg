@@ -11,9 +11,11 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"unsafe"
 
 	"github.com/paulmach/osm"
 	"github.com/paulmach/osm/osmpbf"
@@ -75,43 +77,97 @@ type relPending struct {
 	ways []int64
 }
 
-// ids ist eine aufsteigende Liste von OSM-IDs; has rückt bei aufsteigenden Abfragen (PBF ist nach ID geordnet)
-// nur vor, sonst binäre Suche.
+// ids ist eine aufsteigende Liste von OSM-IDs. Gesammelt wird in Blöcken (kein Verdoppeln beim Wachsen), nach
+// finish stehen je ID nur die unteren 32 Bit plus die Grenzen je oberem Teil (Knoten-IDs liegen über 2^32):
+// 4 statt 8 Byte je ID, ganz DE ~20 Mio. Knoten. index rückt bei aufsteigenden Abfragen (PBF ist nach ID
+// geordnet) nur vor, sonst binäre Suche.
 type ids struct {
-	v    []int64
-	p    int
-	last int64
+	blocks [][]int64 // beim Sammeln
+	lo     []uint32
+	seg    []int // seg[h]: erster Index mit oberem Teil h; seg[len(seg)-1] = Zahl der IDs
+	p, h   int
+	last   int64
 }
 
-func (s *ids) finish() {
-	sort.Slice(s.v, func(i, j int) bool { return s.v[i] < s.v[j] })
-	k := 0
-	for i, x := range s.v {
-		if i == 0 || x != s.v[k-1] {
-			s.v[k] = x
-			k++
-		}
+const idBlock = 1 << 20
+
+func (s *ids) add(id int64) {
+	if id < 0 {
+		return
 	}
-	s.v = s.v[:k]
+	if n := len(s.blocks); n == 0 || len(s.blocks[n-1]) == idBlock {
+		s.blocks = append(s.blocks, make([]int64, 0, idBlock))
+	}
+	b := &s.blocks[len(s.blocks)-1]
+	*b = append(*b, id)
+}
+
+func (s *ids) n() int { return len(s.lo) }
+
+func (s *ids) finish() {
+	n := 0
+	for _, b := range s.blocks {
+		n += len(b)
+	}
+	all := make([]int64, 0, n)
+	for i, b := range s.blocks {
+		all = append(all, b...)
+		s.blocks[i] = nil
+	}
+	s.blocks = nil
+	slices.Sort(all)
+	all = slices.Compact(all)
+	s.lo = make([]uint32, len(all))
+	for i, x := range all {
+		s.lo[i] = uint32(x)
+	}
+	top := 0
+	if len(all) > 0 {
+		top = int(all[len(all)-1]>>32) + 1
+	}
+	s.seg = make([]int, top+1)
+	for h := range s.seg {
+		s.seg[h] = sort.Search(len(all), func(i int) bool { return int(all[i]>>32) >= h })
+	}
+}
+
+// lower ist der erste Index mit ID ≥ id.
+func (s *ids) lower(id int64) int {
+	h := int(id >> 32)
+	if h < 0 {
+		return 0
+	}
+	if h >= len(s.seg)-1 {
+		return len(s.lo)
+	}
+	a, b := s.seg[h], s.seg[h+1]
+	return a + sort.Search(b-a, func(i int) bool { return s.lo[a+i] >= uint32(id) })
+}
+
+// val ist die ID an Index i (nur aufsteigend seit dem letzten Zurücksetzen von s.h).
+func (s *ids) val(i int) int64 {
+	for i >= s.seg[s.h+1] {
+		s.h++
+	}
+	return int64(s.h)<<32 | int64(s.lo[i])
 }
 
 func (s *ids) index(id int64) int {
 	if id < s.last {
-		s.p = sort.Search(len(s.v), func(i int) bool { return s.v[i] >= id })
+		s.p, s.h = s.lower(id), 0
 	}
 	s.last = id
-	for s.p < len(s.v) && s.v[s.p] < id {
+	for s.p < len(s.lo) && s.val(s.p) < id {
 		s.p++
 	}
-	if s.p < len(s.v) && s.v[s.p] == id {
+	if s.p < len(s.lo) && s.val(s.p) == id {
 		return s.p
 	}
 	return -1
 }
 
 func (s *ids) find(id int64) int {
-	i := sort.Search(len(s.v), func(i int) bool { return s.v[i] >= id })
-	if i < len(s.v) && s.v[i] == id {
+	if i := s.lower(id); id >= 0 && i < len(s.lo) && int(id>>32) < len(s.seg)-1 && s.lo[i] == uint32(id) && i < s.seg[id>>32+1] {
 		return i
 	}
 	return -1
@@ -137,7 +193,7 @@ func extractFile(ctx context.Context, p, tmp string, b *buckets) error {
 		for _, m := range r.Members {
 			if m.Type == osm.TypeWay && m.Role != "inner" {
 				rp.ways = append(rp.ways, m.Ref)
-				needWays.v = append(needWays.v, m.Ref)
+				needWays.add(m.Ref)
 			}
 		}
 		if len(rp.ways) > 0 {
@@ -158,7 +214,7 @@ func extractFile(ctx context.Context, p, tmp string, b *buckets) error {
 	defer os.Remove(wf.Name())
 	ww := bufio.NewWriterSize(wf, 1<<20)
 	var needNodes ids
-	wayNodes := make([][2]int64, len(needWays.v)) // je gesuchtem Weg (Reihenfolge wie needWays) seine Knoten
+	wayNodes := make([][2]int64, needWays.n()) // je gesuchtem Weg (Reihenfolge wie needWays) seine Knoten
 	err = scanPBF(ctx, p, false, true, false, func(o osm.Object) error {
 		wy := o.(*osm.Way)
 		if len(wy.Nodes) == 0 {
@@ -167,7 +223,7 @@ func extractFile(ctx context.Context, p, tmp string, b *buckets) error {
 		n1, n2 := ends(wy.Nodes)
 		if i := needWays.index(int64(wy.ID)); i >= 0 {
 			wayNodes[i] = [2]int64{n1, n2}
-			needNodes.v = append(needNodes.v, n1)
+			needNodes.add(n1)
 		}
 		name, hw, hn := wy.Tags.Find("name"), wy.Tags.Find("highway"), wy.Tags.Find("addr:housenumber")
 		if hn == "" && name == "" {
@@ -177,13 +233,13 @@ func extractFile(ctx context.Context, p, tmp string, b *buckets) error {
 			if hw == "bus_stop" || hw == "platform" {
 				return nil
 			}
-			needNodes.v = append(needNodes.v, n1)
+			needNodes.add(n1)
 			fmt.Fprintf(ww, "%d\t%d\tstrasse\t%s\t\n", n1, n2, clean.Replace(name))
 			return nil
 		}
 		es := entries(wy.Tags)
 		if len(es) > 0 {
-			needNodes.v = append(needNodes.v, n1)
+			needNodes.add(n1)
 		}
 		for _, e := range es {
 			fmt.Fprintf(ww, "%d\t%d\t%s\t%s\t%s\n", n1, n2, e.Kind, clean.Replace(e.Name), clean.Replace(e.Detail))
@@ -200,7 +256,7 @@ func extractFile(ctx context.Context, p, tmp string, b *buckets) error {
 	needNodes.finish()
 
 	// 3. Knoten: Koordinaten der gemerkten Knoten; Knoten mit Tags direkt als Einträge.
-	coords := make([]float32, 2*len(needNodes.v))
+	coords := make([]float32, 2*needNodes.n())
 	for i := range coords {
 		coords[i] = float32(math.NaN())
 	}
@@ -249,7 +305,11 @@ func extractFile(ctx context.Context, p, tmp string, b *buckets) error {
 		lat, lon float64
 		n        int
 	}
-	streets := map[string]*street{}
+	type streetKey struct {
+		name   string
+		la, lo int32
+	}
+	streets := map[streetKey]*street{}
 	if _, err := wf.Seek(0, io.SeekStart); err != nil {
 		wf.Close()
 		return err
@@ -268,9 +328,10 @@ func extractFile(ctx context.Context, p, tmp string, b *buckets) error {
 			continue
 		}
 		if string(f[2]) == "strasse" {
-			k := fmt.Sprintf("%s|%d|%d", f[3], int(lat*90), int(lon*60)) // Zelle ~1,2 × 1,2 km
+			k := streetKey{unsafe.String(unsafe.SliceData(f[3]), len(f[3])), int32(lat * 90), int32(lon * 60)} // Zelle ~1,2 × 1,2 km
 			s := streets[k]
 			if s == nil {
+				k.name = string(f[3]) // eigene Kopie, f zeigt in den Puffer des Scanners
 				s = &street{}
 				streets[k] = s
 			}
@@ -287,7 +348,7 @@ func extractFile(ctx context.Context, p, tmp string, b *buckets) error {
 		return err
 	}
 	for k, s := range streets {
-		e := Entry{Kind: "strasse", Name: k[:strings.Index(k, "|")], Lat: s.lat / float64(s.n), Lon: s.lon / float64(s.n)}
+		e := Entry{Kind: "strasse", Name: k.name, Lat: s.lat / float64(s.n), Lon: s.lon / float64(s.n)}
 		e.Detail = pl.nearest(e.Lat, e.Lon)
 		if err := b.add(e); err != nil {
 			return err
@@ -474,54 +535,68 @@ func (b *buckets) merge(w io.Writer) (map[string]int, error) {
 		if err != nil {
 			return nil, err
 		}
-		es := parseTSV(data)
-		sort.Slice(es, func(i, j int) bool {
-			if es[i].Kind != es[j].Kind {
-				return es[i].Kind < es[j].Kind
-			}
-			if es[i].Name != es[j].Name {
-				return es[i].Name < es[j].Name
-			}
-			return es[i].Detail < es[j].Detail
+		// nur Zeilennummern sortieren, die Zeilen bleiben in data (statt Entry mit eigenen Strings je Zeile)
+		var offs []uint32
+		var cs []float64 // Breite, Länge je Zeile
+		eachLine(data, func(off int, _, _ string, lat, lon float64) {
+			offs = append(offs, uint32(off))
+			cs = append(cs, lat, lon)
 		})
-		var p *Entry
-		for i := range es {
-			e := &es[i]
-			if p != nil && p.Kind == e.Kind && p.Name == e.Name && p.Detail == e.Detail && math.Abs(p.Lat-e.Lat) < 0.001 && math.Abs(p.Lon-e.Lon) < 0.0015 {
-				continue
+		line := func(i uint32) []byte {
+			l := data[offs[i]:]
+			if n := bytes.IndexByte(l, '\n'); n >= 0 {
+				l = l[:n]
 			}
-			p = e
-			kinds[e.Kind]++
-			if err := writeEntry(bw, *e); err != nil {
-				return nil, err
+			return l
+		}
+		// Art, Name, Detail feldweise vergleichen, ohne die Zeilen zu zerlegen: ein Tab beendet das Feld und
+		// zählt damit als kleiner als jedes Zeichen
+		cmpKey := func(i, j uint32) int {
+			a, b := data[offs[i]:], data[offs[j]:]
+			for k, tabs := 0, 0; ; k++ {
+				x, y := a[k], b[k]
+				if x == y {
+					if x == '\t' {
+						if tabs++; tabs == 3 {
+							return 0
+						}
+					}
+					continue
+				}
+				switch {
+				case x == '\t':
+					return -1
+				case y == '\t':
+					return 1
+				case x < y:
+					return -1
+				}
+				return 1
 			}
+		}
+		order := make([]uint32, len(offs))
+		for i := range order {
+			order[i] = uint32(i)
+		}
+		slices.SortFunc(order, cmpKey)
+		p, first := uint32(0), true
+		for _, i := range order {
+			if !first {
+				if cmpKey(p, i) == 0 && math.Abs(cs[2*p]-cs[2*i]) < 0.001 && math.Abs(cs[2*p+1]-cs[2*i+1]) < 0.0015 {
+					continue
+				}
+			}
+			p, first = i, false
+			kind, _, _ := bytes.Cut(line(i), []byte{'\t'})
+			kinds[string(kind)]++
+			bw.Write(line(i))
+			bw.WriteByte('\n')
 		}
 		k.f.Close()
 		os.Remove(k.f.Name())
 		delete(b.files, c)
 	}
 	return kinds, bw.Flush()
-}
-
-func parseTSV(data []byte) []Entry {
-	var es []Entry
-	for len(data) > 0 {
-		n := bytes.IndexByte(data, '\n')
-		if n < 0 {
-			n = len(data)
-		}
-		f := strings.Split(string(data[:n]), "\t")
-		data = data[min(n+1, len(data)):]
-		if len(f) != 5 {
-			continue
-		}
-		lat, e1 := strconv.ParseFloat(f[3], 64)
-		lon, e2 := strconv.ParseFloat(f[4], 64)
-		if e1 == nil && e2 == nil {
-			es = append(es, Entry{f[0], f[1], f[2], lat, lon})
-		}
-	}
-	return es
 }
 
 var clean = strings.NewReplacer("\t", " ", "\n", " ", "\r", " ")
