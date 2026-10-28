@@ -27,4 +27,12 @@ void main() {
   test('Hbf und Hauptbahnhof sind ein Ort', () {
     expect(haltSchluessel('Aachen Hauptbahnhof H1'), haltSchluessel('Aachen Hbf'));
   });
+
+  test('Bahnsteig aus dem Rohnamen', () {
+    expect(bahnsteig('Aachen Hauptbahnhof H1'), '1');
+    expect(bahnsteig('Aachen Westbahnhof lw (Li.33) H2'), '2');
+    expect(bahnsteig('Aachen Bushof B'), 'B');
+    expect(bahnsteig('Aachen Hbf'), isNull);
+    expect(bahnsteig('Würselen Kaninsberg lw -> Haaren'), isNull);
+  });
 }

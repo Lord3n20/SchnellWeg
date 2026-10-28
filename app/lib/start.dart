@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
 import 'api.dart';
+import 'details.dart';
 import 'einstellungen.dart';
 import 'halte_db.dart';
 import 'karte.dart';
@@ -51,6 +52,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
   String? _routeHinweis;
   int _gewaehlt = 0; // Verbindung, die die Karte zeigt
   List<Strecke> _strecken = [];
+  Map<String, Halt> _halteDerVerbindung = {};
   List<LatLng> _naheHalte = [];
   File? _karteDatei;
   int _karteStand = 0;
@@ -212,7 +214,27 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
     setState(() {
       _gewaehlt = i;
       _strecken = strecken;
+      _halteDerVerbindung = halte;
     });
+  }
+
+  /// Verbindung auf der Karte zeigen und die Detailseite öffnen.
+  Future<void> _details(int i) async {
+    await _waehlen(i);
+    final v = _verbindungen, ziel = _ziel;
+    if (!mounted || v == null || ziel == null || _gewaehlt != i) return;
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => Details(
+        v: v[i],
+        halte: _halteDerVerbindung,
+        strecken: _strecken,
+        zielName: ziel.name,
+        standort: _pos == null ? null : LatLng(_pos!.lat, _pos!.lon),
+        ziel: LatLng(ziel.lat, ziel.lon),
+        karte: _karteDatei,
+        karteStand: _karteStand,
+      ),
+    ));
   }
 
   Future<void> _routeBerechnen() async {
@@ -363,7 +385,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
     return RefreshIndicator(
       onRefresh: _routeBerechnen,
       child: ListView(children: [
-        for (final (i, x) in v.indexed) _VerbindungZeile(x, gewaehlt: i == _gewaehlt, onTap: () => _waehlen(i)),
+        for (final (i, x) in v.indexed) _VerbindungZeile(x, gewaehlt: i == _gewaehlt, onTap: () => _details(i)),
       ]),
     );
   }

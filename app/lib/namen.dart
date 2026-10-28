@@ -28,3 +28,11 @@ String zielName(String roh) => _grund(roh).replaceAll(_hBahnsteig, '');
 
 /// Schlüssel zum Zusammenfassen: „Aachen Hbf“ (Bahn) und „Aachen Hauptbahnhof H1“ (Bus) sind derselbe Ort.
 String haltSchluessel(String roh) => haltName(roh).toLowerCase().replaceAll(RegExp(r'\bhauptbahnhof\b'), 'hbf');
+
+final _steig = RegExp(r'\s+H(\d{1,2})$|\s+([A-Z])$');
+
+/// Bahnsteig aus dem Rohnamen („… H2“ → „2“, „… B“ → „B“), null wenn keiner drinsteht.
+String? bahnsteig(String roh) {
+  final m = _steig.firstMatch(_grund(roh));
+  return m == null ? null : (m.group(1) ?? m.group(2));
+}
