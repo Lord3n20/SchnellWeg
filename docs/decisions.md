@@ -295,4 +295,7 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - Plan für ganz Deutschland (Vorschlag Betreiber): zweistufig – erst über ein Bahn-Netz (DE-weit, nur Schiene)
   in die Nähe des Ziels (z. B. Gummersbach für Bergneustadt), dann im Detail im Nahverkehr der Zielregion; hält
   Speicher und Suchraum klein. Ausweichweg bei knappem RAM: Fahrplandaten per mmap von der SSD.
-- Status: umgesetzt (routing-core 0.1.18, Job-Option); RAPTOR-Messung auf dem OptiPlex folgt.
+- OptiPlex 28.10.: RAPTOR Aachen–Bergneustadt 46–69 ms (erste Anfrage nach dem Start 87–99 ms), Köln–Düsseldorf
+  31 ms, in Aachen 2–5 ms. Footpaths-Job 10 min (372 308 Paare, 123 593 außerhalb der Tiles, Spitze 538 MB);
+  `/v1/stops` mit gzip 2,2 MB statt 6,4 MB.
+- Status: umgesetzt (routing-core 0.1.20, routing-jobs 0.1.11, Job-Option gtfs_box).
