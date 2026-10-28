@@ -142,8 +142,11 @@ func jobFootpaths(ctx context.Context, w *jobs.Watch) (string, error) {
 	}
 	cw := csv.NewWriter(f)
 	cw.Write([]string{"from_id", "to_id", "sec", "m"})
-	pairs, found := 0, 0
+	pairs, found, aussen := 0, 0, 0 // aussen: Paare von Halten, die Valhalla nicht anschließen kann (keine Tiles)
 	for i, t := range tasks {
+		if results[i] == nil {
+			aussen += len(t.to)
+		}
 		for j, to := range t.to {
 			pairs++
 			sec, m := "", ""
@@ -162,9 +165,11 @@ func jobFootpaths(ctx context.Context, w *jobs.Watch) (string, error) {
 	if err := f.Close(); err != nil {
 		return "", err
 	}
-	// Prüfung: genug Paare, fast alle mit Weg (27.10.: 14 000 Paare) und kein Einbruch gegenüber vorher
-	if pairs < 1000 || found < pairs*8/10 {
-		return "", fmt.Errorf("Prüfung: %d Paare, nur %d mit Weg", pairs, found)
+	// Prüfung: genug Paare, fast alle mit Weg (27.10.: 14 000 Paare) und kein Einbruch gegenüber vorher. Halte
+	// außerhalb der OSM-Quellen (D-24: Fahrplan NRW, Fußwege nur RB Köln/Düsseldorf …) zählen nicht mit; für sie
+	// rechnet routing-core mit der Luftlinie.
+	if innen := pairs - aussen; innen < 1000 || found < innen*8/10 {
+		return "", fmt.Errorf("Prüfung: %d Paare (%d außerhalb der Tiles), nur %d mit Weg", pairs, aussen, found)
 	}
 	if prev, _ := strconv.Atoi(jobs.ReadStamp(cur, "wege")); prev > 0 && found < prev*9/10 {
 		return "", fmt.Errorf("Prüfung: %d Wege, vorher %d (−10 %% Grenze)", found, prev)
@@ -175,7 +180,7 @@ func jobFootpaths(ctx context.Context, w *jobs.Watch) (string, error) {
 		return "", err
 	}
 	ok = true
-	return fmt.Sprintf("Stand %s, %d Quellen, %d Paare, %d mit Weg (Matrix %v)", r.ID, len(tasks), pairs, found,
+	return fmt.Sprintf("Stand %s, %d Quellen, %d Paare (%d außerhalb der Tiles), %d mit Weg (Matrix %v)", r.ID, len(tasks), pairs, aussen, found,
 		time.Since(t0).Round(time.Second)), nil
 }
 
