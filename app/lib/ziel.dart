@@ -1,10 +1,12 @@
 // Ziel wählen: Haltestellen sucht das Handy in der eigenen SQLite, Adressen und Orte fragt es bei /v1/search
 // (Suchtext nur im Body), RWTH-Gebäude live bei RWTH Maps (D-18). Alles parallel; Haltestellen oben, weil sofort da.
+// Ohne Eingabe stehen die Favoriten da; jeder Treffer hat einen Stern.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'favoriten.dart';
 import 'halte_db.dart';
 import 'namen.dart';
 import 'rwth.dart';
@@ -28,6 +30,12 @@ class _ZielSucheState extends State<ZielSuche> {
   List<Ort> _halte = [], _orte = [], _gebaeude = [];
   String? _fehler;
   bool _laeuft = false;
+
+  @override
+  void initState() {
+    super.initState();
+    Favoriten.instanz.laden();
+  }
 
   @override
   void dispose() {
@@ -111,20 +119,36 @@ class _ZielSucheState extends State<ZielSuche> {
           onChanged: _eingabe,
           onSubmitted: _suchen,
         ),
-        bottom: _laeuft
-            ? const PreferredSize(preferredSize: Size.fromHeight(2), child: LinearProgressIndicator(minHeight: 2))
-            : null,
+        // Immer dieselbe Leiste, nur der Balken wechselt: ein wechselndes `bottom` baut das Suchfeld neu auf, dann
+        // verbindet sich die Tastatur neu und springt z. B. von den Ziffern zurück auf Buchstaben.
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(2),
+          child: _laeuft ? const LinearProgressIndicator(minHeight: 2) : const SizedBox(height: 2),
+        ),
       ),
-      body: ListView(children: [
-        if (_fehler != null) ListTile(leading: const Icon(Icons.cloud_off), title: Text(_fehler!)),
-        for (final o in treffer)
-          ListTile(
-            leading: Icon(_icon(o.art)),
-            title: Text(o.name),
-            subtitle: o.detail.isEmpty || _osmTag.hasMatch(o.detail) ? null : Text(o.detail),
-            onTap: () => Navigator.of(context).pop(o),
-          ),
-      ]),
+      body: ListenableBuilder(
+        listenable: Favoriten.instanz,
+        builder: (context, _) => ListView(children: [
+          if (_fehler != null) ListTile(leading: const Icon(Icons.cloud_off), title: Text(_fehler!)),
+          if (_feld.text.trim().length < 2)
+            for (final o in Favoriten.instanz.liste)
+              ListTile(
+                leading: Icon(Icons.star, color: Colors.amber.shade700),
+                title: Text(o.name),
+                subtitle: o.detail.isEmpty || _osmTag.hasMatch(o.detail) ? null : Text(o.detail),
+                onTap: () => Navigator.of(context).pop(o),
+                onLongPress: () => favoritBearbeiten(context, o),
+              ),
+          for (final o in treffer)
+            ListTile(
+              leading: Icon(_icon(o.art)),
+              title: Text(o.name),
+              subtitle: o.detail.isEmpty || _osmTag.hasMatch(o.detail) ? null : Text(o.detail),
+              trailing: FavoritStern(o),
+              onTap: () => Navigator.of(context).pop(o),
+            ),
+        ]),
+      ),
     );
   }
 }

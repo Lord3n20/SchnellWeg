@@ -10,6 +10,7 @@ import 'api.dart';
 import 'details.dart';
 import 'einstellungen.dart';
 import 'einstellungen_seite.dart';
+import 'favoriten.dart';
 import 'halte_db.dart';
 import 'karte.dart';
 import 'kartenlager.dart';
@@ -60,6 +61,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    Favoriten.instanz.laden();
     WidgetsBinding.instance.addObserver(this);
     _starten();
   }
@@ -118,7 +120,10 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
     if (_api == null || _db == null) return;
     final o = await Navigator.of(context).push<Ort>(
         MaterialPageRoute(builder: (_) => ZielSuche(api: _api!, db: _db!)));
-    if (o == null) return;
+    if (o != null) await _zielSetzen(o);
+  }
+
+  Future<void> _zielSetzen(Ort o) async {
     setState(() {
       _ziel = o;
       _strecken = [];
@@ -318,6 +323,29 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
               icon: _ziel == null ? null : Icons.close,
               onIcon: _zielWeg,
             ),
+            if (_ziel == null)
+              ListenableBuilder(
+                listenable: Favoriten.instanz,
+                builder: (context, _) => Favoriten.instanz.liste.isEmpty
+                    ? const SizedBox.shrink()
+                    : SizedBox(
+                        height: 44,
+                        child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.only(top: 6), children: [
+                          for (final f in Favoriten.instanz.liste)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: GestureDetector(
+                                onLongPress: () => favoritBearbeiten(context, f),
+                                child: ActionChip(
+                                  avatar: Icon(Icons.star, size: 18, color: Colors.amber.shade700),
+                                  label: Text(f.name),
+                                  onPressed: () => _zielSetzen(f),
+                                ),
+                              ),
+                            ),
+                        ]),
+                      ),
+              ),
           ]),
         ),
         Expanded(
@@ -336,6 +364,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
             Text(_ziel == null ? 'Haltestellen in der Nähe' : 'Verbindungen',
                 style: Theme.of(context).textTheme.titleSmall),
             const Spacer(),
+            if (_ziel != null) FavoritStern(_ziel!, klein: true),
             if (_ziel == null ? _gruppen.isNotEmpty && !_rt : (_verbindungen?.isNotEmpty ?? false) && !_routeRt)
               Text('nur Fahrplan', style: TextStyle(fontSize: 12, color: farbe.outline)),
           ]),
