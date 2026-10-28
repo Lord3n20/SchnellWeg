@@ -183,7 +183,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
   Future<void> _zielWaehlen() async {
     if (_api == null || _db == null) return;
     final o = await Navigator.of(context).push<Ort>(
-        MaterialPageRoute(builder: (_) => ZielSuche(api: _api!, db: _db!)));
+        MaterialPageRoute(builder: (_) => ZielSuche(api: _api!, db: _db!, nahe: _pos)));
     if (o != null) await _zielSetzen(o);
   }
 

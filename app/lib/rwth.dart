@@ -2,6 +2,7 @@
 // Raus geht nur der Suchtext, nie der Standort. Fällt sie aus, liefert /v1/search die Gebäude aus dem Server-Stand.
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'api.dart';
 
@@ -36,7 +37,7 @@ Future<List<Ort>> rwthSuche(String q) async {
   try {
     final req = await _http.getUrl(Uri.parse(_basis + _latin1Url(q.trim())));
     final res = await req.close().timeout(_zeit);
-    final daten = await res.fold<List<int>>(<int>[], (a, b) => a..addAll(b)).timeout(_zeit);
+    final daten = (await res.fold(BytesBuilder(copy: false), (b, d) => b..add(d)).timeout(_zeit)).takeBytes();
     if (res.statusCode != 200) return [];
     final liste = jsonDecode(latin1.decode(daten)) as List;
     final out = <Ort>[];

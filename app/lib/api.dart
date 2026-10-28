@@ -2,6 +2,8 @@
 // Abfahrten fragt die App nur mit Halte-IDs ab (app-ui.md, Datenschutz).
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'standort.dart';
 import 'zugang.dart';
@@ -168,6 +170,14 @@ List<(double, double)> polyline(String s, {int stellen = 6}) {
   return out;
 }
 
+// Oberste Ebene, damit der Abschluss nichts von Api (HttpClient) ins Isolate mitnimmt.
+Future<List<Halt>> _halteImIsolate(Uint8List daten) => Isolate.run(() => _halteLesen(daten));
+
+List<Halt> _halteLesen(Uint8List daten) {
+  final rows = (utf8.decoder.fuse(json.decoder).convert(daten) as Map)['stops'] as List;
+  return [for (final r in rows.cast<List>()) Halt(r[0] as String, r[1] as String, (r[2] as num).toDouble(), (r[3] as num).toDouble())];
+}
+
 DateTime? _zeit(Object? v) => v == null ? null : DateTime.parse(v as String).toLocal();
 
 class Api {
@@ -175,7 +185,7 @@ class Api {
   final HttpClient _http;
   Api(this.zugang) : _http = zugang.client();
 
-  Future<(int, String?, List<int>)> _anfrage(String methode, String pfad,
+  Future<(int, String?, Uint8List)> _anfrage(String methode, String pfad,
       {Object? body, Map<String, String> kopf = const {}, Duration zeit = const Duration(seconds: 8)}) async {
     try {
       final req = await _http.openUrl(methode, zugang.basis.resolve(pfad));
@@ -185,7 +195,8 @@ class Api {
         req.write(jsonEncode(body));
       }
       final res = await req.close().timeout(zeit);
-      final daten = await res.fold<List<int>>(<int>[], (a, b) => a..addAll(b)).timeout(zeit);
+      // BytesBuilder statt List<int>: die Haltestellenliste (~6 MB) wäre sonst ein Vielfaches davon groß und langsam
+      final daten = (await res.fold(BytesBuilder(copy: false), (b, d) => b..add(d)).timeout(zeit)).takeBytes();
       if (res.statusCode >= 400) {
         String art = 'http_${res.statusCode}';
         Map? m;
@@ -208,11 +219,8 @@ class Api {
     final (code, neu, daten) = await _anfrage('GET', '/v1/stops',
         kopf: etag == null ? const {} : {'If-None-Match': etag}, zeit: const Duration(seconds: 30));
     if (code == 304) return null;
-    final rows = (jsonDecode(utf8.decode(daten)) as Map)['stops'] as List;
-    return (
-      neu,
-      [for (final r in rows.cast<List>()) Halt(r[0] as String, r[1] as String, (r[2] as num).toDouble(), (r[3] as num).toDouble())]
-    );
+    // ~110 000 Halte: Dekodieren in einem eigenen Isolate, sonst stockt die Oberfläche beim täglichen Abgleich
+    return (neu, await _halteImIsolate(daten));
   }
 
   /// Nächste Abfahrten je Halt-ID (höchstens 30 IDs) und ob der Echtzeitstand verfügbar war.

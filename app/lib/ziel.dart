@@ -18,7 +18,8 @@ final _osmTag = RegExp(r'^[a-z_]+$'); // Orte ohne Adresse tragen als Detail nur
 class ZielSuche extends StatefulWidget {
   final Api api;
   final HalteDb db;
-  const ZielSuche({super.key, required this.api, required this.db});
+  final Position? nahe; // schon bekannter Standort der Startseite (spart den GPS-Start)
+  const ZielSuche({super.key, required this.api, required this.db, this.nahe});
 
   @override
   State<ZielSuche> createState() => _ZielSucheState();
@@ -37,7 +38,8 @@ class _ZielSucheState extends State<ZielSuche> {
   void initState() {
     super.initState();
     Favoriten.instanz.laden();
-    Standort.holen().then((p) => _nahe = p); // für die Adresssuche: nahe Treffer zuerst
+    _nahe = widget.nahe; // für die Adresssuche: nahe Treffer zuerst
+    if (_nahe == null) Standort.holen().then((p) => _nahe = p);
   }
 
   @override
@@ -63,9 +65,10 @@ class _ZielSucheState extends State<ZielSuche> {
       });
     }
     setState(() => _laeuft = true);
-    final halte = await widget.db.suchen(q);
-    if (nr != _nr || !mounted) return;
-    setState(() => _halte = _zusammenfassen(halte));
+    // Alle drei gleichzeitig: die Server-Suche wartet nicht mehr auf die SQLite
+    widget.db.suchen(q).then((halte) {
+      if (nr == _nr && mounted) setState(() => _halte = _zusammenfassen(halte));
+    });
     rwthSuche(q).then((g) {
       if (nr == _nr && mounted) setState(() => _gebaeude = g);
     });

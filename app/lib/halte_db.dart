@@ -29,12 +29,16 @@ class HalteDb {
   /// Ersetzt alle Halte in einer Transaktion.
   Future<void> ersetzen(String? etag, List<Halt> halte) => _db.transaction((tx) async {
         await tx.delete('halt');
-        final b = tx.batch();
-        for (final h in halte) {
-          b.insert('halt', {'id': h.id, 'name': h.name, 'lat': h.lat, 'lon': h.lon});
+        // In Stücken: ein Batch mit allen ~110 000 Zeilen wäre eine riesige Kanal-Nachricht, die der UI-Thread am
+        // Stück kodiert; dazwischen kommt die Oberfläche zum Zeichnen.
+        for (var i = 0; i < halte.length; i += 2000) {
+          final b = tx.batch();
+          for (final h in halte.skip(i).take(2000)) {
+            b.insert('halt', {'id': h.id, 'name': h.name, 'lat': h.lat, 'lon': h.lon});
+          }
+          await b.commit(noResult: true);
         }
-        b.insert('meta', {'k': 'etag', 'v': etag}, conflictAlgorithm: ConflictAlgorithm.replace);
-        await b.commit(noResult: true);
+        await tx.insert('meta', {'k': 'etag', 'v': etag}, conflictAlgorithm: ConflictAlgorithm.replace);
       });
 
   /// Halte, deren Name alle Wörter von [q] enthält (Groß/klein egal), höchstens [n].
@@ -42,7 +46,8 @@ class HalteDb {
     final woerter = q.trim().toLowerCase().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
     if (woerter.isEmpty) return [];
     final rows = await _db.query('halt',
-        where: List.filled(woerter.length, 'lower(name) LIKE ?').join(' AND '),
+        // LIKE ist bei ASCII ohnehin groß/klein-egal (lower() kann in SQLite auch nur ASCII) – ohne lower() schneller
+        where: List.filled(woerter.length, 'name LIKE ?').join(' AND '),
         whereArgs: [for (final w in woerter) '%$w%'],
         limit: n);
     return [for (final r in rows) Halt(r['id'] as String, r['name'] as String, r['lat'] as double, r['lon'] as double)];
