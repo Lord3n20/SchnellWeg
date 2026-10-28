@@ -7,14 +7,14 @@ import android.service.quicksettings.TileService
 import org.json.JSONObject
 import java.io.File
 
-// Schnelleinstellung „Verkehrsmittel“: zeigt das aktive Tempo-Profil, Antippen öffnet die Auswahl Fuß/Einrad/Räder.
+// Schnelleinstellung „Verkehrsmittel“: zeigt das aktive Tempo-Profil, Antippen öffnet die Auswahl Fuß/Custom/Räder.
 // Schreibt nur `aktiv` in tempo.json (dieselbe Datei wie lib/tempo.dart); die App liest sie beim Zurückkommen neu
 // und rechnet die aktuelle Verbindung damit neu.
 class VerkehrsmittelKachel : TileService() {
     // Art → Profil, das beim Wechsel auf diese Art aktiv wird (Namen wie _vorgaben in lib/tempo.dart)
     private val arten = listOf(
         Triple("fuss", "Zu Fuß", "entspannt"),
-        Triple("einrad", "Einrad", "Einrad"),
+        Triple("einrad", "Custom", "Einrad"), // Profilschlüssel bleibt „Einrad“, Anzeigename steht als `titel` in tempo.json
         Triple("klapprad", "Klapprad", "Klapprad"),
         Triple("fixie", "Fixie", "Fixie"),
         Triple("rennrad", "Rennrad", "Rennrad"),
@@ -33,6 +33,7 @@ class VerkehrsmittelKachel : TileService() {
 
     private fun artVon(profil: String): String =
         arten.firstOrNull { (_, _, p) -> p == profil }?.first
+            ?: (if (profil.startsWith("Einrad")) "einrad" else null)
             ?: arten.firstOrNull { (_, name, _) -> profil.startsWith(name) }?.first
             ?: "fuss" // entspannt / normal / schnell
 
@@ -42,7 +43,9 @@ class VerkehrsmittelKachel : TileService() {
         val t = qsTile ?: return
         val profil = aktiv()
         t.label = "Verkehrsmittel"
-        t.subtitle = profil.replaceFirstChar { it.uppercase() }
+        val titel = lesen().optJSONObject("profile")?.optJSONObject(profil)?.optString("titel", "").orEmpty()
+        t.subtitle = titel.ifEmpty { mapOf("Einrad" to "Custom 1", "Einrad schnell" to "Custom 2")[profil] ?: profil }
+            .replaceFirstChar { it.uppercase() }
         t.icon = Icon.createWithResource(this, if (artVon(profil) == "fuss") R.drawable.kachel_fuss else R.drawable.kachel_rad)
         t.state = Tile.STATE_ACTIVE
         t.updateTile()

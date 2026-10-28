@@ -132,7 +132,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
 
   Future<void> _tempoNeuLesen() async {
     final t = await Tempo.laden();
-    if (!mounted || (t.name == _tempo.name && t.kmh == _tempo.kmh)) return;
+    if (!mounted || (t.name == _tempo.name && t.kmh == _tempo.kmh && t.titel == _tempo.titel)) return;
     setState(() => _tempo = t);
     if (_ziel != null) await _routeBerechnen();
   }
@@ -282,10 +282,13 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     if (p == null) return setState(() => _routeHinweis = 'Kein Standort (Berechtigung oder GPS aus?)');
     _pos = p;
     try {
-      final (v, rt) = await _api!.route(p.lat, p.lon, ziel.lat, ziel.lon, kmh: _tempo.kmh, art: _tempo.art, lang: lang, ab: _zeit, ankunft: _ankunft);
+      final (roh, rt) = await _api!.route(p.lat, p.lon, ziel.lat, ziel.lon, kmh: _tempo.kmh, art: _tempo.art, lang: lang, ab: _zeit, ankunft: _ankunft);
+      // früheste Ankunft oben; bei Gleichstand bleibt die Server-Reihenfolge
+      final v = [for (final (i, x) in roh.indexed) (i, x)]
+        ..sort((a, b) => a.$2.ankunft.compareTo(b.$2.ankunft) != 0 ? a.$2.ankunft.compareTo(b.$2.ankunft) : a.$1 - b.$1);
       if (!mounted || _ziel != ziel) return;
       setState(() {
-        _verbindungen = v;
+        _verbindungen = [for (final (_, x) in v) x];
         _routeRt = rt;
         if (v.isEmpty) _routeHinweis = 'Keine Verbindung gefunden';
       });
@@ -468,17 +471,30 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
                 alignment: Alignment.centerLeft,
                 child: Padding(
                   padding: const EdgeInsets.only(top: 6),
-                  child: InputChip(
-                    avatar: const Icon(Icons.schedule, size: 18),
-                    label: Text(_zeit == null ? 'Jetzt losgehen' : '${_ankunft ? 'Ankunft' : 'Abfahrt'} ${_uhr(_zeit!)}'),
-                    onPressed: _zeitWaehlen,
-                    onDeleted: _zeit == null
-                        ? null
-                        : () {
-                            setState(() => _zeit = null);
-                            _routeBerechnen();
-                          },
-                  ),
+                  child: Wrap(spacing: 6, children: [
+                    InputChip(
+                      avatar: const Icon(Icons.schedule, size: 18),
+                      label: Text(_zeit == null ? 'Jetzt losgehen' : '${_ankunft ? 'Ankunft' : 'Abfahrt'} ${_uhr(_zeit!)}'),
+                      onPressed: _zeitWaehlen,
+                      onDeleted: _zeit == null
+                          ? null
+                          : () {
+                              setState(() => _zeit = null);
+                              _routeBerechnen();
+                            },
+                    ),
+                    ActionChip(
+                      avatar: Icon(artIcon(_tempo.art), size: 18),
+                      label: Text(_tempo.art == 'fuss' ? 'Zu Fuß ${_tempo.anzeige}' : _tempo.anzeige),
+                      tooltip: 'Verkehrsmittel',
+                      onPressed: () async {
+                        final p = await verkehrsmittelWaehlen(context);
+                        if (p == null || !mounted) return;
+                        setState(() => _tempo = p);
+                        _routeBerechnen();
+                      },
+                    ),
+                  ]),
                 ),
               ),
             if (_ziel == null)

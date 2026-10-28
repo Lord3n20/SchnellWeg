@@ -38,7 +38,7 @@ class _EinstellungenSeiteState extends State<EinstellungenSeite> with _LagerBeob
   Future<void> _tempoAendern() async {
     await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TempoSeite()));
     final p = await Tempo.laden();
-    if (!mounted || (p.name == _tempo.name && p.kmh == _tempo.kmh)) return;
+    if (!mounted || (p.name == _tempo.name && p.kmh == _tempo.kmh && p.titel == _tempo.titel)) return;
     setState(() => _tempo = p);
     widget.tempoGeaendert(p);
   }
@@ -58,13 +58,9 @@ class _EinstellungenSeiteState extends State<EinstellungenSeite> with _LagerBeob
       appBar: AppBar(title: const Text('Einstellungen')),
       body: ListView(children: [
         _Punkt(
-          icon: switch (_tempo.art) {
-            'fuss' => Icons.directions_walk,
-            'einrad' => Icons.circle_outlined,
-            _ => Icons.directions_bike,
-          },
+          icon: artIcon(_tempo.art),
           titel: 'Tempo',
-          unter: '${_tempo.name} · ${tempoText(_tempo.kmh)}',
+          unter: '${_tempo.anzeige} · ${tempoText(_tempo.kmh)}',
           onTap: _tempoAendern,
         ),
         _Punkt(

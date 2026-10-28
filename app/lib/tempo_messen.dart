@@ -63,6 +63,23 @@ class _TempoSeiteState extends State<TempoSeite> {
     });
   }
 
+  Future<void> _umbenennen(TempoProfil p) async {
+    final c = TextEditingController(text: p.anzeige);
+    final n = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Umbenennen'),
+        content: TextField(controller: c, autofocus: true, maxLength: 24, onSubmitted: (v) => Navigator.pop(ctx, v)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Abbrechen')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, c.text), child: const Text('OK')),
+        ],
+      ),
+    );
+    if (n == null) return;
+    await _aendern((_) => p.titel = n.trim().isEmpty ? null : n.trim()); // leer = Standardname
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = _t;
@@ -74,7 +91,7 @@ class _TempoSeiteState extends State<TempoSeite> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                 child: Text('Das ausgewählte Profil gilt für Wege zu Haltestellen, Umstiege und direkte Wege; '
-                    'mit dem Rad steht der direkte Weg vorn. '
+                    'die Verbindung mit der frühesten Ankunft steht oben. '
                     'Zum Kalibrieren ein Profil messen: ein paar Minuten in diesem Tempo unterwegs sein.'),
               ),
               for (final art in grenzen.keys) ...[
@@ -82,15 +99,17 @@ class _TempoSeiteState extends State<TempoSeite> {
                 for (final p in t.profile.where((p) => p.art == art)) ListTile(
                   leading: Icon(p.name == t.aktiv ? Icons.radio_button_checked : Icons.radio_button_unchecked,
                       color: p.name == t.aktiv ? Theme.of(context).colorScheme.primary : null),
-                  title: Text(p.name),
+                  title: Text(p.anzeige),
                   subtitle: Text('${tempoText(p.kmh)} · '
                       '${p.gemessen == null ? 'nicht gemessen' : 'gemessen am ${p.gemessen!.day}.${p.gemessen!.month}.'}'),
                   onTap: () => _aendern((t) => t.aktiv = p.name),
                   trailing: PopupMenuButton<String>(
-                    onSelected: (w) => w == 'messen' ? _messen(p) : _vonHand(p),
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(value: 'messen', child: ListTile(leading: Icon(Icons.gps_fixed), title: Text('Messen'))),
-                      PopupMenuItem(value: 'hand', child: ListTile(leading: Icon(Icons.tune), title: Text('Von Hand einstellen'))),
+                    onSelected: (w) => switch (w) { 'messen' => _messen(p), 'name' => _umbenennen(p), _ => _vonHand(p) },
+                    itemBuilder: (_) => [
+                      const PopupMenuItem(value: 'messen', child: ListTile(leading: Icon(Icons.gps_fixed), title: Text('Messen'))),
+                      const PopupMenuItem(value: 'hand', child: ListTile(leading: Icon(Icons.tune), title: Text('Von Hand einstellen'))),
+                      if (p.umbenennbar)
+                        const PopupMenuItem(value: 'name', child: ListTile(leading: Icon(Icons.edit), title: Text('Umbenennen'))),
                     ],
                   ),
                 ),
@@ -198,7 +217,7 @@ class _MessSeiteState extends State<MessSeite> {
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context);
-    final name = widget.profil.name, fuss = widget.profil.art == 'fuss';
+    final name = widget.profil.anzeige, fuss = widget.profil.art == 'fuss';
     final fehlt = [
       if (_gehMs < _zeitMin.inMilliseconds) 'noch ${_dauer(_zeitMin.inMilliseconds - _gehMs)}',
       if (_strecke < _streckeMin) 'noch ${(_streckeMin - _strecke).ceil()} m',
