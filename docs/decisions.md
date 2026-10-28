@@ -233,7 +233,9 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   welches Bundesland geladen wird, nie den Kartenausschnitt.
 - Beschriftungen: Die Protomaps-Stile bauen Namen mit `format`, das der Renderer nicht kennt (→ keine
   Beschriftung). Die App ersetzt `text-field` durch deutschen Namen, sonst Namen vor Ort.
-- Status: umgesetzt (routing-jobs 0.1.9, routing-core 0.1.13, App).
+- Erster Lauf 28.10. (routing-jobs 0.1.10, Build 20261027): laden 4 min, schneiden 1 min, Spitze 701 MB;
+  14 Dateien 9,3 GB (Übersicht 55 MB, NRW 1,39 GB, Bayern 1,83 GB, Saarland 83 MB).
+- Status: umgesetzt (routing-jobs 0.1.10, routing-core 0.1.13, App).
 
 ## D-21 Fortbewegungsarten Einrad und Fahrrad (28.10.)
 - Betreiber 27./28.10.: Einrad und Fahrrad wie Fußweg (gleiche Wege, Treppen ok), nur anderes Tempo; Einrad fährt
