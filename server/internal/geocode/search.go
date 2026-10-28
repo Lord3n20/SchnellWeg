@@ -49,7 +49,6 @@ func Normalize(s string) string {
 func words(s string) []string { return strings.Fields(s) }
 
 const (
-	maxCand  = 5000    // geprüfte Einträge je Durchgang (Zeitbudget 30 ms auf dem Server)
 	maxUnion = 1 << 21 // größte Trefferliste eines Suchworts, die noch zusammengeführt wird
 	maxWords = 20000   // Wörter zu einem Wortanfang, darüber zu allgemein („s“, „ha“)
 )
@@ -73,25 +72,34 @@ func (p *part) term(w string) (ids []int, total int, ok bool) {
 	return ids, total, true
 }
 
-// list führt die Trefferlisten der Wörter zusammen, beschränkt auf die Eintragsbereiche rs (nil = alle);
-// aufsteigend nach Eintrag, Namensmarke bei Dopplung verodert.
-func (p *part) list(ids []int, rs [][2]uint32) []uint32 {
-	var ls [][]uint32
+// spans liefert die Ausschnitte der Trefferlisten der Wörter in den Eintragsbereichen rs (nil = ganze Listen).
+// stop > 0: aufhören, sobald so viele zusammen sind.
+func (p *part) spans(ids []int, rs [][2]uint32, stop int) (ls [][]uint32, n int) {
 	for _, i := range ids {
+		if stop > 0 && n >= stop {
+			break
+		}
 		l := p.posts[p.postOff[i]:p.postOff[i+1]]
 		if rs == nil {
-			ls = append(ls, l)
+			if len(l) > 0 {
+				ls, n = append(ls, l), n+len(l)
+			}
 			continue
 		}
 		for _, r := range rs {
 			a := sort.Search(len(l), func(k int) bool { return l[k]>>1 >= r[0] })
 			b := sort.Search(len(l), func(k int) bool { return l[k]>>1 >= r[1] })
 			if a < b {
-				ls = append(ls, l[a:b])
+				ls, n = append(ls, l[a:b]), n+b-a
 			}
 		}
 	}
-	for len(ls) > 1 { // paarweise zusammenführen: N·log(k)
+	return ls, n
+}
+
+// mergeAll führt Ausschnitte zusammen: aufsteigend nach Eintrag, Namensmarke bei Dopplung verodert.
+func mergeAll(ls [][]uint32) []uint32 {
+	for len(ls) > 1 { // paarweise: N·log(k)
 		var next [][]uint32
 		for i := 0; i < len(ls); i += 2 {
 			if i+1 == len(ls) {
@@ -106,6 +114,36 @@ func (p *part) list(ids []int, rs [][2]uint32) []uint32 {
 		return nil
 	}
 	return slices.Clip(ls[0]) // kann direkt in die eingeblendete Datei zeigen: append darf dort nie hineinschreiben
+}
+
+// collect nimmt ohne Zusammenführen bis zu limit Einträge, zuerst die mit dem Wort im Namen (Dopplungen
+// verwirft die Wertung).
+func collect(ls [][]uint32, limit int) []uint32 {
+	out := make([]uint32, 0, limit)
+	for _, flag := range []uint32{1, 0} {
+		for _, l := range ls {
+			for _, v := range l {
+				if len(out) == limit {
+					return out
+				}
+				if v&1 == flag {
+					out = append(out, v)
+				}
+			}
+		}
+	}
+	return out
+}
+
+// contains: steht Eintrag v in einem der Ausschnitte (binäre Suche)?
+func contains(ls [][]uint32, v uint32) bool {
+	for _, l := range ls {
+		k := sort.Search(len(l), func(k int) bool { return l[k]>>1 >= v>>1 })
+		if k < len(l) && l[k]>>1 == v>>1 {
+			return true
+		}
+	}
+	return false
 }
 
 func merge(a, b []uint32) []uint32 {
@@ -143,15 +181,19 @@ func intersect(a, b []uint32) []uint32 {
 	return out
 }
 
-// candidates sucht die Einträge, die zu allen Suchwörtern passen könnten, in den Bereichen rs (nil = alle):
-// Trefferliste des seltensten Worts, geschnitten mit den nächsten, bis höchstens maxCand übrig sind; sonst zuerst
-// die mit dem Wort im Namen (Orte und Postleitzahlen im Detail stehen bei Tausenden Adressen).
-func (p *part) candidates(qw []string, rs [][2]uint32) []uint32 {
+// candidates sucht in den Bereichen rs (nil = alle) bis zu limit Einträge, die zu allen Suchwörtern passen
+// könnten: Trefferliste des seltensten Worts, geschnitten mit den weiteren, solange es mehr als limit sind (je nach
+// Größe nachschlagen oder zusammenführen); sonst zuerst die mit dem Wort im Namen (Orte und Postleitzahlen im
+// Detail stehen bei Tausenden Adressen). Wörter mit mehr als maxUnion Treffern („5“ samt 5xxxx, „ha“) werden für
+// ganz DE nur geprüft, nicht gesammelt.
+func (p *part) candidates(qw []string, rs [][2]uint32, limit int) []uint32 {
 	type t struct {
 		ids   []int
 		total int
+		ls    [][]uint32
+		n     int
 	}
-	var ts []t
+	var ts, big []t
 	for _, w := range qw {
 		if len(w) < 2 && !isNum(w) {
 			continue // ein Buchstabe: nur prüfen
@@ -163,48 +205,60 @@ func (p *part) candidates(qw []string, rs [][2]uint32) []uint32 {
 		if total == 0 {
 			return nil
 		}
-		ts = append(ts, t{ids, total})
+		if total > maxUnion {
+			big = append(big, t{ids: ids, total: total})
+			continue
+		}
+		ls, n := p.spans(ids, rs, 0)
+		if n == 0 {
+			return nil
+		}
+		ts = append(ts, t{ids, total, ls, n})
 	}
-	sort.Slice(ts, func(i, j int) bool { return ts[i].total < ts[j].total })
-	var c []uint32
-	started := false
-	for i, x := range ts {
-		if x.total > maxUnion && i > 0 {
-			break // „5“ (auch 5xxxx-Postleitzahlen): Zusammenführen kostete ~0,5 s; die Wertung prüft es ohnehin
+	if len(ts) == 0 {
+		if len(big) == 0 || rs == nil {
+			return nil
 		}
-		l := p.list(x.ids, rs)
-		if !started {
-			c, started = l, true
-		} else {
-			c = intersect(c, l)
-		}
-		if len(c) <= maxCand {
+		// nur sehr allgemeine Wörter („ha“): in der Umgebung die ersten Treffer, früh aufhören
+		ls, _ := p.spans(big[0].ids, rs, 4*limit)
+		return collect(ls, limit)
+	}
+	sort.Slice(ts, func(i, j int) bool { return ts[i].n < ts[j].n })
+	if len(ts) == 1 && ts[0].n > limit {
+		return collect(ts[0].ls, limit)
+	}
+	c := mergeAll(ts[0].ls)
+	for _, x := range ts[1:] {
+		if len(c) <= limit {
 			break
 		}
-	}
-	if len(c) > maxCand {
-		out := make([]uint32, 0, maxCand)
-		for _, flag := range []uint32{1, 0} {
+		if len(c)*len(x.ls)*16 < x.n { // nachschlagen billiger als zusammenführen
+			out := c[:0:0]
 			for _, v := range c {
-				if v&1 == flag && len(out) < maxCand {
+				if contains(x.ls, v) {
 					out = append(out, v)
 				}
 			}
+			c = out
+		} else {
+			c = intersect(c, mergeAll(x.ls))
 		}
-		c = out
+	}
+	if len(c) > limit {
+		c = collect([][]uint32{c}, limit)
 	}
 	return c
 }
 
-// near liefert die Eintragsbereiche der Zellen um (lat, lon), aufsteigend.
-func (p *part) near(lat, lon float64) [][2]uint32 {
+// near liefert die Eintragsbereiche der Zellen im Abstand ≤ d um (lat, lon), aufsteigend.
+func (p *part) near(lat, lon float64, d int32) [][2]uint32 {
 	if len(p.cells) == 0 {
 		return nil
 	}
 	c := cellOf(lat, lon)
 	var rs [][2]uint32
-	for dr := int32(-1); dr <= 1; dr++ {
-		for dc := int32(-1); dc <= 1; dc++ {
+	for dr := -d; dr <= d; dr++ {
+		for dc := -d; dc <= d; dc++ {
 			if r, ok := p.cells[c+dr*1000+dc]; ok {
 				rs = append(rs, r)
 			}
@@ -250,10 +304,13 @@ func (ix *Index) SearchNear(q string, n int, lat, lon float64) []Hit {
 	here := !math.IsNaN(lat) && !math.IsNaN(lon)
 	var hits []Hit
 	for _, p := range ix.parts {
-		c := p.candidates(qw, nil)
+		// ganz DE, dann die eigene Zelle (~35 × 55 km), dann die 3 × 3 Zellen drumherum
+		c := p.candidates(qw, nil, 2000)
 		if here {
-			if rs := p.near(lat, lon); rs != nil {
-				c = append(c, p.candidates(qw, rs)...)
+			for d := int32(0); d <= 1; d++ {
+				if rs := p.near(lat, lon, d); rs != nil {
+					c = append(c, p.candidates(qw, rs, 3000)...)
+				}
 			}
 		}
 		hits = append(hits, p.score(c, qw, lat, lon)...)
