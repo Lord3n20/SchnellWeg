@@ -50,6 +50,10 @@ class KartenLager extends ChangeNotifier {
     return l.isEmpty ? null : _Regionen(l);
   }
 
+  /// Liegt die Stelle in einem geladenen Bundesland?
+  bool abgedeckt(double lat, double lon) =>
+      regionen.any((r) => r.id != uebersicht && hat(r.id) && r.enthaelt(lat, lon));
+
   /// Bundesland an dieser Stelle, das noch fehlt (und keine geladene Region deckt die Stelle ab).
   KartenRegion? fehltBei(double lat, double lon) {
     KartenRegion? fehlt;

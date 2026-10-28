@@ -16,6 +16,7 @@ import 'api.dart';
 import 'kartenlager.dart';
 
 const _detailAb = 10.0; // ab dieser Zoomstufe fällt die grobe Übersicht auf
+const _feinAb = 9.0; // darunter reicht die Übersicht (bis Zoom 9), die Bundesländer werden nicht gezeichnet
 final _aachen = LatLng(50.7753, 6.0839); // Hbf, bis der Standort da ist
 
 /// Protomaps-Stile mit vereinfachten Beschriftungen: die Originale bauen den Text mit `format` (zweisprachig,
@@ -79,6 +80,9 @@ class _KarteState extends State<Karte> {
   bool _bereit = false; // FlutterMap gebaut, Kamera darf bewegt werden
   bool _folgen = true; // Ausschnitt passt sich an, bis der Nutzer selbst verschiebt
   KartenRegion? _fehlt; // Bundesland in der Kartenmitte, das noch nicht geladen ist
+  // Welche Ebenen gezeichnet werden: jede kostet Rechenzeit, die Übersicht über Zoom 9 hinaus besonders viel
+  // (eine Kachel wird vielfach vergrößert neu gezeichnet). Deckt ein geladenes Bundesland den Ausschnitt, fällt sie weg.
+  bool _grob = true, _fein = false;
 
   @override
   void initState() {
@@ -107,7 +111,17 @@ class _KarteState extends State<Karte> {
 
   void _pruefeRegion(MapCamera c) {
     final f = c.zoom >= _detailAb ? _lager.fehltBei(c.center.latitude, c.center.longitude) : null;
-    if (f?.id != _fehlt?.id) setState(() => _fehlt = f);
+    final b = c.visibleBounds;
+    final fein = c.zoom >= _feinAb && _lager.regionenQuelle != null;
+    final grob = !fein ||
+        ![b.northWest, b.northEast, b.southWest, b.southEast].every((p) => _lager.abgedeckt(p.latitude, p.longitude));
+    if (f?.id != _fehlt?.id || fein != _fein || grob != _grob) {
+      setState(() {
+        _fehlt = f;
+        _fein = fein;
+        _grob = grob;
+      });
+    }
   }
 
   void _ausschnitt() {
@@ -143,6 +157,17 @@ class _KarteState extends State<Karte> {
       );
     }
     final stil = Theme.of(context).brightness == Brightness.dark ? _dunkel : hellerStil;
+    // Kein Dateicache (Quelle liegt lokal, die Kachel-IDs beider Ebenen würden sich mischen), dafür größere
+    // Speicher-Caches als die Vorgabe (10 MB / 20 Kacheln), damit Verschieben nicht neu liest und parst.
+    Widget ebene(String name, VectorTileProvider quelle) => VectorTileLayer(
+          key: ValueKey('$name${_lager.stand}'),
+          theme: stil,
+          tileProviders: TileProviders({'protomaps': quelle}),
+          fileCacheTtl: Duration.zero,
+          memoryTileCacheMaxSize: 48 << 20,
+          memoryTileDataCacheMaxSize: 80,
+          textCacheMaxSize: 400,
+        );
     return Stack(children: [
       FlutterMap(
         mapController: _kamera,
@@ -165,20 +190,8 @@ class _KarteState extends State<Karte> {
           },
         ),
         children: [
-          if (grob != null)
-            VectorTileLayer(
-              key: ValueKey('grob${_lager.stand}'),
-              theme: stil,
-              tileProviders: TileProviders({'protomaps': grob}),
-              fileCacheTtl: Duration.zero, // Quelle liegt ohnehin lokal
-            ),
-          if (fein != null)
-            VectorTileLayer(
-              key: ValueKey('fein${_lager.stand}'),
-              theme: stil,
-              tileProviders: TileProviders({'protomaps': fein}),
-              fileCacheTtl: Duration.zero,
-            ),
+          if (grob != null && (_grob || fein == null)) ebene('grob', grob),
+          if (fein != null && _fein) ebene('fein', fein),
           if (_lager.regionen.isNotEmpty) _Abdeckung(_lager, farbe),
           PolylineLayer(polylines: [
             for (final s in widget.strecken)
