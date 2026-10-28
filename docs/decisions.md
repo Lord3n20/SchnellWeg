@@ -341,7 +341,11 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - Laptop 28.10. (DE + NL-Limburg, GOMEMLIMIT 1,5 GiB wie im Job): 20,9 Mio. Adressen, 1,6 Mio. Straßen, 102 000 Orte,
   2,2 Mio. Einrichtungen; Extraktion 6:54 min (anonymer Speicher bis 1,09 GB), Index 1:46 min (bis 1,54 GB, darin
   ~0,5 GB Trefferlisten); TSV 1,44 GB, Index 0,73 GB.
-- Status: umgesetzt (routing-core 0.1.25, routing-jobs 0.1.12).
+- OptiPlex 28.10. (germany + NL-Limburg + Belgien): 24,96 Mio. Adressen, 1,85 Mio. Straßen, 110 000 Orte, 2,46 Mio.
+  Einrichtungen; Job 10:30 min (Liste 4:20, Index 0:49, Rest Download), Spitze 1,49 GB von 2 GB. Suche mit `near`
+  1–15 ms (erste Anfrage nach dem Laden bis 46 ms, Seiten kommen von der SSD); routing-core danach 172 MB anonym
+  (vorher 346 MB). Geofabrik leitet germany-latest auf einen Spiegel um, die .md5 liegt nur dort (routing-jobs 0.1.13).
+- Status: umgesetzt (routing-core 0.1.25, routing-jobs 0.1.13).
 
 ## D-27 Planung nach Ankunftszeit (28.10.)
 - Betreiber 28.10.: „ich würde gerne noch ankunfts-/abfahrtszeit planen können“.
