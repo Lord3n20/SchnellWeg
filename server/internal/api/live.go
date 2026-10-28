@@ -1,8 +1,10 @@
 package api
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"sort"
 	"strings"
@@ -269,7 +271,16 @@ func (s *Server) stops(w http.ResponseWriter, r *http.Request) {
 		rows = append(rows, [4]any{st.ID, st.Name, round6(st.Lat), round6(st.Lon)})
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"day": p.Day.Format("2006-01-02"), "stops": rows})
+	var out io.Writer = w
+	// Mit dem NRW-Fahrplan (D-24) ~6 MB JSON; gzip macht etwa ein Viertel daraus. Selten abgerufen (ETag).
+	if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Add("Vary", "Accept-Encoding")
+		z, _ := gzip.NewWriterLevel(w, gzip.BestSpeed)
+		defer z.Close()
+		out = z
+	}
+	json.NewEncoder(out).Encode(map[string]any{"day": p.Day.Format("2006-01-02"), "stops": rows})
 }
 
 func round6(x float64) float64 { return float64(int64(x*1e6+0.5*sign(x))) / 1e6 }

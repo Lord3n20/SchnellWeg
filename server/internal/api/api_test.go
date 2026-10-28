@@ -1,6 +1,7 @@
 package api
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -290,5 +291,24 @@ func TestRadVergleich(t *testing.T) {
 	// ohne Fahrt: weg; Bus 2 min früher: weg; Bus 3 min früher: bleibt; Bahn 1 min früher: bleibt
 	if len(got) != 2 || !got[0].Arr.Equal(at(7)) || !got[1].Arr.Equal(at(9)) {
 		t.Errorf("radVergleich: %+v", got)
+	}
+}
+
+func TestStopsGzip(t *testing.T) {
+	s := testServer(time.Date(2026, 10, 28, 0, 0, 0, 0, Berlin))
+	r := httptest.NewRequest(http.MethodGet, "/v1/stops", nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+	w := httptest.NewRecorder()
+	s.stops(w, r)
+	if w.Header().Get("Content-Encoding") != "gzip" {
+		t.Fatal("ohne gzip")
+	}
+	z, err := gzip.NewReader(w.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v struct{ Stops [][4]any }
+	if err := json.NewDecoder(z).Decode(&v); err != nil || len(v.Stops) == 0 {
+		t.Fatalf("Inhalt: %v %d", err, len(v.Stops))
 	}
 }
