@@ -104,6 +104,18 @@ type routeReq struct {
 	Fern  bool       `json:"fern"`  // Fernverkehr zulassen; sonst nur, was das Deutschlandsemesterticket abdeckt
 	Debug bool       `json:"debug"` // Zeiten der Valhalla-Aufrufe aufschlüsseln (nur Messung, keine Orte)
 	KMH   *float64   `json:"kmh"`   // Gehtempo (App-Einstellung, D-12); fehlt es, gilt BaseKMH
+	Art   string     `json:"art"`   // fuss (Standard) | einrad | rad (D-21)
+}
+
+// Tempogrenzen je Fortbewegungsart (D-21). Einrad und Rad nutzen dieselben Wege wie zu Fuß, nur schneller.
+var kmhGrenzen = map[string][2]float64{"": {2, 8}, "fuss": {2, 8}, "einrad": {4, 20}, "rad": {6, 35}}
+
+// reichweite: Faktor für Zugangsradius und direkten Weg; schneller unterwegs = weiter, höchstens das Vierfache.
+func (q routeReq) reichweite() float64 {
+	if q.KMH == nil {
+		return 1
+	}
+	return min(4, max(1, *q.KMH/BaseKMH))
 }
 
 // BaseKMH ist das Tempo, mit dem Fußwege und Zugangswege gerechnet sind (D-12: „gemütlich“).
@@ -114,7 +126,8 @@ func (q routeReq) walkScale() (float64, bool) {
 	if q.KMH == nil {
 		return 1, true
 	}
-	if k := *q.KMH; k >= 2 && k <= 8 {
+	g, ok := kmhGrenzen[q.Art]
+	if k := *q.KMH; ok && k >= g[0] && k <= g[1] {
 		return BaseKMH / k, true
 	}
 	return 0, false
@@ -135,6 +148,7 @@ type legOut struct {
 	Headsign string    `json:"headsign,omitempty"`
 	TripID   string    `json:"trip_id,omitempty"`
 	Fern     bool      `json:"fern,omitempty"`  // nicht im Deutschlandticket
+	Rad      bool      `json:"rad,omitempty"`   // Fahrrad fährt mit: Fahrradticket nötig (D-21)
 	Risk     bool      `json:"risk,omitempty"`  // Anschluss an diese Fahrt laut Prognose gefährdet
 	Shape    string    `json:"shape,omitempty"` // Fußweg: Wegform (encoded polyline, Genauigkeit 6)
 	Stops    []string  `json:"stops,omitempty"` // Fahrt: Halte-IDs vom Ein- bis zum Ausstieg
@@ -178,7 +192,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	dec.DisallowUnknownFields()
 	err := dec.Decode(&req)
 	scale, okKMH := req.walkScale()
-	if err != nil || !req.From.ok() || !req.To.ok() || !okKMH {
+	if _, okArt := kmhGrenzen[req.Art]; err != nil || !req.From.ok() || !req.To.ok() || !okKMH || !okArt {
 		fail(w, http.StatusBadRequest, "anfrage_ungueltig")
 		return
 	}
@@ -200,8 +214,9 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	liveC := make(chan *rt.Snapshot, 1) // Echtzeit parallel zu den Zugangswegen holen
 	go func() { liveC <- s.live(r.Context()) }()
 	directC := make(chan *journeyOut, 1) // reiner Fußweg, ebenfalls parallel
-	go func() { directC <- s.directWalk(r.Context(), req.From, req.To, t, scale) }()
-	from, to, vh := s.access(r.Context(), p.TT, req.From, req.To, tr)
+	weit, rad := req.reichweite(), req.Art == "rad"
+	go func() { directC <- s.directWalk(r.Context(), req.From, req.To, t, scale, weit) }()
+	from, to, vh := s.access(r.Context(), p.TT, req.From, req.To, weit, rad, tr)
 	walkMs := float64(time.Since(tw).Microseconds()) / 1000
 	if len(from) == 0 || len(to) == 0 {
 		if d := <-directC; d != nil { // keine Haltestelle, aber zu Fuß erreichbar
@@ -230,7 +245,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	case <-r.Context().Done():
 		return
 	}
-	rt.NoFern, rt.WalkScale = !req.Fern, scale
+	rt.NoFern, rt.WalkScale, rt.NurBahn = !req.Fern, scale, rad
 	t0 := time.Now()
 	res := rt.Query(int32(dep/time.Second), from, to, s.MaxTrips)
 	ms := float64(time.Since(t0).Microseconds()) / 1000
@@ -239,6 +254,9 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	out := routeResp{Journeys: []journeyOut{}, Ms: ms, WalkMs: walkMs, VhMs: vh, Vh: tr, RT: snap != nil}
 	for _, j := range res.Journeys {
 		jo := convert(p.TT, base, j)
+		for i := range jo.Legs {
+			jo.Legs[i].Rad = rad && jo.Legs[i].Mode == "ride"
+		}
 		p.annotate(snap, j, &jo)
 		rideStops(p.TT, j, &jo)
 		out.Journeys = append(out.Journeys, jo)
@@ -246,7 +264,9 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	ts := time.Now()
 	s.shapes(r.Context(), p.TT, req.From, req.To, res.Journeys, out.Journeys)
 	out.ShapeMs = since(ts)
-	if d := <-directC; d != nil {
+	if d := <-directC; d != nil && rad {
+		out.Journeys = append([]journeyOut{*d}, out.Journeys...) // Rad: Bahn nur, wenn nötig → direkter Weg zuerst
+	} else if d != nil {
 		out.Journeys = append(out.Journeys, *d) // als Vergleich hinten, die App wählt zuerst die erste Verbindung
 	}
 

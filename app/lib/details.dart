@@ -152,6 +152,7 @@ class _FahrtState extends State<_Fahrt> {
             ),
             TextSpan(text: '  Richtung ${zielName(a.ziel)}'),
             if (a.fern) TextSpan(text: '  · Fernverkehr €', style: TextStyle(color: farbe.tertiary)),
+            if (a.rad) TextSpan(text: '  · Fahrradticket nötig', style: TextStyle(color: farbe.tertiary)),
           ])),
           if (a.faelltAus) Text('Fahrt fällt aus', style: TextStyle(color: farbe.error, fontWeight: FontWeight.w600)),
           if (a.entfaellt) Text('Halt entfällt', style: TextStyle(color: farbe.error, fontWeight: FontWeight.w600)),

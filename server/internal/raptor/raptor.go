@@ -65,6 +65,7 @@ type Router struct {
 	labels            [][]label // [Runde][Halt]
 	labelSet          []int32   // gesetzte Einträge (Runde*n+Halt) zum Zurücksetzen
 	NoFern            bool      // Fernverkehrs-Routen auslassen (Ticketfilter)
+	NurBahn           bool      // nur Schiene (Fahrrad, D-21)
 	WalkScale         float64   // Umstiegs-Gehzeiten × Faktor (Gehtempo, D-12); 0 = unverändert, mindestens 60 s bleiben
 }
 
@@ -156,7 +157,7 @@ func (r *Router) Query(dep int32, from, to []Access, maxTrips int) Result {
 		for _, ri := range routes {
 			r.routeMark[ri] = false
 			rt := &tt.Routes[ri]
-			if r.NoFern && rt.Fern {
+			if r.NoFern && rt.Fern || r.NurBahn && !rt.Bahn {
 				continue
 			}
 			n := len(rt.Stops)

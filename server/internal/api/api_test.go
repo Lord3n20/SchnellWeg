@@ -106,6 +106,31 @@ func TestGehtempo(t *testing.T) {
 	}
 }
 
+func TestFahrradUndEinrad(t *testing.T) {
+	s := testServer(time.Date(2026, 10, 28, 0, 0, 0, 0, Berlin))
+	body := `{"from":{"lat":50.7701,"lon":6.08},"to":{"lat":50.7799,"lon":6.08},"time":"2026-10-28T07:55:00+01:00"%s}`
+	// Linie 1 ist ein Bus → Fahrrad findet keinen Halt in Reichweite
+	if w, _ := post(s, fmt.Sprintf(body, `,"art":"rad","kmh":15`)); w.Code != 422 {
+		t.Errorf("Rad mit Bus: Code %d, erwartet 422: %s", w.Code, w.Body)
+	}
+	s.Current().TT.Routes[0].Bahn = true
+	w, r := post(s, fmt.Sprintf(body, `,"art":"rad","kmh":15`))
+	if w.Code != 200 || len(r.Journeys) != 1 || !r.Journeys[0].Legs[1].Rad || r.Journeys[0].Legs[0].Rad {
+		t.Errorf("Rad mit Bahn: erwartet Fahrt mit Fahrradticket: %s", w.Body)
+	}
+	for k, code := range map[string]int{
+		`,"art":"einrad","kmh":13`: 200, `,"art":"einrad","kmh":25`: 400, `,"art":"rad","kmh":30`: 200,
+		`,"kmh":13`: 400, `,"art":"auto","kmh":5`: 400,
+	} {
+		if w, _ := post(s, fmt.Sprintf(body, k)); w.Code != code {
+			t.Errorf("%s: Code %d, erwartet %d", k, w.Code, code)
+		}
+	}
+	if _, r := post(s, fmt.Sprintf(body, `,"art":"einrad","kmh":13`)); len(r.Journeys) == 1 && r.Journeys[0].Legs[1].Rad {
+		t.Error("Einrad braucht kein Fahrradticket")
+	}
+}
+
 // fakeValhalla antwortet auf jede Matrix mit derselben Zeit/Strecke je Zelle; code ≠ 200 simuliert einen Fehler.
 func fakeValhalla(t *testing.T, sec, km float64, code int) *Valhalla {
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

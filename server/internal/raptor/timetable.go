@@ -35,6 +35,7 @@ type Route struct {
 	NTrips   int
 	Trips    []TripInfo // je Fahrt, parallel zu den Zeilen von Arr/Dep
 	Fern     bool       // Fernverkehr, nicht im Deutschland(semester)ticket
+	Bahn     bool       // Schiene (Zug, S-/U-/Straßenbahn): Fahrrad darf mit (D-21), Bus nicht
 }
 
 // TripInfo beschreibt eine Fahrt für die Ausgabe.
@@ -42,6 +43,13 @@ type TripInfo struct {
 	ID, Line, Headsign string
 	PrevDay            bool // Fahrt des Vortags nach Mitternacht (Zeiten um 24 h verschoben)
 	Fern               bool
+	Bahn               bool
+}
+
+// IsBahn meldet für einen GTFS-route_type (Basis oder erweitert), ob die Linie auf Schienen fährt.
+func IsBahn(t int) bool {
+	return t == 0 || t == 1 || t == 2 || t == 5 || t == 7 || t == 12 ||
+		(t >= 100 && t < 200) || (t >= 400 && t < 500) || (t >= 900 && t < 1000) || t == 1400
 }
 
 // fernPrefix: Zuggattungen, die das Deutschlandticket nicht abdeckt. IC fehlt absichtlich: de_rv führt nur die
@@ -162,6 +170,9 @@ func Load(paths []string, day time.Time, maxWalkM float64) (*Timetable, error) {
 		if t.info.Fern {
 			b.WriteByte('F')
 		}
+		if t.info.Bahn {
+			b.WriteByte('B')
+		}
 		for _, x := range t.st {
 			b.WriteString(strconv.Itoa(int(x.stop)))
 			b.WriteByte(',')
@@ -178,7 +189,7 @@ func Load(paths []string, day time.Time, maxWalkM float64) (*Timetable, error) {
 		sort.Slice(p.trips, func(i, j int) bool { return p.trips[i].st[0].dep < p.trips[j].st[0].dep })
 		n := len(p.trips[0].st)
 		r := Route{Stops: make([]int32, n), Arr: make([]int32, 0, n*len(p.trips)), Dep: make([]int32, 0, n*len(p.trips)),
-			NTrips: len(p.trips), Trips: make([]TripInfo, 0, len(p.trips)), Fern: p.trips[0].info.Fern}
+			NTrips: len(p.trips), Trips: make([]TripInfo, 0, len(p.trips)), Fern: p.trips[0].info.Fern, Bahn: p.trips[0].info.Bahn}
 		for i, x := range p.trips[0].st {
 			r.Stops[i] = x.stop
 		}
@@ -238,21 +249,27 @@ func (tt *Timetable) loadFeed(path, pre string, day time.Time, fern bool) ([]*tr
 		})
 	}
 	lines := map[string]string{}
+	bahn := map[string]bool{}
 	_ = each(z, "routes.txt", func(g func(string) string) {
 		n := g("route_short_name")
 		if n == "" {
 			n = g("route_long_name")
 		}
-		lines[strings.Clone(g("route_id"))] = strings.Clone(n)
+		id := strings.Clone(g("route_id"))
+		lines[id] = strings.Clone(n)
+		if t, err := strconv.Atoi(g("route_type")); err == nil && IsBahn(t) {
+			bahn[id] = true
+		}
 	})
 	type tripMeta struct {
 		days     uint8
 		line, hs string
+		bahn     bool
 	}
 	tripOK := map[string]tripMeta{}
 	if err := each(z, "trips.txt", func(g func(string) string) {
 		if d := svc[g("service_id")]; d != 0 {
-			tripOK[strings.Clone(g("trip_id"))] = tripMeta{d, lines[g("route_id")], strings.Clone(g("trip_headsign"))}
+			tripOK[strings.Clone(g("trip_id"))] = tripMeta{d, lines[g("route_id")], strings.Clone(g("trip_headsign")), bahn[g("route_id")]}
 		}
 	}); err != nil {
 		return nil, err
@@ -280,7 +297,7 @@ func (tt *Timetable) loadFeed(path, pre string, day time.Time, fern bool) ([]*tr
 		if t == nil {
 			id = strings.Clone(id)
 			m := tripOK[id]
-			t = &trip{info: TripInfo{ID: pre + id, Line: m.line, Headsign: m.hs, Fern: fern || IsFern(m.line)}}
+			t = &trip{info: TripInfo{ID: pre + id, Line: m.line, Headsign: m.hs, Fern: fern || IsFern(m.line), Bahn: m.bahn}}
 			trips[id] = t
 		}
 		t.st = append(t.st, st{seq, s, a, d})
@@ -428,4 +445,14 @@ func (tt *Timetable) ReadFootpaths(r io.Reader, maxM int) (src, n int, err error
 			n++
 		}
 	}
+}
+
+// HatBahn meldet, ob an Halt s mindestens eine Schienenlinie hält (Zugang fürs Fahrrad, D-21).
+func (tt *Timetable) HatBahn(s int32) bool {
+	for _, r := range tt.StopRoutes[s] {
+		if tt.Routes[r].Bahn {
+			return true
+		}
+	}
+	return false
 }

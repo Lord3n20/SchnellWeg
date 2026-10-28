@@ -112,6 +112,14 @@ func TestMergeWalks(t *testing.T) {
 	}
 }
 
+func TestIsBahn(t *testing.T) {
+	for typ, want := range map[int]bool{0: true, 1: true, 2: true, 3: false, 106: true, 109: true, 400: true, 700: false, 715: false, 900: true, 200: false} {
+		if IsBahn(typ) != want {
+			t.Errorf("route_type %d: %v", typ, !want)
+		}
+	}
+}
+
 func TestIsFern(t *testing.T) {
 	for line, want := range map[string]bool{"ICE 10": true, "EC": true, "ECE": true, "THA": true, "FLX10": true,
 		"NJ": true, "RJX": true, "IC17": false, "RE4": false, "RB20": false, "S1": false, "E": false, "EW": false, "33": false} {

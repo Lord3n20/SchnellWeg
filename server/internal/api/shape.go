@@ -149,9 +149,9 @@ func rideStops(tt *raptor.Timetable, j raptor.Journey, out *journeyOut) {
 // directWalk liefert den reinen Fußweg Start → Ziel als eigene Verbindung (Vergleich in der App), wenn er
 // höchstens s.DirectMax dauert. Mit Valhalla echter Weg samt Form, sonst Luftlinien-Schätzung ohne Form.
 // scale: Gehtempo-Faktor wie bei den Zugangswegen.
-func (s *Server) directWalk(ctx context.Context, from, to point, dep time.Time, scale float64) *journeyOut {
+func (s *Server) directWalk(ctx context.Context, from, to point, dep time.Time, scale, weit float64) *journeyOut {
 	m := raptor.Dist(*from.Lat, *from.Lon, *to.Lat, *to.Lon)
-	if s.DirectM <= 0 || m > s.DirectM {
+	if s.DirectM <= 0 || m > s.DirectM*weit {
 		return nil
 	}
 	sec, shape := float64(raptor.WalkSec(m)), ""

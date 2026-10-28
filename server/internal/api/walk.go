@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptrace"
+	"slices"
 	"time"
 
 	"github.com/Lord3n20/SchnellWeg/server/internal/raptor"
@@ -132,9 +133,16 @@ func (v *Valhalla) Walk(ctx context.Context, tt *raptor.Timetable, lat, lon floa
 
 // access liefert Zugangs- und Abgangshalte; mit Valhalla beide Matrizen gleichzeitig. vh: Dauer der beiden
 // Valhalla-Aufrufe in ms (Start, Ziel) für die Messung; tr (nil = aus) schlüsselt sie weiter auf.
-func (s *Server) access(ctx context.Context, tt *raptor.Timetable, from, to point, tr *[2]WalkTrace) (fa, ta []raptor.Access, vh [2]float64) {
-	fa = tt.PerRoute(tt.Near(*from.Lat, *from.Lon, s.AccessM))
-	ta = tt.PerRoute(tt.Near(*to.Lat, *to.Lon, s.AccessM))
+// weit vergrößert den Suchradius (schnellere Fortbewegung, D-21); nurBahn lässt nur Halte mit Schienenverkehr zu.
+func (s *Server) access(ctx context.Context, tt *raptor.Timetable, from, to point, weit float64, nurBahn bool, tr *[2]WalkTrace) (fa, ta []raptor.Access, vh [2]float64) {
+	near := func(p point) []raptor.Access {
+		acc := tt.Near(*p.Lat, *p.Lon, s.AccessM*weit)
+		if nurBahn {
+			acc = slices.DeleteFunc(acc, func(a raptor.Access) bool { return !tt.HatBahn(a.Stop) })
+		}
+		return tt.PerRoute(acc)
+	}
+	fa, ta = near(from), near(to)
 	if s.Valhalla == nil {
 		return fa, ta, vh
 	}

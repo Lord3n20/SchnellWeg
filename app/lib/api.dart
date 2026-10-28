@@ -95,6 +95,7 @@ class Abschnitt {
   final DateTime? abRt, anRt;
   final String linie, ziel;
   final bool fern, risiko, faelltAus, entfaellt;
+  final bool rad; // Fahrrad fährt mit → Fahrradticket nötig (D-21)
   final String form; // Fußweg: Wegform (encoded polyline, Genauigkeit 6), "" = unbekannt
   final List<String> halte; // Fahrt: Halte-IDs vom Ein- bis zum Ausstieg
 
@@ -109,6 +110,7 @@ class Abschnitt {
         linie = (j['line'] as String?) ?? '',
         ziel = (j['headsign'] as String?) ?? '',
         fern = j['fern'] == true,
+        rad = j['rad'] == true,
         risiko = j['risk'] == true,
         faelltAus = j['canceled'] == true,
         entfaellt = j['skipped'] == true,
@@ -228,7 +230,7 @@ class Api {
 
   /// Verbindungen (Pareto nach Umstiegen) und ob der Echtzeitstand verfügbar war.
   Future<(List<Verbindung>, bool)> route(double vonLat, double vonLon, double nachLat, double nachLon,
-      {DateTime? ab, bool fern = false, double? kmh}) async {
+      {DateTime? ab, bool fern = false, double? kmh, String? art}) async {
     final (_, _, daten) = await _anfrage('POST', '/v1/route',
         body: {
           'from': {'lat': vonLat, 'lon': vonLon},
@@ -236,6 +238,7 @@ class Api {
           if (ab != null) 'time': ab.toUtc().toIso8601String(),
           if (fern) 'fern': true,
           'kmh': ?kmh,
+          'art': ?art, // fuss | einrad | rad (D-21)
         },
         zeit: const Duration(seconds: 15));
     final j = jsonDecode(utf8.decode(daten)) as Map<String, dynamic>;

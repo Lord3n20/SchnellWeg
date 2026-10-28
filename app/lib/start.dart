@@ -474,6 +474,7 @@ class _VerbindungZeile extends StatelessWidget {
             text: ' (${vs > 0 ? '+' : ''}$vs)', style: TextStyle(color: vs > 0 ? farbe.error : farbe.primary)));
       }
       if (a.fern) teile.add(TextSpan(text: ' €', style: TextStyle(color: farbe.tertiary)));
+      if (a.rad) teile.add(TextSpan(text: ' 🚲€', style: TextStyle(color: farbe.tertiary)));
       if (a.risiko) teile.add(TextSpan(text: ' ⚠', style: TextStyle(color: farbe.error)));
     }
 

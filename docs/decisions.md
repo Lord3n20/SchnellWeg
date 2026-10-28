@@ -234,3 +234,14 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - Beschriftungen: Die Protomaps-Stile bauen Namen mit `format`, das der Renderer nicht kennt (→ keine
   Beschriftung). Die App ersetzt `text-field` durch deutschen Namen, sonst Namen vor Ort.
 - Status: umgesetzt (routing-jobs 0.1.9, routing-core 0.1.13, App).
+
+## D-21 Fortbewegungsarten Einrad und Fahrrad (28.10.)
+- Betreiber 27./28.10.: Einrad und Fahrrad wie Fußweg (gleiche Wege, Treppen ok), nur anderes Tempo; Einrad fährt
+  meist gratis in Bus und Bahn mit; Fahrrad nie im Bus, Bahn nur wenn nötig → Hinweis „Fahrradticket nötig“.
+  Tempo je Art kalibrierbar per GPS-Messgang in der App (bleibt auf dem Handy).
+- `POST /v1/route` nimmt `"art": "fuss" | "einrad" | "rad"` (Standard fuss) mit `kmh`; Grenzen fuss 2–8,
+  einrad 4–20, rad 6–35 km/h. Zugangsradius und Grenze des direkten Wegs wachsen mit kmh/4,3 (höchstens ×4).
+- Rad: nur Schiene (GTFS-route_type Zug/S-/U-/Straßenbahn, `IsBahn`), Zugang nur zu Halten mit Schienenverkehr;
+  Fahrten tragen `"rad": true`; der direkte Weg steht vorn. Valhalla rechnet weiter mit Fußgänger-Kosten
+  (Annahme: Wegewahl wie zu Fuß, siehe oben); eigene Fahrrad-Kosten erst mit Fahrradnavigation.
+- Status: umgesetzt (routing-core 0.1.14); App-Profile folgen.
