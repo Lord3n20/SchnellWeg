@@ -230,7 +230,11 @@ class _StartState extends State<Start> with WidgetsBindingObserver {
       setState(() {
         _verbindungen = [];
         _routeHinweis = switch (e.art) {
-          'keine_haltestelle_in_reichweite' => 'Keine Haltestelle in Gehweite von Start oder Ziel',
+          'keine_haltestelle_in_reichweite' => switch (e.seite) {
+              'start' => 'Start liegt außerhalb des Fahrplangebiets (bisher NRW)',
+              'ziel' => 'Ziel liegt außerhalb des Fahrplangebiets (bisher NRW)',
+              _ => 'Start und Ziel liegen außerhalb des Fahrplangebiets (bisher NRW)',
+            },
           'anderer_betriebstag' => 'Fahrplan für diesen Tag noch nicht geladen',
           'fahrplan_laedt' => 'Server lädt gerade den Fahrplan',
           _ => 'Route nicht berechnet ($e)',

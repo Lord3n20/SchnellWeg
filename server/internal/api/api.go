@@ -57,6 +57,7 @@ func NewPlan(tt *raptor.Timetable, day time.Time, n int) *Plan {
 type Server struct {
 	plan      atomic.Pointer[Plan]
 	AccessM   float64   // Suchradius für Zugangshalte (Luftlinie)
+	FarM      float64   // ohne Halt im Suchradius weitersuchen bis zu dieser Luftlinie (D-25), ≤ AccessM = aus
 	Valhalla  *Valhalla // echte Zugangswege; nil = Luftlinie
 	MaxTrips  int
 	WaitLimit time.Duration  // so lange wartet eine Anfrage höchstens auf einen freien Router
@@ -237,7 +238,15 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 			json.NewEncoder(w).Encode(routeResp{Journeys: []journeyOut{*d}, WalkMs: walkMs, VhMs: vh, Vh: tr})
 			return
 		}
-		fail(w, http.StatusUnprocessableEntity, "keine_haltestelle_in_reichweite")
+		seite := "beide" // für die App: welche Seite liegt außerhalb (alte Apps lesen nur "error")
+		if len(from) > 0 {
+			seite = "ziel"
+		} else if len(to) > 0 {
+			seite = "start"
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		json.NewEncoder(w).Encode(map[string]string{"error": "keine_haltestelle_in_reichweite", "seite": seite})
 		return
 	}
 	var rt *raptor.Router

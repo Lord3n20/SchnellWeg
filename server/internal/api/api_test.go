@@ -312,3 +312,31 @@ func TestStopsGzip(t *testing.T) {
 		t.Fatalf("Inhalt: %v %d", err, len(v.Stops))
 	}
 }
+
+func TestWeitWeg(t *testing.T) {
+	s := testServer(time.Date(2026, 10, 28, 0, 0, 0, 0, Berlin))
+	// Start ~2,2 km südlich von A: außerhalb von AccessM (300 m), erst die erweiterte Suche findet A.
+	body := `{"from":{"lat":50.75,"lon":6.08},"to":{"lat":50.7799,"lon":6.08},"time":"2026-10-28T07:00:00+01:00"}`
+	if w, _ := post(s, body); w.Code != 422 || !strings.Contains(w.Body.String(), `"seite":"start"`) {
+		t.Fatalf("ohne FarM: Code %d, %s", w.Code, w.Body)
+	}
+	s.FarM = 5000
+	w, r := post(s, body)
+	if w.Code != 200 || len(r.Journeys) != 1 || r.Journeys[0].Legs[0].From != nil || r.Journeys[0].Legs[1].TripID != "t1" {
+		t.Fatalf("mit FarM: Code %d, %s", w.Code, w.Body)
+	}
+	if d := r.Journeys[0].Legs[0].Arr.Sub(r.Journeys[0].Legs[0].Dep); d < 25*time.Minute {
+		t.Errorf("Zugangsweg %v, erwartet ~30 min", d)
+	}
+	// Ziel weit außerhalb (Gebiet ohne Fahrplan): auch mit FarM kein Halt
+	if w, _ := post(s, strings.Replace(body, `"lat":50.7799`, `"lat":48.1`, 1)); w.Code != 422 || !strings.Contains(w.Body.String(), `"seite":"ziel"`) {
+		t.Errorf("Ziel außerhalb: Code %d, %s", w.Code, w.Body)
+	}
+}
+
+func TestNearest(t *testing.T) {
+	acc := []raptor.Access{{Stop: 1, Sec: 2000}, {Stop: 2, Sec: 500}, {Stop: 3, Sec: 1300}, {Stop: 4, Sec: 600}}
+	if got := nearest(acc); len(got) != 3 || got[0].Stop != 2 || got[2].Stop != 3 {
+		t.Errorf("nearest: %+v", got)
+	}
+}

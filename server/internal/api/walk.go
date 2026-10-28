@@ -62,8 +62,9 @@ func since(t time.Time) float64 { return float64(time.Since(t).Microseconds()) /
 // Ort zu den Halten (Zugang), sonst von den Halten zum Ort (Abgang). Halte ohne Weg oder mit zu langem Weg
 // entfallen.
 //
+// maxM ersetzt MaxM, wenn größer (erweiterte Suche); die Matrix darf dann entsprechend länger brauchen.
 // tr (darf nil sein) erhält die Zeiten des Aufrufs.
-func (v *Valhalla) Walk(ctx context.Context, tt *raptor.Timetable, lat, lon float64, acc []raptor.Access, toStops bool, k Kosten, tr *WalkTrace) ([]raptor.Access, error) {
+func (v *Valhalla) Walk(ctx context.Context, tt *raptor.Timetable, lat, lon float64, acc []raptor.Access, toStops bool, k Kosten, maxM float64, tr *WalkTrace) ([]raptor.Access, error) {
 	if len(acc) == 0 {
 		return acc, nil
 	}
@@ -90,7 +91,8 @@ func (v *Valhalla) Walk(ctx context.Context, tt *raptor.Timetable, lat, lon floa
 		req.Sources, req.Targets = stops, here
 	}
 	body, _ := json.Marshal(req)
-	ctx, cancel := context.WithTimeout(ctx, v.Timeout)
+	maxM = max(maxM, v.MaxM)
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(float64(v.Timeout)*min(8, maxM/v.MaxM)))
 	defer cancel()
 	hr, err := http.NewRequestWithContext(ctx, http.MethodPost, v.URL+"/sources_to_targets", bytes.NewReader(body))
 	if err != nil {
@@ -122,7 +124,7 @@ func (v *Valhalla) Walk(ctx context.Context, tt *raptor.Timetable, lat, lon floa
 	var out []raptor.Access
 	for i, a := range acc {
 		c := cells[i]
-		if c.t == nil || c.d == nil || *c.d*1000 > v.MaxM {
+		if c.t == nil || c.d == nil || *c.d*1000 > maxM {
 			continue
 		}
 		out = append(out, raptor.Access{Stop: a.Stop, Sec: int32(*c.t*k.Faktor + 0.5)})
@@ -130,46 +132,72 @@ func (v *Valhalla) Walk(ctx context.Context, tt *raptor.Timetable, lat, lon floa
 	return out, nil
 }
 
-// access liefert Zugangs- und Abgangshalte; mit Valhalla beide Matrizen gleichzeitig. vh: Dauer der beiden
+// access liefert Zugangs- und Abgangshalte; mit Valhalla beide Seiten gleichzeitig. vh: Dauer der beiden
 // Valhalla-Aufrufe in ms (Start, Ziel) für die Messung; tr (nil = aus) schlüsselt sie weiter auf.
 // weit vergrößert den Suchradius (schnellere Fortbewegung, D-21); nurBahn lässt nur Halte mit Schienenverkehr zu.
 // Die Zeiten gelten fürs gewählte Tempo: Luftlinie × scale, Valhalla je Kostenart (die erste, die antwortet).
+//
+// Bleibt auf einer Seite kein Halt übrig, sucht sie mit doppeltem Radius weiter bis FarM (D-25): auch auf dem
+// Land findet sich so der nächste Halt, nur mit langem Fußweg. Dann zählen nur die nächsten Halte (farSlack).
 func (s *Server) access(ctx context.Context, tt *raptor.Timetable, from, to point, weit, scale float64, nurBahn bool, ks []Kosten, tr *[2]WalkTrace) (fa, ta []raptor.Access, vh [2]float64) {
-	near := func(p point) []raptor.Access {
-		acc := tt.Near(*p.Lat, *p.Lon, s.AccessM*weit)
+	near := func(p point, r float64) []raptor.Access {
+		acc := tt.Near(*p.Lat, *p.Lon, r)
 		if nurBahn {
 			acc = slices.DeleteFunc(acc, func(a raptor.Access) bool { return !tt.HatBahn(a.Stop) })
 		}
 		acc = tt.PerRoute(acc)
+		if r > s.AccessM*weit {
+			acc = nearest(acc)
+		}
 		for i := range acc {
 			acc[i].Sec = int32(float64(acc[i].Sec)*scale + 0.5)
 		}
 		return acc
 	}
-	fa, ta = near(from), near(to)
-	if s.Valhalla == nil {
-		return fa, ta, vh
-	}
-	walk := func(p point, acc []raptor.Access, toStops bool, k int) []raptor.Access {
+	side := func(p point, toStops bool, k int) []raptor.Access {
 		t0 := time.Now()
 		defer func() { vh[k] = since(t0) }()
 		var t *WalkTrace
 		if tr != nil {
 			t = &tr[k]
 		}
-		for _, k := range ks {
-			if r, err := s.Valhalla.Walk(ctx, tt, *p.Lat, *p.Lon, acc, toStops, k, t); err == nil {
-				return r
+		for r := s.AccessM * weit; ; r *= 2 {
+			acc := near(p, r)
+			if s.Valhalla != nil && len(acc) > 0 {
+				for _, kk := range ks {
+					if w, err := s.Valhalla.Walk(ctx, tt, *p.Lat, *p.Lon, acc, toStops, kk, 2*r, t); err == nil {
+						acc = w
+						break
+					}
+				}
+			}
+			if len(acc) > 0 || r >= s.FarM*weit || ctx.Err() != nil {
+				return acc
 			}
 		}
-		return acc
 	}
 	done := make(chan struct{})
 	go func() {
-		fa = walk(from, fa, true, 0)
+		fa = side(from, true, 0)
 		close(done)
 	}()
-	ta = walk(to, ta, false, 1)
+	ta = side(to, false, 1)
 	<-done
 	return fa, ta, vh
+}
+
+// farSlack: bei der erweiterten Suche zählen nur Halte bis zu dieser Gehzeit über dem nächsten (Luftlinie), höchstens
+// farMax Stück; weiter entfernte bringen kaum etwas und machen die lange Valhalla-Matrix nur langsamer.
+const (
+	farSlack = 15 * 60
+	farMax   = 12
+)
+
+func nearest(acc []raptor.Access) []raptor.Access {
+	slices.SortFunc(acc, func(a, b raptor.Access) int { return int(a.Sec - b.Sec) })
+	n := 0
+	for n < len(acc) && n < farMax && acc[n].Sec <= acc[0].Sec+farSlack {
+		n++
+	}
+	return acc[:n]
 }

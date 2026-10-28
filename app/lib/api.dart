@@ -7,7 +7,8 @@ import 'zugang.dart';
 
 class ApiFehler implements Exception {
   final String art; // Fehlertyp vom Server ("fahrplan_laedt" …) oder "netz"
-  ApiFehler(this.art);
+  final String? seite; // bei keine_haltestelle_in_reichweite: start | ziel | beide
+  ApiFehler(this.art, [this.seite]);
   @override
   String toString() => art;
 }
@@ -185,10 +186,13 @@ class Api {
       final daten = await res.fold<List<int>>(<int>[], (a, b) => a..addAll(b)).timeout(zeit);
       if (res.statusCode >= 400) {
         String art = 'http_${res.statusCode}';
+        String? seite;
         try {
-          art = (jsonDecode(utf8.decode(daten)) as Map)['error'] as String? ?? art;
+          final m = jsonDecode(utf8.decode(daten)) as Map;
+          art = m['error'] as String? ?? art;
+          seite = m['seite'] as String?;
         } catch (_) {}
-        throw ApiFehler(art);
+        throw ApiFehler(art, seite);
       }
       return (res.statusCode, res.headers.value('etag'), daten);
     } on ApiFehler {

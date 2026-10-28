@@ -299,3 +299,14 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   31 ms, in Aachen 2–5 ms. Footpaths-Job 10 min (372 308 Paare, 123 593 außerhalb der Tiles, Spitze 538 MB);
   `/v1/stops` mit gzip 2,2 MB statt 6,4 MB.
 - Status: umgesetzt (routing-core 0.1.20, routing-jobs 0.1.11, Job-Option gtfs_box).
+
+## D-25 Kein Halt in Gehweite: Suche erweitern statt Fehler (28.10.)
+- Betreiber 28.10.: „eigentlich müsste jeder Flecken Land in Deutschland irgendwie erreichbar sein“.
+- Bleibt auf einer Seite im Suchradius (800 m × Reichweite) kein Halt übrig (auch wenn Valhalla alle echten Wege
+  verwirft), sucht routing-core diese Seite mit doppeltem Radius weiter bis `-far` (Standard 15 km Luftlinie ×
+  Reichweite). In der erweiterten Suche zählen nur die nächsten Halte: höchstens 12, bis 15 min über dem nächsten;
+  echte Wege bis 2× Radius, Valhalla-Zeitlimit wächst mit (höchstens 8×). Der Normalfall bleibt unverändert.
+- Findet sich auch bis 15 km nichts, liegt der Ort außerhalb des Fahrplangebiets (bisher NRW, D-24). Die Antwort
+  bleibt `keine_haltestelle_in_reichweite` (alte Apps), neu mit `seite` (start | ziel | beide); die App nennt die Seite.
+- Ganz Deutschland erreichbar wird es erst mit dem DE-Fahrplan (zweistufiger Plan in D-24).
+- Status: umgesetzt (routing-core 0.1.23).
