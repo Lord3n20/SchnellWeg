@@ -270,3 +270,29 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - Profile und Tempo bleiben auf dem Handy; der Server bekommt je Anfrage nur `art` + `kmh` (Betreiber 28.10.: „reicht,
   wenn die Geschwindigkeit vom Handy vorgegeben wird … dann lässt sich die App auch teilen“).
 - Status: umgesetzt (routing-core 0.1.18: Bus-Malus 5 min statt 3, Betreiber 28.10.; App).
+
+## D-23 Ausstiegs-Erinnerung per GPS auf dem Handy (28.10.)
+- Glocke in der Detailansicht startet einen Android-Vordergrunddienst (`AusstiegDienst.kt`, Typ `location`), der die
+  Halte aller Fahrten der Verbindung (Koordinaten aus der lokalen SQLite) und die Ankunftszeit (Echtzeit, sonst
+  Fahrplan) bekommt. GPS/Netz-Standort alle 4 s: Halt gilt als erreicht unter 120 m (+ halbe Ungenauigkeit), nur
+  vorwärts, höchstens 3 Halte weit – außer kurz vor der Ankunft (eine Linie kann spätere Halte früh streifen).
+- Vibration + Meldung „Gleich aussteigen“ beim Halt vor dem Ausstieg oder < 700 m vor dem Ziel-Halt; ohne GPS
+  (Tunnel) 2 min vor der Ankunftszeit. Danach weiter mit der nächsten Fahrt („Umsteigen: Linie …“); Ende 1 min nach
+  dem letzten Ausstieg, spätestens 30 min nach der geplanten Ankunft. Laufende Meldung „noch N Halte“ mit „Beenden“.
+- Datenschutz: Positionen bleiben im Dienst (nur RAM), nichts geht an den Server.
+- Status: umgesetzt (App), Praxistest offen.
+
+## D-24 Fahrplan für ganz NRW (28.10.)
+- Betreiber 28.10.: „ich komme nicht mal nach Bergneustadt, also muss noch mehr rein“; langsamere Antworten für
+  selten genutzte Gebiete sind in Ordnung (SSD im Server).
+- `gtfs_box` 5,85,50,3,9,5,52,55 (NRW samt Rand) statt Raum Aachen: 450 658 Fahrten, 199 420 Halte, 37 806 Linien
+  (vorher 24 707 Halte). Laptop-Messung: Zuschnitt 51 s, Spitze 528 MB; routing-core 258 MB im Betrieb
+  (417 MB Spitze beim Laden), RAPTOR Aachen–Bergneustadt 40–45 ms, Köln–Düsseldorf 21 ms, in Aachen ~2 ms.
+- **Abweichung:** RAM-Ziel 250 MB für alle neuen Add-ons wird überschritten (Core ~260 + Valhalla ~90 MB), die harte
+  Grenze 500 MB hält. GOMEMLIMIT routing-core 200 → 400 MiB.
+- Fußwege (Valhalla) gibt es weiter nur in den OSM-Quellen (RB Köln, RB Düsseldorf, RLP, Limburg, Belgien);
+  in RB Münster, Arnsberg, Detmold gilt die Luftlinie, bis die OSM-Quellen wachsen.
+- Plan für ganz Deutschland (Vorschlag Betreiber): zweistufig – erst über ein Bahn-Netz (DE-weit, nur Schiene)
+  in die Nähe des Ziels (z. B. Gummersbach für Bergneustadt), dann im Detail im Nahverkehr der Zielregion; hält
+  Speicher und Suchraum klein. Ausweichweg bei knappem RAM: Fahrplandaten per mmap von der SSD.
+- Status: umgesetzt (routing-core 0.1.18, Job-Option); RAPTOR-Messung auf dem OptiPlex folgt.

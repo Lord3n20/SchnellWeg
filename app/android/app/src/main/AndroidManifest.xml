@@ -7,6 +7,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!-- Ausstiegs-Erinnerung (AusstiegDienst.kt) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+    <uses-permission android:name="android.permission.VIBRATE"/>
     <application
         android:label="SchnellWeg"
         android:name="${applicationName}"
@@ -37,6 +40,10 @@
             android:name=".KartenDienst"
             android:exported="false"
             android:foregroundServiceType="dataSync"/>
+        <service
+            android:name=".AusstiegDienst"
+            android:exported="false"
+            android:foregroundServiceType="location"/>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

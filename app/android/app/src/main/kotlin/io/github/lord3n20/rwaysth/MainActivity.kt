@@ -17,7 +17,8 @@ import io.flutter.plugin.common.MethodChannel
 
 // Standort über den LocationManager des Systems (keine Play-Dienste, siehe lib/standort.dart).
 // Eine einzelne Position auf Anfrage; laufende GPS-Positionen nur, solange der Messgang offen ist
-// (Bildschirm bleibt dann an, kein Hintergrund). Kanal schnellweg/karte steuert den KartenDienst (Download im Hintergrund).
+// (Bildschirm bleibt dann an, kein Hintergrund). Kanal schnellweg/karte steuert den KartenDienst (Download im Hintergrund),
+// schnellweg/aussteigen den AusstiegDienst (Ausstiegs-Erinnerung).
 class MainActivity : FlutterActivity() {
     private val wartend = mutableListOf<MethodChannel.Result>()
     private var laufend: LocationListener? = null
@@ -50,16 +51,32 @@ class MainActivity : FlutterActivity() {
         MethodChannel(engine.dartExecutor.binaryMessenger, "schnellweg/karte").setMethodCallHandler { call, result ->
             when (call.method) {
                 "melden" -> {
-                    // Beim ersten Download einmal um Benachrichtigungen bitten; ohne läuft der Dienst trotzdem.
-                    if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
-                        !gefragt) {
-                        gefragt = true
-                        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), ANFRAGE + 1)
-                    }
+                    meldungenErbitten()
                     KartenDienst.melden(this, call.argument<String>("text")!!, call.argument<Int>("prozent")!!)
                     result.success(null)
                 }
                 "beenden" -> result.success(KartenDienst.beenden(this))
+                else -> result.notImplemented()
+            }
+        }
+        MethodChannel(engine.dartExecutor.binaryMessenger, "schnellweg/aussteigen").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "starten" -> {
+                    if (!erlaubt()) return@setMethodCallHandler result.error("erlaubnis", null, null)
+                    meldungenErbitten()
+                    val fahrten = call.argument<List<Map<String, Any>>>("fahrten")!!.map { f ->
+                        @Suppress("UNCHECKED_CAST")
+                        AusstiegDienst.Fahrt(f["linie"] as String, f["richtung"] as String,
+                            (f["halte"] as List<Map<String, Any>>).map {
+                                AusstiegDienst.Halt(it["name"] as String, it["lat"] as Double, it["lon"] as Double)
+                            },
+                            (f["ankunft"] as Number).toLong())
+                    }
+                    AusstiegDienst.starten(this, fahrten)
+                    result.success(null)
+                }
+                "beenden" -> result.success(AusstiegDienst.beenden(this))
+                "laeuft" -> result.success(AusstiegDienst.laufend != null)
                 else -> result.notImplemented()
             }
         }
@@ -78,6 +95,14 @@ class MainActivity : FlutterActivity() {
         if (code != ANFRAGE) return
         val alle = wartend.toList().also { wartend.clear() }
         for (r in alle) if (erlaubt()) holen(r) else r.success(null)
+    }
+
+    // Beim ersten Bedarf einmal um Benachrichtigungen bitten; ohne laufen die Dienste trotzdem (Meldung unsichtbar).
+    private fun meldungenErbitten() {
+        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED && !gefragt) {
+            gefragt = true
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), ANFRAGE + 1)
+        }
     }
 
     private fun erlaubt() = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
