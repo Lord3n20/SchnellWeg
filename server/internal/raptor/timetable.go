@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -67,7 +68,8 @@ type Timetable struct {
 	StopRoutes [][]int32 // Halt → Routen
 	StopPos    [][]int32 // parallel zu StopRoutes: Position des Halts in der Route
 	Footpaths  [][]Footpath
-	byLat      []int32 // Halte mit Abfahrten, nach Breite sortiert (für Near)
+	byLat      []int32   // Halte mit Abfahrten, nach Breite sortiert (für Near)
+	byLatOnce  sync.Once // Near läuft parallel; von Hand gebaute Fahrpläne (Tests) bauen byLat erst dort
 }
 
 type csvFile struct {
@@ -208,7 +210,7 @@ func Load(paths []string, day time.Time, maxWalkM float64) (*Timetable, error) {
 		}
 	}
 	tt.buildFootpaths(maxWalkM)
-	tt.buildByLat()
+	tt.byLatOnce.Do(tt.buildByLat)
 	return tt, nil
 }
 
