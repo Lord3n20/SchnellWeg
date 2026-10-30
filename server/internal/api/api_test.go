@@ -92,7 +92,7 @@ func TestGehtempo(t *testing.T) {
 	body := `{"from":{"lat":50.7701,"lon":6.08},"to":{"lat":50.7799,"lon":6.08},"time":"2026-10-28T07:58:30+01:00"%s}`
 	for extra, want := range map[string]string{"": "t1", `,"kmh":4.3`: "t1", `,"kmh":2.15`: "t2", `,"kmh":6`: "t1"} {
 		w, r := post(s, fmt.Sprintf(body, extra))
-		if w.Code != 200 || len(r.Journeys) != 1 || r.Journeys[0].Legs[1].TripID != want {
+		if w.Code != 200 || len(r.Journeys) == 0 || r.Journeys[0].Legs[1].TripID != want {
 			t.Errorf("%q: Code %d, erwartet %s: %s", extra, w.Code, want, w.Body)
 		}
 	}
@@ -116,7 +116,7 @@ func TestFahrradUndEinrad(t *testing.T) {
 	}
 	s.Current().TT.Routes[0].Bahn = true
 	w, r := post(s, fmt.Sprintf(body, `,"art":"rad","kmh":15`))
-	if w.Code != 200 || len(r.Journeys) != 1 || !r.Journeys[0].Legs[1].Rad || r.Journeys[0].Legs[0].Rad {
+	if w.Code != 200 || len(r.Journeys) == 0 || !r.Journeys[0].Legs[1].Rad || r.Journeys[0].Legs[0].Rad {
 		t.Errorf("Rad mit Bahn: erwartet Fahrt mit Fahrradticket: %s", w.Body)
 	}
 	for k, code := range map[string]int{
@@ -128,7 +128,7 @@ func TestFahrradUndEinrad(t *testing.T) {
 			t.Errorf("%s: Code %d, erwartet %d", k, w.Code, code)
 		}
 	}
-	if _, r := post(s, fmt.Sprintf(body, `,"art":"einrad","kmh":13`)); len(r.Journeys) == 1 && r.Journeys[0].Legs[1].Rad {
+	if _, r := post(s, fmt.Sprintf(body, `,"art":"einrad","kmh":13`)); len(r.Journeys) > 0 && r.Journeys[0].Legs[1].Rad {
 		t.Error("Einrad braucht kein Fahrradticket")
 	}
 }
@@ -138,7 +138,7 @@ func TestFahrradtypen(t *testing.T) {
 	day := time.Date(2026, 10, 28, 0, 0, 0, 0, Berlin)
 	s := testServer(day) // Linie 1 ist ein Bus
 	// Klapprad: zusammengeklappt in den Bus, ohne Fahrradticket; Fixie/Rennrad/MTB nur Bahn
-	if w, r := post(s, fmt.Sprintf(body, `,"art":"klapprad","kmh":15`)); w.Code != 200 || len(r.Journeys) != 1 || r.Journeys[0].Legs[1].Rad {
+	if w, r := post(s, fmt.Sprintf(body, `,"art":"klapprad","kmh":15`)); w.Code != 200 || len(r.Journeys) == 0 || r.Journeys[0].Legs[1].Rad {
 		t.Errorf("Klapprad im Bus: %d %s", w.Code, w.Body)
 	}
 	for _, a := range []string{"fixie", "rennrad", "mtb"} {
@@ -160,7 +160,7 @@ func TestFahrradtypen(t *testing.T) {
 	s.Valhalla = fakeValhalla(t, 60, 0.3, 200)
 	for a, want := range map[string]time.Duration{"rennrad": time.Minute, "fixie": time.Minute, "mtb": time.Minute, "einrad": 13 * time.Second} {
 		w, r := post(s, fmt.Sprintf(body, `,"art":"`+a+`","kmh":20`))
-		if w.Code != 200 || len(r.Journeys) != 1 {
+		if w.Code != 200 || len(r.Journeys) == 0 {
 			t.Fatalf("%s: %d %s", a, w.Code, w.Body)
 		}
 		if l := r.Journeys[0].Legs[2]; l.Arr.Sub(l.Dep) != want {
@@ -324,7 +324,7 @@ func TestWeitWeg(t *testing.T) {
 	}
 	s.FarM = 5000
 	w, r := post(s, body)
-	if w.Code != 200 || len(r.Journeys) != 1 || r.Journeys[0].Legs[0].From != nil || r.Journeys[0].Legs[1].TripID != "t1" {
+	if w.Code != 200 || len(r.Journeys) == 0 || r.Journeys[0].Legs[0].From != nil || r.Journeys[0].Legs[1].TripID != "t1" {
 		t.Fatalf("mit FarM: Code %d, %s", w.Code, w.Body)
 	}
 	if d := r.Journeys[0].Legs[0].Arr.Sub(r.Journeys[0].Legs[0].Dep); d < 25*time.Minute {
@@ -364,5 +364,33 @@ func TestAnkunft(t *testing.T) {
 	}
 	if _, r := post(s, fmt.Sprintf(body, "08:05")); len(r.Journeys) != 0 {
 		t.Errorf("an bis 08:05: keine Fahrt möglich, bekam %+v", r.Journeys)
+	}
+}
+
+func TestOptionenUndKnapp(t *testing.T) {
+	s := testServer(time.Date(2026, 10, 28, 0, 0, 0, 0, Berlin))
+	// Fahrten A→B um 08:00 und 08:30, Zugang 60 s (Mindestwert)
+	body := `{"from":{"lat":50.7701,"lon":6.08},"to":{"lat":50.7799,"lon":6.08},"time":"2026-10-28T%s+01:00"%s}`
+	if _, r := post(s, fmt.Sprintf(body, "07:50:00", "")); len(r.Journeys) != 2 || r.Journeys[1].Legs[1].TripID != "t2" {
+		t.Fatalf("erwartet beide Fahrten: %+v", r.Journeys)
+	}
+	// 07:59:30: t1 nur noch mit doppeltem Tempo (4,3 → 8,6, aufgerundet 9 km/h)
+	if _, r := post(s, fmt.Sprintf(body, "07:59:30", "")); len(r.Journeys) != 1 || r.Journeys[0].Legs[1].TripID != "t2" {
+		t.Errorf("ohne knapp nur t2: %+v", r.Journeys)
+	}
+	w, r := post(s, fmt.Sprintf(body, "07:59:30", `,"knapp":true`))
+	if w.Code != 200 || len(r.Journeys) != 2 || r.Journeys[0].Legs[1].TripID != "t1" || r.Journeys[0].Eil != 9 || r.Journeys[1].Eil != 0 {
+		t.Fatalf("knapp: %s", w.Body)
+	}
+	if j := r.Journeys[0]; j.Dep.In(Berlin).Format("15:04:05") != "07:59:30" || !j.Legs[0].Dep.Equal(j.Dep) {
+		t.Errorf("knapp: losgehen um 07:59:30 erwartet, %v", j.Dep)
+	}
+	// 07:59:45: bräuchte vierfaches Tempo → nicht mehr
+	if _, r := post(s, fmt.Sprintf(body, "07:59:45", `,"knapp":true`)); len(r.Journeys) != 1 || r.Journeys[0].Eil != 0 {
+		t.Errorf("zu knapp: %+v", r.Journeys)
+	}
+	// Ankunftsmodus: knapp ändert nichts
+	if w, r := post(s, fmt.Sprintf(body, "08:45:00", `,"ankunft":true,"knapp":true`)); w.Code != 200 || len(r.Journeys) != 1 {
+		t.Errorf("ankunft+knapp: %s", w.Body)
 	}
 }

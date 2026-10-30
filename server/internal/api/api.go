@@ -115,6 +115,9 @@ type routeReq struct {
 	Lang  bool       `json:"lang"`  // auch mit sehr langem Zugangsweg (> LangM) genau rechnen (D-25)
 	// Ankunft: time ist die späteste Ankunft statt der frühesten Abfahrt (D-27)
 	Ankunft bool `json:"ankunft"`
+	// Knapp: auch Verbindungen, für die man bis zu 2,5 min früher hätte losgehen müssen, wenn sie mit schnellerem
+	// Zugangsweg noch klappen (D-31; nur ohne ankunft)
+	Knapp bool `json:"knapp"`
 }
 
 // reichweite: Faktor für Zugangsradius und direkten Weg; schneller unterwegs = weiter, höchstens das Vierfache.
@@ -172,9 +175,10 @@ type journeyOut struct {
 	Trips int        `json:"trips"`
 	Dep   time.Time  `json:"dep"`
 	Arr   time.Time  `json:"arr"`
-	ArrRT *time.Time `json:"arr_rt,omitempty"` // erwartete Ankunft laut Echtzeit
-	RT    bool       `json:"rt,omitempty"`     // mindestens eine Fahrt mit Echtzeit
-	Risk  string     `json:"risk,omitempty"`   // "anschluss" (Umstieg gefährdet) | "ausfall" (Fahrt/Halt fällt aus)
+	ArrRT *time.Time `json:"arr_rt,omitempty"`  // erwartete Ankunft laut Echtzeit
+	RT    bool       `json:"rt,omitempty"`      // mindestens eine Fahrt mit Echtzeit
+	Risk  string     `json:"risk,omitempty"`    // "anschluss" (Umstieg gefährdet) | "ausfall" (Fahrt/Halt fällt aus)
+	Eil   float64    `json:"eil_kmh,omitempty"` // nur mit diesem Tempo zum ersten Halt erreichbar (D-31)
 	Legs  []legOut   `json:"legs"`
 }
 
@@ -279,10 +283,23 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	rt.NoFern, rt.WalkScale, rt.NurBahn = !req.Fern, scale, art.NurBahn
 	t0 := time.Now()
 	var res raptor.Result
+	eil := map[int]float64{} // Index in res.Journeys → nötiges Tempo
 	if req.Ankunft {
 		res = spaetesteAbfahrt(rt, int32(dep/time.Second), from, to, s.MaxTrips)
 	} else {
-		res = rt.Query(int32(dep/time.Second), from, to, s.MaxTrips)
+		grenze := 0.0
+		if req.Knapp {
+			grenze = art.Max
+			if !art.Rad && req.Art != "einrad" {
+				grenze = laufenKMH
+			}
+		}
+		for i, o := range optionen(rt, int32(dep/time.Second), from, to, s.MaxTrips, kmh, grenze) {
+			res.Journeys = append(res.Journeys, o.j)
+			if o.eil > 0 {
+				eil[i] = o.eil
+			}
+		}
 	}
 	ms := float64(time.Since(t0).Microseconds()) / 1000
 	p.routers <- rt
@@ -294,6 +311,9 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 			bus[k] = bus[k] || l.Kind == raptor.Ride && !p.TT.Routes[l.Route].Bahn
 		}
 		jo := convert(p.TT, base, j)
+		if e := eil[k]; e > 0 { // losgehen jetzt, nicht schon vorher
+			jo.Eil, jo.Dep, jo.Legs[0].Dep = e, t.Truncate(time.Second), t.Truncate(time.Second)
+		}
 		for i := range jo.Legs {
 			jo.Legs[i].Rad = art.NurBahn && jo.Legs[i].Mode == "ride"
 		}

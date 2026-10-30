@@ -282,7 +282,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     if (p == null) return setState(() => _routeHinweis = 'Kein Standort (Berechtigung oder GPS aus?)');
     _pos = p;
     try {
-      final (roh, rt) = await _api!.route(p.lat, p.lon, ziel.lat, ziel.lon, kmh: _tempo.kmh, art: _tempo.art, lang: lang, ab: _zeit, ankunft: _ankunft);
+      final (roh, rt) = await _api!.route(p.lat, p.lon, ziel.lat, ziel.lon, kmh: _tempo.kmh, art: _tempo.art, lang: lang, ab: _zeit, ankunft: _ankunft, knapp: true);
       // früheste Ankunft oben; bei Gleichstand bleibt die Server-Reihenfolge
       final v = [for (final (i, x) in roh.indexed) (i, x)]
         ..sort((a, b) => a.$2.ankunft.compareTo(b.$2.ankunft) != 0 ? a.$2.ankunft.compareTo(b.$2.ankunft) : a.$1 - b.$1);
@@ -292,7 +292,9 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
         _routeRt = rt;
         if (v.isEmpty) _routeHinweis = 'Keine Verbindung gefunden';
       });
-      await _waehlen(0);
+      // Karte zeigt zuerst die schnellste normal erreichbare Verbindung, nicht die knappe (D-31)
+      final normal = _verbindungen!.indexWhere((x) => x.eilKmh == null);
+      await _waehlen(normal < 0 ? 0 : normal);
     } on ApiFehler catch (e) {
       if (!mounted || _ziel != ziel) return;
       setState(() {
@@ -604,7 +606,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     return RefreshIndicator(
       onRefresh: _routeBerechnen,
       child: ListView(children: [
-        for (final (i, x) in v.indexed) _VerbindungZeile(x, gewaehlt: i == _gewaehlt, onTap: () => _details(i)),
+        for (final (i, x) in v.indexed) _VerbindungZeile(x, kmh: _tempo.kmh, gewaehlt: i == _gewaehlt, onTap: () => _details(i)),
       ]),
     );
   }
@@ -686,9 +688,10 @@ String _uhr(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toSt
 /// Kurzfassung nach app-ui.md: 🚶 4 min → 33 Elisenbrunnen 12:41 (+1) → 🚶 2 min → an 13:02 · 1 Umstieg
 class _VerbindungZeile extends StatelessWidget {
   final Verbindung v;
+  final double kmh; // gewähltes Tempo, für den Hinweis bei knappen Verbindungen
   final bool gewaehlt;
   final VoidCallback onTap;
-  const _VerbindungZeile(this.v, {required this.gewaehlt, required this.onTap});
+  const _VerbindungZeile(this.v, {required this.kmh, required this.gewaehlt, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -729,6 +732,8 @@ class _VerbindungZeile extends StatelessWidget {
       '${v.ankunft.difference(v.ab).inMinutes} min',
       switch (umstiege) { -1 => 'nur zu Fuß', 0 => 'direkt', 1 => '1 Umstieg', _ => '$umstiege Umstiege' },
     ].join(' · ');
+    String zahl(double x) => x.toStringAsFixed(x == x.roundToDouble() ? 0 : 1).replaceAll('.', ',');
+    final eil = v.eilKmh;
     final warnung = switch (v.risiko) {
       'anschluss' => 'Anschluss gefährdet',
       'ausfall' => 'Fahrt fällt aus',
@@ -752,6 +757,12 @@ class _VerbindungZeile extends StatelessWidget {
           ]),
           const SizedBox(height: 4),
           Text.rich(TextSpan(children: teile)),
+          if (eil != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text('⚡ Knapp: nur mit ${zahl(eil)} km/h zum ersten Halt (sonst ${zahl(kmh)}) – sofort los',
+                  style: TextStyle(color: farbe.tertiary, fontWeight: FontWeight.w600)),
+            ),
           if (warnung != null)
             Padding(
               padding: const EdgeInsets.only(top: 4),

@@ -408,3 +408,21 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - Messung am Server (Markt → Hbf, 18 km/h): Fuß 1,30 km; Rad 1,59 km, 340 s (alle Typen gleich, Unterschiede erst
   bei Schotter/Straßentypen).
 - Status: umgesetzt (routing-core 0.1.26).
+
+## D-31 Mehrere Verbindungen und knappe Verbindungen (30.10.)
+- Betreiber 30.10.: meist kam nur eine Verbindung (RAPTOR liefert die früheste Ankunft je Umstiegszahl, fast immer
+  dieselbe); gewünscht mehrere Optionen, es zählt die schnellste. Wer 1–2 min zu spät dran ist, soll die Verbindung
+  trotzdem sehen, wenn sie mit höherem Tempo noch klappt – mit Hinweis aufs Tempo.
+- Ohne `ankunft`: nach der Abfrage ab `time` erneut ab frühester Losgehzeit + 1 min, bis 4 Verbindungen da sind
+  (höchstens 5 Abfragen). Doppelte und dominierte (früher los, später an, nicht weniger Umstiege) fallen raus,
+  sortiert nach Ankunft. Abweichung vom Zeitbudget: das Ziel < 50 ms gilt je RAPTOR-Abfrage, `ms` in der Antwort
+  ist jetzt die Summe.
+- `knapp: true` (neue App): zusätzlich eine Abfrage ab `time` − 150 s. Verbindungen, für die man vor `time` hätte
+  losgehen müssen, kommen vorn mit `eil_kmh` (nötiges Tempo auf dem Zugangsweg, auf 0,5 aufgerundet), wenn sie
+  früher ankommen als die schnellste normale, der Zugangsweg höchstens doppelt so schnell sein muss und das Tempo
+  die Grenze nicht übersteigt (zu Fuß 12 km/h = Laufen, Räder ihr Höchsttempo, Custom ohne Grenze). Umstiege
+  bleiben beim gewählten Tempo. Losgehzeit = `time`.
+- App: schickt `knapp` (nur ohne Ankunftszeit), zeigt „⚡ Knapp: nur mit X km/h zum ersten Halt“, Karte wählt zuerst
+  die schnellste normal erreichbare. Alte Apps bekommen nur die zusätzlichen Abfahrten (Feld `knapp` fehlt).
+  Neue App braucht einen Server mit D-31 (unbekannte Felder → 400).
+- Status: umgesetzt.
