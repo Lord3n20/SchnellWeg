@@ -96,11 +96,12 @@ class HaltRef {
 /// Abbiegehinweis auf einem Weg von Tür zu Tür; [i] = Stelle in der Wegform, ab der er gilt.
 class Schritt {
   final String text;
-  final int m, i;
+  final int m, i, typ;
   Schritt.json(Map<String, dynamic> j)
       : text = j['text'] as String,
         m = (j['m'] as int?) ?? 0,
-        i = (j['i'] as int?) ?? 0;
+        i = (j['i'] as int?) ?? 0,
+        typ = (j['typ'] as int?) ?? 0;
 }
 
 /// Dauer in ganzen Minuten, überall gleich gerundet.
@@ -150,6 +151,7 @@ class Meldung {
   final int verzMin, maxKmh;
   final bool gesperrt;
   final double lat, lon;
+  final List<(double, double)> form; // nur Stau: Verlauf für die rote Linie
   Meldung.json(Map<String, dynamic> j)
       : art = j['art'] as String,
         titel = j['titel'] as String,
@@ -158,7 +160,19 @@ class Meldung {
         maxKmh = (j['max_kmh'] as int?) ?? 0,
         gesperrt = j['gesperrt'] == true,
         lat = (j['lat'] as num).toDouble(),
-        lon = (j['lon'] as num).toDouble();
+        lon = (j['lon'] as num).toDouble(),
+        form = [for (final p in ((j['form'] as List?) ?? const []).cast<List>()) ((p[0] as num).toDouble(), (p[1] as num).toDouble())];
+}
+
+/// Reihenfolge der Liste: normale Route vor dem Angebot, gesperrte zuletzt, sonst früheste Ankunft; bei Gleichstand wie vom Server.
+List<Verbindung> nachRang(List<Verbindung> l) {
+  final v = [for (final (i, x) in l.indexed) (i, x)]
+    ..sort((a, b) {
+      if (a.$2.rang != b.$2.rang) return a.$2.rang - b.$2.rang;
+      final c = a.$2.ankunft.compareTo(b.$2.ankunft);
+      return c != 0 ? c : a.$1 - b.$1;
+    });
+  return [for (final (_, x) in v) x];
 }
 
 class Verbindung {

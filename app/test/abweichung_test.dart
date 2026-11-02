@@ -54,4 +54,23 @@ void main() {
     expect(inMetern(340), 'In 350 m');
     expect(inMetern(2380), 'In 2,4 km');
   });
+
+  test('Fahransicht: Lotpunkt, Rest, Kurs, Zoom', () {
+    final weg = [const LatLng(50.77, 6.08), const LatLng(50.77, 6.09), const LatLng(50.78, 6.09)];
+    final h = aufWeg(weg, 50.7702, 6.085);
+    expect(h.i, 0);
+    expect(h.m, closeTo(22, 2));
+    expect(h.punkt.latitude, closeTo(50.77, 1e-6));
+    expect(h.punkt.longitude, closeTo(6.085, 1e-6));
+    expect(restMeter(weg, h), closeTo(352 + 1112, 15));
+    expect(restMeter(weg, aufWeg(weg, 50.79, 6.09)), 0);
+    expect(kurs(weg[0], weg[1]), closeTo(90, 0.1));
+    expect(kurs(weg[1], weg[2]), closeTo(0, 0.1));
+    expect(kursMisch(350, 10, 0.5), closeTo(0, 1e-9));
+    expect(kursMisch(10, 350, 0.25), closeTo(5, 1e-9));
+    expect(kursMisch(90, 180, 1), closeTo(180, 1e-9));
+    expect(fahrZoom(20), 17);
+    expect(fahrZoom(60), 16);
+    expect(fahrZoom(130), 15);
+  });
 }

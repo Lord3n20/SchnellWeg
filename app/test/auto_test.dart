@@ -95,4 +95,16 @@ void main() {
     expect(normal.rang, lessThan(angebot.rang));
     expect(angebot.rang, lessThan(zu.rang));
   });
+
+  test('nachRang: normale Route zuerst, auch wenn das Angebot früher ankommt', () {
+    Verbindung j(String an, [Map<String, dynamic> mehr = const {}]) => Verbindung.json({
+          'trips': 0,
+          'dep': '2026-11-02T15:00:00+01:00',
+          'arr': '2026-11-02T$an:00+01:00',
+          'legs': const [],
+          ...mehr,
+        });
+    final normal = j('16:00'), angebot = j('15:45', {'umfahrung': 'stau'}), schneller = j('15:50');
+    expect(nachRang([angebot, normal, schneller]), [schneller, normal, angebot]);
+  });
 }

@@ -235,8 +235,14 @@ func (s *Server) fahrzeitAnpassen(ctx context.Context, weg *WalkRoute, kmh float
 	}
 	for _, m := range l.auf {
 		weg.Sec += float64(m.VerzMin) * 60
-		l.out = append(l.out, meldungOut{Art: m.Art, Titel: m.Titel, Richtung: m.Richtung, VerzMin: m.VerzMin, Kmh: m.Kmh, MaxKmh: m.MaxKmh,
-			Gesperrt: m.Gesperrt, Lat: m.Form[0].lat, Lon: m.Form[0].lon})
+		o := meldungOut{Art: m.Art, Titel: m.Titel, Richtung: m.Richtung, VerzMin: m.VerzMin, Kmh: m.Kmh, MaxKmh: m.MaxKmh,
+			Gesperrt: m.Gesperrt, Lat: m.Form[0].lat, Lon: m.Form[0].lon}
+		if m.Art == "stau" {
+			for _, p := range m.Form {
+				o.Form = append(o.Form, [2]float64{p.lat, p.lon})
+			}
+		}
+		l.out = append(l.out, o)
 	}
 	return l
 }

@@ -529,3 +529,13 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   Karte. Keine Sprachansage.
 - GPS-Stream hielt das Display an (für den Messgang gedacht), das galt mit D-36 auch für jede sichtbare Route. Jetzt nur noch beim Auto.
 - Status: umgesetzt.
+
+## D-40 Fahransicht fürs Auto (02.11.)
+- Betreiber 02.11.: Ansicht beim Autofahren wie bei Waze und Google Maps. Knopf „Start“ auf der gewählten Autoroute öffnet `lib/fahren.dart`:
+  Karte in Fahrtrichtung mit Standort unterhalb der Mitte, Abbiegepfeil und Entfernung oben, Restzeit, Restweg und Ankunft unten, Tempo, blaue
+  Route, Stau rot (`form` der Meldung). Ohne Sprachansage: die mag der Betreiber nicht.
+- Nur die Kamera bewegt sich, alle 33 ms über einen `ValueListenable`, die Karte baut dafür nicht neu; der Pfeil liegt fest über der Karte. Position und
+  Kurs laufen zwischen den GPS-Fixen weich, nah an der Route (35 m) wird der Punkt auf die Route gelegt.
+- Display bleibt an, im Hintergrund kein GPS. Neu berechnen wie D-36, alle 3 min Stau und Ankunft frisch; wie D-39 bleibt eine Umfahrung ein Knopf, den man
+  antippt, eine gewählte wird nicht zurückgestellt. Restzeit = Anteil des Restwegs an der Fahrzeit.
+- Status: umgesetzt, auf dem Gerät noch nicht geprüft (Drehen der Vektorkarte, Bildrate).

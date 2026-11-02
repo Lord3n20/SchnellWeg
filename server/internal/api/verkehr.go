@@ -278,15 +278,16 @@ func aufRoute(form, route []pt, meter, anteil float64) (int, bool) {
 
 // meldungOut geht an die App.
 type meldungOut struct {
-	Art      string  `json:"art"` // stau | sperrung | baustelle
-	Titel    string  `json:"titel"`
-	Richtung string  `json:"richtung,omitempty"`
-	VerzMin  int     `json:"verz_min,omitempty"`
-	Kmh      int     `json:"kmh,omitempty"`     // Durchschnitt im Stau
-	MaxKmh   int     `json:"max_kmh,omitempty"` // Baustelle
-	Gesperrt bool    `json:"gesperrt,omitempty"`
-	Lat      float64 `json:"lat"`
-	Lon      float64 `json:"lon"`
+	Art      string       `json:"art"` // stau | sperrung | baustelle
+	Titel    string       `json:"titel"`
+	Richtung string       `json:"richtung,omitempty"`
+	VerzMin  int          `json:"verz_min,omitempty"`
+	Kmh      int          `json:"kmh,omitempty"`     // Durchschnitt im Stau
+	MaxKmh   int          `json:"max_kmh,omitempty"` // Baustelle
+	Gesperrt bool         `json:"gesperrt,omitempty"`
+	Lat      float64      `json:"lat"`
+	Lon      float64      `json:"lon"`
+	Form     [][2]float64 `json:"form,omitempty"` // nur Stau: Verlauf als [lat, lon], für die rote Linie auf der Karte
 }
 
 // aufDerRoute wählt die Meldungen entlang der Route, in Reihenfolge der Fahrt. Dasselbe Stück melden oft mehrere Quellen:

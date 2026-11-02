@@ -4,6 +4,7 @@
 // Gezeichnet wird alles auf dem Handy: eigener Standort, Halte in der Nähe, gewählte Verbindung.
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' hide Path;
@@ -16,6 +17,7 @@ import 'api.dart';
 import 'darstellung.dart';
 import 'kartenlager.dart';
 
+const _blickVersatz = 0.2; // Standort so viel der Kartenhöhe unter der Mitte
 const _treffer = 24.0; // so viele Pixel um den Finger gilt ein Antippen als Treffer auf eine Haltestelle
 const _trefferAb = 14.0; // darunter liegen zu viele Halte unter dem Finger: Antippen meint den Punkt
 const _detailAb = 10.0; // ab dieser Zoomstufe fällt die grobe Übersicht auf
@@ -74,12 +76,20 @@ Color linienFarbe(String linie) {
   return farben[linie.codeUnits.fold<int>(7, (h, c) => (h * 31 + c) & 0x7fffffff) % farben.length];
 }
 
+/// Kameraposition der Fahransicht (D-40): Standort, Kurs in Grad, Zoom.
+class Fahrblick {
+  final LatLng pos;
+  final double kurs, zoom;
+  const Fahrblick(this.pos, this.kurs, this.zoom);
+}
+
 class Karte extends StatefulWidget {
   final LatLng? standort, ziel;
   final List<LatLng> halte;
   final List<Strecke> strecken;
   final LatLng? markiert; // angetippte Haltestelle
   final List<Meldung> meldungen; // Stau, Sperrung, Baustelle auf der Route (D-38)
+  final ValueListenable<Fahrblick?>? fahrblick; // Fahransicht: Karte in Fahrtrichtung, nur die Kamera bewegt sich
   final void Function(LatLng, double trefferMeter)? onAntippen; // trefferMeter: Umkreis für Haltestellen, 0 = keine
   const Karte({
     super.key,
@@ -89,6 +99,7 @@ class Karte extends StatefulWidget {
     this.strecken = const [],
     this.markiert,
     this.meldungen = const [],
+    this.fahrblick,
     this.onAntippen,
   });
 
@@ -110,6 +121,7 @@ class _KarteState extends State<Karte> {
   void initState() {
     super.initState();
     _lager.addListener(_lagerGeaendert);
+    widget.fahrblick?.addListener(_blickGeaendert);
   }
 
   @override
@@ -127,6 +139,7 @@ class _KarteState extends State<Karte> {
   @override
   void dispose() {
     _lager.removeListener(_lagerGeaendert);
+    widget.fahrblick?.removeListener(_blickGeaendert);
     super.dispose();
   }
 
@@ -151,8 +164,20 @@ class _KarteState extends State<Karte> {
     }
   }
 
+  /// Standort liegt auf dem Bildschirm unter der Mitte (Pfeil in [build]), damit man vorausblickt.
+  void _blickGeaendert() {
+    final b = widget.fahrblick?.value;
+    if (b == null || !_bereit || !mounted) return;
+    final hoch = _kamera.camera.nonRotatedSize.y;
+    final mProPx = 156543.03 * cos(b.pos.latitude * pi / 180) / pow(2, b.zoom);
+    final voraus = _blickVersatz * hoch * mProPx, w = b.kurs * pi / 180;
+    final mitte = LatLng(b.pos.latitude + cos(w) * voraus / 111320,
+        b.pos.longitude + sin(w) * voraus / (111320 * cos(b.pos.latitude * pi / 180)));
+    _kamera.moveAndRotate(mitte, b.zoom, -b.kurs);
+  }
+
   void _ausschnitt() {
-    if (!_bereit || !mounted) return;
+    if (!_bereit || !mounted || widget.fahrblick != null) return;
     final punkte = [
       for (final s in widget.strecken) ...s.punkte,
       ?widget.standort,
@@ -215,10 +240,11 @@ class _KarteState extends State<Karte> {
           minZoom: 5,
           maxZoom: 19,
           backgroundColor: farbe.surfaceContainerHighest,
-          interactionOptions: const InteractionOptions(flags: InteractiveFlag.all & ~InteractiveFlag.rotate),
+          interactionOptions: InteractionOptions(flags: widget.fahrblick != null ? InteractiveFlag.none : InteractiveFlag.all & ~InteractiveFlag.rotate),
           onMapReady: () {
             _bereit = true;
             _ausschnitt();
+            _blickGeaendert();
             _pruefeRegion(_kamera.camera);
           },
           onTap: widget.onAntippen == null ? null : (_, p) => widget.onAntippen!(p, _trefferMeter(p)),
@@ -235,12 +261,19 @@ class _KarteState extends State<Karte> {
             for (final s in widget.strecken)
               Polyline(
                 points: s.punkte,
-                strokeWidth: s.fuss ? 4 : 6,
-                color: s.fuss ? farbe.outline : linienFarbe(s.linie),
+                strokeWidth: widget.fahrblick != null ? 10 : (s.fuss ? 4 : 6),
+                color: widget.fahrblick != null ? const Color(0xFF1A73E8) : (s.fuss ? farbe.outline : linienFarbe(s.linie)),
                 pattern: s.fuss ? StrokePattern.dashed(segments: const [8, 6]) : const StrokePattern.solid(),
                 borderStrokeWidth: s.fuss ? 0 : 1.5,
                 borderColor: farbe.surface,
               ),
+            for (final m in widget.meldungen)
+              if (m.form.length >= 2)
+                Polyline(
+                  points: [for (final (lat, lon) in m.form) LatLng(lat, lon)],
+                  strokeWidth: widget.fahrblick != null ? 10 : 6,
+                  color: const Color(0xFFD93025), // Stau
+                ),
           ]),
           CircleLayer(circles: [
             if (widget.strecken.isEmpty)
@@ -255,7 +288,7 @@ class _KarteState extends State<Karte> {
                 CircleMarker(point: p, radius: 5, color: farbe.surface, borderColor: linienFarbe(s.linie), borderStrokeWidth: 3),
             if (widget.markiert != null)
               CircleMarker(point: widget.markiert!, radius: 9, color: farbe.primary, borderColor: farbe.surface, borderStrokeWidth: 3),
-            if (widget.standort != null) ...[
+            if (widget.standort != null && widget.fahrblick == null) ...[
               CircleMarker(point: widget.standort!, radius: 11, color: farbe.primary.withValues(alpha: 0.2)),
               CircleMarker(point: widget.standort!, radius: 6, color: farbe.primary, borderColor: Colors.white, borderStrokeWidth: 2),
             ],
@@ -265,6 +298,7 @@ class _KarteState extends State<Karte> {
               for (final m in widget.meldungen)
                 Marker(
                   point: LatLng(m.lat, m.lon),
+                  rotate: true,
                   width: 26,
                   height: 26,
                   child: Icon(
@@ -278,6 +312,7 @@ class _KarteState extends State<Karte> {
             MarkerLayer(markers: [
               Marker(
                 point: widget.ziel!,
+                rotate: true,
                 width: 36,
                 height: 36,
                 alignment: Alignment.topCenter,
@@ -288,7 +323,18 @@ class _KarteState extends State<Karte> {
         ],
       ),
       if (_fehlt != null) Positioned(top: 8, left: 8, right: 8, child: _RegionLaden(_fehlt!)),
-      if (widget.standort != null)
+      if (widget.fahrblick != null)
+        IgnorePointer(
+          child: Align(
+            alignment: const Alignment(0, 2 * _blickVersatz),
+            child: Container(
+              decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(blurRadius: 6, color: Colors.black38)]),
+              padding: const EdgeInsets.all(4),
+              child: const Icon(Icons.navigation, size: 34, color: Color(0xFF1A73E8)),
+            ),
+          ),
+        ),
+      if (widget.standort != null && widget.fahrblick == null)
         Positioned(
           right: 8,
           bottom: 28, // über dem Quellenhinweis

@@ -690,6 +690,9 @@ func TestAutoVerkehr(t *testing.T) {
 		t.Fatalf("Code %d, %s", w.Code, w.Body)
 	}
 	j := r.Journeys[0]
+	if len(j.Verkehr) > 0 && len(j.Verkehr[0].Form) != 3 {
+		t.Errorf("Stau ohne Form: %s", w.Body)
+	}
 	if !j.VerkehrOK || len(j.Verkehr) != 2 || j.Verkehr[0].Titel != "A4 Stau" || j.Verkehr[0].VerzMin != 7 || j.Verkehr[1].Art != "baustelle" {
 		t.Fatalf("Meldungen: %s", w.Body)
 	}
@@ -760,7 +763,7 @@ func TestUmfahrung(t *testing.T) {
 		}
 		leg := map[string]any{"shape": polyline6(form)}
 		if q.DirectionsType != "none" { // wie Valhalla: „none“ auf oberster Ebene gewinnt
-			leg["maneuvers"] = []map[string]any{{"instruction": "Rechts abbiegen.", "length": 1.5, "begin_shape_index": 1}, {"instruction": "", "length": 0, "begin_shape_index": 2}}
+			leg["maneuvers"] = []map[string]any{{"instruction": "Rechts abbiegen.", "length": 1.5, "begin_shape_index": 1, "type": 10}, {"instruction": "", "length": 0, "begin_shape_index": 2}}
 		}
 		json.NewEncoder(w).Encode(map[string]any{"trip": map[string]any{"summary": map[string]float64{"time": sec, "length": 7}, "legs": []map[string]any{leg}}})
 	}))
@@ -793,7 +796,7 @@ func TestUmfahrung(t *testing.T) {
 	fall("kleiner Stau", "3", 100, 0, "false", "")
 	fall("Sperrung: auch langsamer und über Nebenstraßen", "0", 5000, 9, "true", "sperrung")
 	_, r := frage()
-	if l := r.Journeys[0].Legs[0]; len(l.Schritte) != 1 || l.Schritte[0] != (schrittOut{"Rechts abbiegen.", 1500, 1}) {
+	if l := r.Journeys[0].Legs[0]; len(l.Schritte) != 1 || l.Schritte[0] != (schrittOut{"Rechts abbiegen.", 1500, 1, 10}) {
 		t.Errorf("Schritte: %+v", l.Schritte)
 	}
 }

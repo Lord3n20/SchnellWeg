@@ -13,6 +13,7 @@ import 'api.dart';
 import 'details.dart';
 import 'einstellungen.dart';
 import 'einstellungen_seite.dart';
+import 'fahren.dart';
 import 'favoriten.dart';
 import 'halte_db.dart';
 import 'karte.dart';
@@ -354,6 +355,26 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     _routeBerechnen(von: f);
   }
 
+  /// Fahransicht (D-40) für die gewählte Autoroute.
+  Future<void> _fahren(int i) async {
+    final v = _verbindungen, ziel = _ziel, pos = _pos, api = _api;
+    if (v == null || ziel == null || pos == null || api == null || i >= v.length) return;
+    final tempo = _tempo;
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => Fahren(
+        v: v[i],
+        angebot: v.where((x) => x.umfahrung.isNotEmpty && x != v[i]).firstOrNull,
+        start: LatLng(pos.lat, pos.lon),
+        ziel: LatLng(ziel.lat, ziel.lon),
+        neu: (von) async {
+          final (roh, _) = await api.route(von.lat, von.lon, ziel.lat, ziel.lon,
+              kmh: tempo.kmh, art: tempo.serverArt, meiden: tempo.serverMeiden, ticket: tempo.ticket, wegArt: tempo.wegArt, fern: tempo.fern);
+          return nachRang(roh);
+        },
+      ),
+    ));
+  }
+
   /// Verbindung auf der Karte zeigen und die Detailseite öffnen.
   Future<void> _details(int i) async {
     await _waehlen(i);
@@ -388,13 +409,11 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     _pos = p;
     try {
       final (roh, rt) = await _api!.route(p.lat, p.lon, ziel.lat, ziel.lon, kmh: _tempo.kmh, art: _tempo.serverArt, meiden: _tempo.serverMeiden, ticket: _tempo.ticket, wegArt: _tempo.wegArt, fern: _tempo.fern, lang: lang, ab: _zeit, ankunft: _ankunft, knapp: true);
-      // früheste Ankunft oben; bei Gleichstand bleibt die Server-Reihenfolge
-      final v = [for (final (i, x) in roh.indexed) (i, x)]
-        ..sort((a, b) => a.$2.rang != b.$2.rang ? a.$2.rang - b.$2.rang : a.$2.ankunft.compareTo(b.$2.ankunft) != 0 ? a.$2.ankunft.compareTo(b.$2.ankunft) : a.$1 - b.$1);
+      final v = nachRang(roh);
       if (!mounted || _ziel != ziel || (von != null && v.isEmpty)) return;
       if (von != null) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Route neu berechnet')));
       setState(() {
-        _verbindungen = [for (final (_, x) in v) x];
+        _verbindungen = v;
         _routeRt = rt;
         if (v.isEmpty) _routeHinweis = 'Keine Verbindung gefunden';
       });
@@ -774,7 +793,8 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     return RefreshIndicator(
       onRefresh: _routeBerechnen,
       child: ListView(children: [
-        for (final (i, x) in v.indexed) _VerbindungZeile(x, kmh: _tempo.kmh, zuFuss: _tempo.art == 'fuss', bezug: _ankunft ? null : _zeit ?? DateTime.now(), gewaehlt: i == _gewaehlt, onTap: () => _details(i)),
+        for (final (i, x) in v.indexed) _VerbindungZeile(x, kmh: _tempo.kmh, zuFuss: _tempo.art == 'fuss', bezug: _ankunft ? null : _zeit ?? DateTime.now(), gewaehlt: i == _gewaehlt, onTap: () => _details(i),
+            onFahren: x.auto && i == _gewaehlt && _zeit == null ? () => _fahren(i) : null),
       ]),
     );
   }
@@ -842,7 +862,8 @@ class _VerbindungZeile extends StatelessWidget {
   final DateTime? bezug; // ab wann man losgehen kann; null im Ankunftsmodus (kein Gehhinweis)
   final bool gewaehlt;
   final VoidCallback onTap;
-  const _VerbindungZeile(this.v, {required this.kmh, required this.zuFuss, this.bezug, required this.gewaehlt, required this.onTap});
+  final VoidCallback? onFahren; // gewählte Autoroute: Fahransicht starten
+  const _VerbindungZeile(this.v, {required this.kmh, required this.zuFuss, this.bezug, required this.gewaehlt, required this.onTap, this.onFahren});
 
   @override
   Widget build(BuildContext context) {
@@ -941,6 +962,11 @@ class _VerbindungZeile extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(warnung, style: TextStyle(color: farbe.error, fontWeight: FontWeight.w600)),
+            ),
+          if (onFahren != null)
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.icon(onPressed: onFahren, icon: const Icon(Icons.navigation), label: const Text('Start')),
             ),
         ]),
       )),

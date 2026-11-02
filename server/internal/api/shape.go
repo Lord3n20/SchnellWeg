@@ -40,6 +40,7 @@ type vhRouteResp struct {
 				Instruction string  `json:"instruction"`
 				Length      float64 `json:"length"` // km
 				Begin       int     `json:"begin_shape_index"`
+				Type        int     `json:"type"`
 			} `json:"maneuvers"`
 		} `json:"legs"`
 		Summary struct {
@@ -62,6 +63,7 @@ type schrittOut struct {
 	Text string `json:"text"`
 	M    int    `json:"m"`
 	I    int    `json:"i"`
+	Typ  int    `json:"typ,omitempty"` // Valhallas Manövertyp, die App wählt danach den Pfeil
 }
 
 // Route holt den Weg zwischen zwei Punkten mit der ersten Kostenart aus ks, die einen findet.
@@ -108,7 +110,7 @@ func (v *Valhalla) route(ctx context.Context, aLat, aLon, bLat, bLon float64, k 
 	weg := WalkRoute{Shape: r.Trip.Legs[0].Shape, Sec: r.Trip.Summary.Time * k.Faktor, M: r.Trip.Summary.Length * 1000}
 	for _, m := range r.Trip.Legs[0].Maneuvers {
 		if k.Schritte && m.Instruction != "" {
-			weg.Schritte = append(weg.Schritte, schrittOut{m.Instruction, int(m.Length*1000 + 0.5), m.Begin})
+			weg.Schritte = append(weg.Schritte, schrittOut{m.Instruction, int(m.Length*1000 + 0.5), m.Begin, m.Type})
 		}
 	}
 	return weg, nil
