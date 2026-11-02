@@ -425,6 +425,10 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - App: schickt `knapp` (nur ohne Ankunftszeit), zeigt „⚡ Knapp: nur mit X km/h zum ersten Halt“, Karte wählt zuerst
   die schnellste normal erreichbare. Alte Apps bekommen nur die zusätzlichen Abfahrten (Feld `knapp` fehlt).
   Neue App braucht einen Server mit D-31 (unbekannte Felder → 400).
+- Nachtrag 02.11.: Bei dichtem Zubringer (Elisenbrunnen→Düren bei 4,3 km/h, Bus alle 1–2 min zum Zug) brauchten
+  spätere Busse zum selben Zug alle 5 Abfragen auf, am Ende schlug der letzte die übrigen: nur eine Verbindung.
+  Jetzt zählen nur ungeschlagene Verbindungen, höchstens 10 Abfragen; ohne neue Ankunft verdoppelt sich der Schritt,
+  mit neuer halbiert er sich (mindestens 1 min). Springt er über den letzten Bus, geht es dort neu los.
 - Status: umgesetzt.
 
 ## D-32 Autorouten (02.11.)

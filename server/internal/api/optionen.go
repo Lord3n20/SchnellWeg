@@ -9,11 +9,13 @@ import (
 
 // Mehrere Verbindungen und knappe Verbindungen (D-31). Eine RAPTOR-Abfrage liefert nur die früheste Ankunft je
 // Umstiegszahl – meist genau eine Verbindung. Darum wird nach der frühesten Losgehzeit eine Minute später neu
-// gefragt, bis optionenN Verbindungen da sind. Mit "knapp" kommt zusätzlich, was man mit Losgehen bis zu knappSek
-// vorher erwischt hätte, wenn es mit schnellerem Zugangsweg noch reicht und früher ankommt.
+// gefragt, bis optionenN Verbindungen da sind. Fährt ein dichter Bus zum selben Zug, liefert jede Abfrage nur eine
+// spätere Variante mit gleicher Ankunft; dann wächst der Schritt, bis wieder eine neue Ankunft kommt (eine Verbindung
+// dazwischen kann dabei fehlen, die schnellste aus der ersten Abfrage nie). Mit "knapp" kommt zusätzlich, was man mit
+// Losgehen bis zu knappSek vorher erwischt hätte, wenn es mit schnellerem Zugangsweg noch reicht und früher ankommt.
 const (
 	optionenN       = 4   // so viele ÖV-Verbindungen höchstens
-	optionenAbfr    = 5   // so viele RAPTOR-Abfragen höchstens (je ~1–50 ms)
+	optionenAbfr    = 10  // so viele RAPTOR-Abfragen höchstens (je ~1–50 ms)
 	knappSek        = 150 // so viel früher hätte man höchstens losgehen müssen (Betreiber: „1–2 min“)
 	knappFaktor     = 2.0 // Zugangsweg höchstens so viel schneller als beim gewählten Tempo
 	eilFaktorProfil = 1.5 // eigene Profile: knapp höchstens so viel schneller als ihr Tempo (D-34)
@@ -30,14 +32,20 @@ type option struct {
 // Tempo, grenze: höchstes Tempo für knappe Verbindungen, 0 = keine knappen).
 func optionen(rt *raptor.Router, dep int32, from, to []raptor.Access, maxTrips int, kmh, grenze float64) []option {
 	var alle []raptor.Journey
-	t := dep
-	for q := 0; q < optionenAbfr && len(alle) < optionenN; q++ {
+	t, zuletzt, schritt := dep, dep, int32(60)
+	for q := 0; q < optionenAbfr && len(ungeschlagen(alle)) < optionenN; q++ {
 		res := rt.Query(t, from, to, maxTrips)
 		if len(res.Journeys) == 0 {
-			break
+			if schritt == 60 {
+				break
+			}
+			t, schritt = zuletzt+60, 60 // vielleicht zu weit gesprungen, etwa über den letzten Bus
+			continue
 		}
 		naechste := int32(math.MaxInt32)
+		neu := false
 		for _, j := range res.Journeys {
+			neu = neu || !slices.ContainsFunc(alle, func(o raptor.Journey) bool { return o.Arr == j.Arr })
 			// Ein Weg ohne Fahrt reicht: je Minute später losgehen wäre sonst eine neue „Verbindung“ und nähme echten den Platz
 			doppelt := func(o raptor.Journey) bool { return gleich(o, j) || o.Trips == 0 && j.Trips == 0 }
 			if !slices.ContainsFunc(alle, doppelt) {
@@ -45,13 +53,17 @@ func optionen(rt *raptor.Router, dep int32, from, to []raptor.Access, maxTrips i
 			}
 			naechste = min(naechste, abfahrt(j))
 		}
-		t = max(naechste, t) + 60
+		if neu {
+			schritt = max(schritt/2, 60) // der nächste Zug ist vermutlich ähnlich weit weg
+		} else {
+			schritt *= 2
+		}
+		zuletzt = max(naechste, t)
+		t = zuletzt + schritt
 	}
 	var out []option
-	for _, j := range alle {
-		if !slices.ContainsFunc(alle, func(o raptor.Journey) bool { return besser(o, j) }) {
-			out = append(out, option{j: j})
-		}
+	for _, j := range ungeschlagen(alle) {
+		out = append(out, option{j: j})
 	}
 	slices.SortStableFunc(out, func(a, b option) int { return int(a.j.Arr-b.j.Arr)*16 + a.j.Trips - b.j.Trips })
 	out = out[:min(len(out), optionenN)]
@@ -66,6 +78,17 @@ func optionen(rt *raptor.Router, dep int32, from, to []raptor.Access, maxTrips i
 		}
 	}
 	return append(knapp, out...)
+}
+
+// ungeschlagen: die Verbindungen aus js, die keine andere aus js in allem schlägt.
+func ungeschlagen(js []raptor.Journey) []raptor.Journey {
+	var out []raptor.Journey
+	for _, j := range js {
+		if !slices.ContainsFunc(js, func(o raptor.Journey) bool { return besser(o, j) }) {
+			out = append(out, j)
+		}
+	}
+	return out
 }
 
 // eilTempo: welches Tempo bräuchte man auf dem Zugangsweg von j, wenn man erst um dep losgeht? 0 = j ist normal
