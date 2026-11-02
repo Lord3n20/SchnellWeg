@@ -105,7 +105,7 @@ class Abschnitt {
   final String form; // Fußweg/Auto: Wegform (encoded polyline, Genauigkeit 6), "" = unbekannt
   final List<String> halte; // Fahrt: Halte-IDs vom Ein- bis zum Ausstieg
 
-  Abschnitt.json(Map<String, dynamic> j)
+  Abschnitt.json(Map<String, dynamic> j, {bool ticket = false})
       : fahrt = j['mode'] == 'ride',
         auto = j['mode'] == 'drive',
         von = j['from'] == null ? null : HaltRef.json(j['from'] as Map<String, dynamic>),
@@ -117,7 +117,7 @@ class Abschnitt {
         linie = (j['line'] as String?) ?? '',
         ziel = (j['headsign'] as String?) ?? '',
         fern = j['fern'] == true,
-        rad = j['rad'] == true,
+        rad = j['rad'] == true || ticket && j['mode'] == 'ride',
         risiko = j['risk'] == true,
         faelltAus = j['canceled'] == true,
         entfaellt = j['skipped'] == true,
@@ -136,14 +136,14 @@ class Verbindung {
   final double? eilKmh; // nur mit diesem Tempo zum ersten Halt zu schaffen (D-31), null = normal erreichbar
   final List<Abschnitt> abschnitte;
 
-  Verbindung.json(Map<String, dynamic> j)
+  Verbindung.json(Map<String, dynamic> j, {bool ticket = false})
       : fahrten = j['trips'] as int,
         ab = _zeit(j['dep'])!,
         an = _zeit(j['arr'])!,
         anRt = _zeit(j['arr_rt']),
         risiko = (j['risk'] as String?) ?? '',
         eilKmh = (j['eil_kmh'] as num?)?.toDouble(),
-        abschnitte = [for (final l in (j['legs'] as List).cast<Map<String, dynamic>>()) Abschnitt.json(l)];
+        abschnitte = [for (final l in (j['legs'] as List).cast<Map<String, dynamic>>()) Abschnitt.json(l, ticket: ticket)];
 
   DateTime get ankunft => anRt ?? an;
   bool get auto => abschnitte.any((a) => a.auto);
@@ -259,7 +259,7 @@ class Api {
 
   /// Verbindungen (mehrere Abfahrten, ggf. knappe vorn) und ob der Echtzeitstand verfügbar war.
   Future<(List<Verbindung>, bool)> route(double vonLat, double vonLon, double nachLat, double nachLon,
-      {DateTime? ab, bool ankunft = false, double? kmh, String? art, bool fern = false, bool lang = false, bool knapp = false}) async {
+      {DateTime? ab, bool ankunft = false, double? kmh, String? art, Map<String, dynamic>? meiden, bool ticket = false, bool fern = false, bool lang = false, bool knapp = false}) async {
     final (_, _, daten) = await _anfrage('POST', '/v1/route',
         body: {
           'from': {'lat': vonLat, 'lon': vonLon},
@@ -268,14 +268,15 @@ class Api {
           if (ab != null && ankunft) 'ankunft': true, // ab ist dann die späteste Ankunft (D-27)
           if (fern) 'fern': true,
           'kmh': ?kmh,
-          'art': ?art, // fuss | einrad | klapprad | fixie | rennrad | mtb (D-21, D-22) | auto (D-32)
+          'art': ?art, // fuss | auto (D-32); sonst entscheidet meiden
+          'meiden': ?meiden, // was die Route meiden soll (D-34)
           if (lang) 'lang': true, // auch mit Fußweg > 5 km genau rechnen (D-25)
           if (knapp && !ankunft) 'knapp': true, // auch Verbindungen, die nur mit schnellerem Zugangsweg klappen (D-31)
         },
         zeit: const Duration(seconds: 15));
     final j = jsonDecode(utf8.decode(daten)) as Map<String, dynamic>;
     return (
-      [for (final v in (j['journeys'] as List? ?? const []).cast<Map<String, dynamic>>()) Verbindung.json(v)],
+      [for (final v in (j['journeys'] as List? ?? const []).cast<Map<String, dynamic>>()) Verbindung.json(v, ticket: ticket)],
       j['rt'] == true
     );
   }

@@ -11,17 +11,6 @@ import java.io.File
 // Schreibt nur `aktiv` in tempo.json (dieselbe Datei wie lib/tempo.dart); die App liest sie beim Zurückkommen neu
 // und rechnet die aktuelle Verbindung damit neu.
 class VerkehrsmittelKachel : TileService() {
-    // Art → Profil, das beim Wechsel auf diese Art aktiv wird (Namen wie _vorgaben in lib/tempo.dart)
-    private val arten = listOf(
-        Triple("fuss", "Zu Fuß", "entspannt"),
-        Triple("einrad", "Custom", "Einrad"), // Profilschlüssel bleibt „Einrad“, Anzeigename steht als `titel` in tempo.json
-        Triple("klapprad", "Klapprad", "Klapprad"),
-        Triple("fixie", "Fixie", "Fixie"),
-        Triple("rennrad", "Rennrad", "Rennrad"),
-        Triple("mtb", "Mountainbike", "Mountainbike"),
-        Triple("auto", "Auto", "Auto"),
-    )
-
     private val datei get() = File(filesDir, "tempo.json")
 
     private fun lesen(): JSONObject = try {
@@ -32,11 +21,17 @@ class VerkehrsmittelKachel : TileService() {
 
     private fun aktiv(): String = lesen().optString("aktiv", "entspannt")
 
-    private fun artVon(profil: String): String =
-        arten.firstOrNull { (_, _, p) -> p == profil }?.first
-            ?: (if (profil.startsWith("Einrad")) "einrad" else null)
-            ?: arten.firstOrNull { (_, name, _) -> profil.startsWith(name) }?.first
-            ?: "fuss" // entspannt; normal / schnell aus Ständen vor D-33
+    // Schlüssel → Anzeigename wie in lib/tempo.dart; ohne Datei gibt es nur die Vorgaben
+    private fun profile(): List<Pair<String, String>> {
+        val p = lesen().optJSONObject("profile") ?: return listOf("entspannt" to "Zu Fuß", "Auto" to "Auto")
+        return p.keys().asSequence().map { it to anzeige(it, p.optJSONObject(it)) }.toList()
+    }
+
+    private fun anzeige(profil: String, j: JSONObject?): String = j?.optString("titel", "").orEmpty()
+        .ifEmpty { mapOf("entspannt" to "Zu Fuß", "Einrad" to "Custom 1", "Einrad schnell" to "Custom 2")[profil] ?: profil }
+
+    private fun istFuss(profil: String) =
+        profil in setOf("entspannt", "normal", "schnell") // normal / schnell aus Ständen vor D-33
 
     override fun onStartListening() = zeigen()
 
@@ -57,23 +52,22 @@ class VerkehrsmittelKachel : TileService() {
     }
 
     override fun onClick() {
-        val jetzt = artVon(aktiv())
-        val namen = arten.map { (art, name, _) -> if (art == jetzt) "$name  ✓" else name }.toTypedArray()
+        val jetzt = aktiv()
+        val liste = profile()
+        val namen = liste.map { (k, name) -> if (k == jetzt) "$name  ✓" else name }.toTypedArray()
         val d = AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
             .setTitle("Verkehrsmittel")
-            .setItems(namen) { _, i -> waehlen(arten[i].first, arten[i].third) }
+            .setItems(namen) { _, i -> waehlen(liste[i].first) }
             .setNegativeButton("Abbrechen", null)
             .create()
         showDialog(d)
     }
 
-    private fun waehlen(art: String, profil: String) {
+    private fun waehlen(profil: String) {
         val j = lesen()
-        if (artVon(j.optString("aktiv", "entspannt")) != art) { // gleiche Art: eigenes Profil (z. B. „schnell“) behalten
-            j.put("aktiv", profil)
-            if (!j.has("profile")) j.put("profile", JSONObject())
-            datei.writeText(j.toString())
-        }
+        j.put("aktiv", profil)
+        if (!j.has("profile")) j.put("profile", JSONObject())
+        datei.writeText(j.toString())
         zeigen()
     }
 }

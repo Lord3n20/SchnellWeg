@@ -124,7 +124,9 @@ class Losgehen extends ChangeNotifier {
           'ziel': {'kind': ziel.art, 'name': ziel.name, 'detail': ziel.detail, 'lat': ziel.lat, 'lon': ziel.lon},
           'bis': t.beginn.subtract(Duration(minutes: puffer)).millisecondsSinceEpoch,
           'kmh': tempo.kmh,
-          'art': tempo.art,
+          'art': tempo.serverArt,
+          'meiden': tempo.serverMeiden,
+          'fern': tempo.fern,
           'titel': t.titel,
           'ort': t.ort,
           'beginn': t.beginn.millisecondsSinceEpoch,
@@ -161,7 +163,9 @@ class Losgehen extends ChangeNotifier {
         ab: DateTime.fromMillisecondsSinceEpoch(a['bis'] as int),
         ankunft: true,
         kmh: (a['kmh'] as num).toDouble(),
-        art: a['art'] as String);
+        art: a['art'] as String?,
+        meiden: a['meiden'] as Map<String, dynamic>?,
+        fern: a['fern'] == true);
     Verbindung? v;
     for (final x in vs) {
       if (v == null || x.ab.isAfter(v.ab)) v = x;

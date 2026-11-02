@@ -132,7 +132,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
 
   Future<void> _tempoNeuLesen() async {
     final t = await Tempo.laden();
-    if (!mounted || (t.name == _tempo.name && t.kmh == _tempo.kmh && t.titel == _tempo.titel)) return;
+    if (!mounted || t.gleich(_tempo)) return;
     setState(() => _tempo = t);
     if (_ziel != null) await _routeBerechnen();
   }
@@ -282,7 +282,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     if (p == null) return setState(() => _routeHinweis = 'Kein Standort (Berechtigung oder GPS aus?)');
     _pos = p;
     try {
-      final (roh, rt) = await _api!.route(p.lat, p.lon, ziel.lat, ziel.lon, kmh: _tempo.kmh, art: _tempo.art, lang: lang, ab: _zeit, ankunft: _ankunft, knapp: true);
+      final (roh, rt) = await _api!.route(p.lat, p.lon, ziel.lat, ziel.lon, kmh: _tempo.kmh, art: _tempo.serverArt, meiden: _tempo.serverMeiden, ticket: _tempo.ticket, fern: _tempo.fern, lang: lang, ab: _zeit, ankunft: _ankunft, knapp: true);
       // früheste Ankunft oben; bei Gleichstand bleibt die Server-Reihenfolge
       final v = [for (final (i, x) in roh.indexed) (i, x)]
         ..sort((a, b) => a.$2.ankunft.compareTo(b.$2.ankunft) != 0 ? a.$2.ankunft.compareTo(b.$2.ankunft) : a.$1 - b.$1);
@@ -311,6 +311,8 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
           'fahrplan_laedt' => 'Server lädt gerade den Fahrplan',
           'kein_autoweg' => 'Keine Autoroute gefunden (Straßendaten bisher nur Raum Aachen, Köln, Bonn, Lüttich)',
           'auto_aus' => 'Autorouten gerade nicht verfügbar',
+          'kein_weg' => 'Keinen direkten Weg gefunden (Wegedaten bisher nur Raum Aachen, Köln, Bonn, Lüttich)',
+          'weg_aus' => 'Direkte Wege gerade nicht verfügbar',
           _ => 'Route nicht berechnet ($e)',
         };
       });
@@ -488,7 +490,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
                             },
                     ),
                     ActionChip(
-                      avatar: Icon(artIcon(_tempo.art), size: 18),
+                      avatar: Icon(_tempo.icon, size: 18),
                       label: Text(_tempo.anzeige),
                       tooltip: 'Verkehrsmittel',
                       onPressed: () async {

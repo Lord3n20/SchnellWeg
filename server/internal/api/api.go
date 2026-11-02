@@ -118,6 +118,23 @@ type routeReq struct {
 	// Knapp: auch Verbindungen, für die man bis zu 2,5 min früher hätte losgehen müssen, wenn sie mit schnellerem
 	// Zugangsweg noch klappen (D-31; nur ohne ankunft)
 	Knapp bool `json:"knapp"`
+	// Meiden: Profil aus der App (D-34), ersetzt art außer beim Auto; alte Apps schicken nur art
+	Meiden *Meiden `json:"meiden"`
+}
+
+// art liefert die Regeln der Anfrage: das Profil aus meiden oder die feste Art.
+func (q routeReq) art() (Art, bool) {
+	a, ok := arten[q.Art]
+	if q.Meiden == nil {
+		return a, ok
+	}
+	if !ok || !q.Meiden.gueltig() || q.Art != "" && !a.Auto {
+		return Art{}, false
+	}
+	if a.Auto {
+		return a, true
+	}
+	return q.Meiden.art(), true
 }
 
 // reichweite: Faktor für Zugangsradius und direkten Weg; schneller unterwegs = weiter, höchstens das Vierfache.
@@ -128,7 +145,7 @@ func (q routeReq) reichweite() float64 {
 		return 1
 	}
 	grenze := 2.5
-	if arten[q.Art].NurBahn {
+	if a, _ := q.art(); a.NurBahn {
 		grenze = 4
 	}
 	return min(grenze, max(1, *q.KMH/BaseKMH))
@@ -142,7 +159,7 @@ func (q routeReq) walkScale() (float64, bool) {
 	if q.KMH == nil {
 		return 1, true
 	}
-	a, ok := arten[q.Art]
+	a, ok := q.art()
 	if k := *q.KMH; ok && k > 0 && k >= a.Min && k <= a.Max && BaseKMH/k < 1e4 {
 		return BaseKMH / k, true
 	}
@@ -204,7 +221,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	dec.DisallowUnknownFields()
 	err := dec.Decode(&req)
 	scale, okKMH := req.walkScale()
-	art, okArt := arten[req.Art]
+	art, okArt := req.art()
 	if err != nil || !req.From.ok() || !req.To.ok() || !okKMH || !okArt {
 		fail(w, http.StatusBadRequest, "anfrage_ungueltig")
 		return
@@ -215,6 +232,17 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	}
 	if art.Auto { // braucht keinen Fahrplan
 		s.autoRoute(w, r, req, t)
+		return
+	}
+	if req.Meiden != nil && req.Meiden.OEV { // braucht auch keinen Fahrplan
+		var ks []Kosten
+		if s.Valhalla != nil {
+			ks = art.kosten(s.Valhalla.KMH, BaseKMH/scale, scale)
+			for i := range ks {
+				ks[i].FangM = autoFangM
+			}
+		}
+		s.tuerZuTuer(w, r, req, t, ks, "walk", "kein_weg", "weg_aus")
 		return
 	}
 	p := s.Current()
@@ -285,20 +313,24 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rt.NoFern, rt.WalkScale, rt.NurBahn = !req.Fern, scale, art.NurBahn
+	maxTrips := s.MaxTrips
+	if req.Meiden != nil && req.Meiden.Umstiege != nil {
+		maxTrips = min(maxTrips, *req.Meiden.Umstiege+1)
+	}
 	t0 := time.Now()
 	var res raptor.Result
 	eil := map[int]float64{} // Index in res.Journeys → nötiges Tempo
 	if req.Ankunft {
-		res = spaetesteAbfahrt(rt, int32(dep/time.Second), from, to, s.MaxTrips)
+		res = spaetesteAbfahrt(rt, int32(dep/time.Second), from, to, maxTrips)
 	} else {
 		grenze := 0.0
 		if req.Knapp {
 			grenze = art.Max
-			if !art.Rad && req.Art != "einrad" {
+			if frei := req.Art == "einrad" || req.Meiden != nil && kmh > arten["fuss"].Max; !art.Rad && !frei {
 				grenze = laufenKMH
 			}
 		}
-		for i, o := range optionen(rt, int32(dep/time.Second), from, to, s.MaxTrips, kmh, grenze) {
+		for i, o := range optionen(rt, int32(dep/time.Second), from, to, maxTrips, kmh, grenze) {
 			res.Journeys = append(res.Journeys, o.j)
 			if o.eil > 0 {
 				eil[i] = o.eil
@@ -319,7 +351,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 			jo.Eil, jo.Dep, jo.Legs[0].Dep = e, t.Truncate(time.Second), t.Truncate(time.Second)
 		}
 		for i := range jo.Legs {
-			jo.Legs[i].Rad = art.NurBahn && jo.Legs[i].Mode == "ride"
+			jo.Legs[i].Rad = art.NurBahn && req.Meiden == nil && jo.Legs[i].Mode == "ride"
 		}
 		p.annotate(snap, j, &jo)
 		rideStops(p.TT, j, &jo)

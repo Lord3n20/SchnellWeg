@@ -1,7 +1,6 @@
-// Tempo-Profile (D-12, D-21, D-22): zu Fuß, Custom (Art `einrad`, zwei selbst benannte Tempi) und vier Fahrradtypen – je von Hand gesetzt oder per Messgang
-// (tempo_messen.dart).
-// Das aktive Profil geht je Anfrage als `art` + `kmh` an /v1/route (Grenzen je Art wie dort).
-// Bleibt nur auf dem Handy (tempo.json im App-Ordner).
+// Profile (D-12, D-33, D-34): „Zu Fuß“, „Auto“ und beliebig viele eigene – je Name, Tempo (von Hand oder per Messgang,
+// tempo_messen.dart) und was die Route meiden soll. Das alles bleibt auf dem Handy (tempo.json im App-Ordner); an
+// /v1/route gehen je Anfrage nur `kmh` und `meiden`, beim Auto dazu `art`.
 import 'dart:convert';
 import 'dart:io';
 
@@ -10,59 +9,44 @@ import 'package:path_provider/path_provider.dart';
 
 const standardKmh = 4.3;
 
-/// Art → (min, max) km/h; außerhalb antwortet /v1/route mit 400. Custom: alles über 0 (min ausschließlich).
+/// Art → (min, max) km/h; außerhalb antwortet /v1/route mit 400. Eigene Profile: alles über 0 (min ausschließlich).
 const grenzen = {
   'fuss': (2.0, 8.0),
-  'einrad': (0.0, double.infinity),
-  'klapprad': (6.0, 30.0),
-  'fixie': (6.0, 40.0),
-  'rennrad': (10.0, 45.0),
-  'mtb': (6.0, 35.0),
+  'eigen': (0.0, double.infinity),
   'auto': (30.0, 200.0),
 };
-const artName = {
-  'fuss': 'Zu Fuß',
-  'einrad': 'Custom',
-  'klapprad': 'Klapprad',
-  'fixie': 'Fixie',
-  'rennrad': 'Rennrad',
-  'mtb': 'Mountainbike',
-  'auto': 'Auto',
-};
-/// Was die Art für die Route bedeutet (wie der Server sie rechnet, D-22).
-const artInfo = {
-  'fuss': 'Fußwege und Treppen',
-  'einrad': 'Eigenes Verkehrsmittel (z. B. Einrad, Inliner), Namen frei wählbar: Wege wie zu Fuß, fährt gratis in Bus und Bahn mit',
-  'klapprad': 'Wege wie zu Fuß, zusammengeklappt in Bus und Bahn ohne Fahrradticket; Bus nur, wenn er 5 min spart',
-  'fixie': 'Wege wie zu Fuß, Treppen getragen; nur Bahn, Fahrradticket nötig',
-  'rennrad': 'Straßen und Radwege, keine Fußwege, Treppen nur zur Not; nur Bahn, Fahrradticket nötig',
-  'mtb': 'Überall lang, meidet Treppen; nur Bahn, Fahrradticket nötig',
-  'auto': 'Direkt über die Straße, ohne Bus und Bahn; das Tempo ist das Höchsttempo, Stau und Parkplatzsuche zählen nicht',
-};
-bool istRad(String art) => const {'klapprad', 'fixie', 'rennrad', 'mtb'}.contains(art);
+const artName = {'fuss': 'Zu Fuß', 'eigen': 'Eigenes Profil', 'auto': 'Auto'};
 
+/// Neue Installation: nur diese; der Rest sind eigene Profile (D-34).
 const _vorgaben = [
   ('entspannt', 'fuss', standardKmh), // ein Gehtempo (D-33); Schlüssel bleibt, die Schnelleinstellung nutzt ihn
-  ('Einrad', 'einrad', 12.0),
-  ('Einrad schnell', 'einrad', 15.0),
-  ('Klapprad entspannt', 'klapprad', 12.0),
-  ('Klapprad', 'klapprad', 15.0),
-  ('Klapprad schnell', 'klapprad', 19.0),
-  ('Fixie entspannt', 'fixie', 16.0),
-  ('Fixie', 'fixie', 21.0),
-  ('Fixie schnell', 'fixie', 26.0),
-  ('Rennrad entspannt', 'rennrad', 18.0),
-  ('Rennrad', 'rennrad', 25.0),
-  ('Rennrad schnell', 'rennrad', 32.0),
-  ('Mountainbike entspannt', 'mtb', 12.0),
-  ('Mountainbike', 'mtb', 16.0),
-  ('Mountainbike schnell', 'mtb', 20.0),
   ('Auto', 'auto', 130.0),
+];
+/// Feste Profile vor D-34: werden beim ersten Öffnen einmalig zu eigenen (Name, Tempo, was sie meiden wie vorher, Ticket).
+const _fahrradTreppen = {'fusswege': true, 'treppen': 0.5, 'belag': 0.5, 'bus': true};
+const _rennrad = {'fusswege': true, 'treppen': 1.0, 'belag': 0.8, 'bus': true};
+const _mtb = {'fusswege': true, 'treppen': 0.3, 'bus': true};
+const _klapprad = {'fusswege': true, 'treppen': 0.2, 'belag': 0.5, 'bus_min': 5};
+const _altProfile = <(String, double, Map<String, Object>, bool)>[
+  ('Einrad', 12.0, {}, false),
+  ('Einrad schnell', 15.0, {}, false),
+  ('Klapprad entspannt', 12.0, _klapprad, false),
+  ('Klapprad', 15.0, _klapprad, false),
+  ('Klapprad schnell', 19.0, _klapprad, false),
+  ('Fixie entspannt', 16.0, _fahrradTreppen, true),
+  ('Fixie', 21.0, _fahrradTreppen, true),
+  ('Fixie schnell', 26.0, _fahrradTreppen, true),
+  ('Rennrad entspannt', 18.0, _rennrad, true),
+  ('Rennrad', 25.0, _rennrad, true),
+  ('Rennrad schnell', 32.0, _rennrad, true),
+  ('Mountainbike entspannt', 12.0, _mtb, true),
+  ('Mountainbike', 16.0, _mtb, true),
+  ('Mountainbike schnell', 20.0, _mtb, true),
 ];
 /// Profile vor D-22 (ein Fahrrad = heute Fixie): Werte und Auswahl werden übernommen.
 const _alteNamen = {'Fixie': 'Fahrrad', 'Fixie schnell': 'Fahrrad schnell'};
-/// Anzeigenamen der Custom-Profile, solange keiner selbst vergeben ist (Schlüssel bleiben „Einrad …“, die Kachel nutzt sie).
-const _customTitel = {'entspannt': 'Zu Fuß', 'Einrad': 'Custom 1', 'Einrad schnell': 'Custom 2'};
+/// Anzeigenamen, solange keiner selbst vergeben ist (die Kachel nutzt dieselben).
+const _standardTitel = {'entspannt': 'Zu Fuß', 'Einrad': 'Custom 1', 'Einrad schnell': 'Custom 2'};
 /// Frühere Fuß-Profile (vor D-33): war eines aktiv, gilt sein Tempo als das eine Gehtempo.
 const _alteFuss = {'normal', 'schnell'};
 
@@ -82,25 +66,62 @@ enum GehStufe { entspannter, normal, schneller }
 }
 
 class TempoProfil {
-  final String name, art;
+  final String name, art; // name: fester Schlüssel in tempo.json; art: fuss | eigen | auto
   double kmh;
   DateTime? gemessen; // null = Vorgabe oder von Hand
-  String? titel; // selbst vergebener Name (nur Custom)
+  String? titel; // selbst vergebener Name
+  Map<String, dynamic> meiden; // Stufen 0–1 und Schalter wie in /v1/route (D-34); fehlt = egal
+  bool ticket; // Fahrradticket nötig: nur Anzeige in der App
+  bool fern; // Fernverkehr zulassen
 
-  TempoProfil(this.name, this.art, this.kmh, [this.gemessen]);
+  TempoProfil(this.name, this.art, this.kmh, [this.gemessen]) : meiden = {}, ticket = false, fern = false;
 
-  /// Name für die Anzeige; `name` bleibt der feste Schlüssel in tempo.json.
-  String get anzeige => titel ?? _customTitel[name] ?? name;
-  bool get umbenennbar => art == 'einrad';
-  bool get frei => max.isInfinite; // Tempo per Eingabe statt Regler
+  TempoProfil.json(this.name, Map<String, dynamic> j)
+      : art = j['art'] as String,
+        kmh = (j['kmh'] as num).toDouble(),
+        gemessen = DateTime.tryParse(j['gemessen'] as String? ?? ''),
+        titel = j['titel'] as String?,
+        meiden = Map.of(j['meiden'] as Map<String, dynamic>? ?? const {}),
+        ticket = j['ticket'] == true,
+        fern = j['fern'] == true;
+
+  TempoProfil kopie() => TempoProfil.json(name, jsonDecode(jsonEncode(toJson())) as Map<String, dynamic>);
+
+  /// Name für die Anzeige.
+  String get anzeige => titel ?? _standardTitel[name] ?? name;
+  bool get eigen => art == 'eigen';
+  bool get frei => max.isInfinite; // jedes Tempo über 0
   bool get messbar => art != 'auto'; // das Auto hat ein Höchsttempo, kein Reisetempo
   bool erlaubt(double v) => v > 0 && v >= min && v <= max;
+  IconData get icon => switch (art) {
+        'fuss' => Icons.directions_walk,
+        'auto' => Icons.directions_car,
+        _ => meiden['fusswege'] == true ? Icons.directions_bike : Icons.circle_outlined,
+      };
 
   double get min => grenzen[art]!.$1;
   double get max => grenzen[art]!.$2;
 
-  Map<String, dynamic> toJson() =>
-      {'kmh': kmh, if (gemessen != null) 'gemessen': gemessen!.toIso8601String(), if (titel != null) 'titel': titel};
+  /// Für /v1/route: `art` nur bei festen Regeln (Auto; zu Fuß ohne Meiden wie ältere Apps), sonst entscheidet `meiden`.
+  String? get serverArt => art == 'auto' || (art == 'fuss' && meiden.isEmpty) ? art : null;
+  Map<String, dynamic>? get serverMeiden => meiden.isEmpty && !eigen ? null : meiden;
+
+  double stufe(String k) => (meiden[k] as num?)?.toDouble() ?? 0;
+
+  /// Wert setzen; 0, false und null fallen weg, damit „nichts meiden“ leer bleibt.
+  void setzen(String k, Object? v) => v == null || v == 0 || v == 0.0 || v == false ? meiden.remove(k) : meiden[k] = v;
+
+  bool gleich(TempoProfil o) => name == o.name && jsonEncode(toJson()) == jsonEncode(o.toJson());
+
+  Map<String, dynamic> toJson() => {
+        'art': art,
+        'kmh': kmh,
+        if (gemessen != null) 'gemessen': gemessen!.toIso8601String(),
+        if (titel != null) 'titel': titel,
+        if (meiden.isNotEmpty) 'meiden': meiden,
+        if (ticket) 'ticket': true,
+        if (fern) 'fern': true,
+      };
 }
 
 class Tempo {
@@ -118,7 +139,9 @@ class Tempo {
   static Future<Tempo> oeffnen() async {
     final t = _vorgabe();
     try {
-      t._uebernehmen(jsonDecode(await (await _datei('tempo.json')).readAsString()) as Map<String, dynamic>);
+      final j = jsonDecode(await (await _datei('tempo.json')).readAsString()) as Map<String, dynamic>;
+      t._uebernehmen(j);
+      if (j['v'] != 2) await t.speichern(); // nur einmal umstellen; die Kachel liest die Profile aus der Datei
       return t;
     } on FileSystemException {
       // noch nie gespeichert
@@ -146,14 +169,29 @@ class Tempo {
   /// Gespeicherten Stand in die Vorgaben übernehmen; ältere Stände werden dabei umgestellt.
   void _uebernehmen(Map<String, dynamic> j) {
     final p = j['profile'] as Map<String, dynamic>;
-    final alterFuss = _alteFuss.contains(j['aktiv']) ? j['aktiv'] : null;
-    for (final x in profile) {
-      final e = ((x.name == 'entspannt' ? p[alterFuss] : null) ?? p[x.name] ?? p[_alteNamen[x.name]]) as Map<String, dynamic>?;
-      if (x.umbenennbar) x.titel = e?['titel'] as String?;
-      final v = (e?['kmh'] as num?)?.toDouble();
-      if (v == null || !x.erlaubt(v)) continue;
-      x.kmh = v;
-      x.gemessen = DateTime.tryParse(e!['gemessen'] as String? ?? '');
+    if (j['v'] == 2) {
+      for (final MapEntry(:key, :value) in p.entries) {
+        final x = TempoProfil.json(key, value as Map<String, dynamic>);
+        final i = profile.indexWhere((a) => a.name == key);
+        i >= 0 ? profile[i] = x : profile.add(x);
+      }
+    } else {
+      // Stand vor D-34: die festen Profile werden zu eigenen, das Auto bleibt hinter „Zu Fuß“
+      for (final (n, v, m, ticket) in _altProfile) {
+        profile.add(TempoProfil(n, 'eigen', v)
+          ..meiden = Map.of(m)
+          ..ticket = ticket
+          ..titel = _standardTitel[n]);
+      }
+      final alterFuss = _alteFuss.contains(j['aktiv']) ? j['aktiv'] : null;
+      for (final x in profile) {
+        final e = ((x.name == 'entspannt' ? p[alterFuss] : null) ?? p[x.name] ?? p[_alteNamen[x.name]]) as Map<String, dynamic>?;
+        if (x.eigen) x.titel = e?['titel'] as String? ?? x.titel;
+        final v = (e?['kmh'] as num?)?.toDouble();
+        if (v == null || !x.erlaubt(v)) continue;
+        x.kmh = v;
+        x.gemessen = DateTime.tryParse(e!['gemessen'] as String? ?? '');
+      }
     }
     final a = _alteNamen.entries.where((e) => e.value == j['aktiv']).firstOrNull?.key ?? j['aktiv'];
     if (profile.any((x) => x.name == a)) aktiv = a as String;
@@ -167,84 +205,13 @@ class Tempo {
   static Future<TempoProfil> laden() async => (await oeffnen()).aktuell;
 
   Future<void> speichern() async => (await _datei('tempo.json')).writeAsString(jsonEncode({
+        'v': 2,
         'aktiv': aktiv,
         'profile': {for (final p in profile) p.name: p.toJson()},
       }));
 }
 
 String tempoText(double kmh) => '${kmh.toStringAsFixed(1).replaceAll('.', ',')} km/h';
-
-/// Regler für ein Profil als Bottom Sheet; liefert das neue Tempo oder null, wenn nichts geändert wurde.
-Future<double?> tempoWaehlen(BuildContext context, TempoProfil p) => showModalBottomSheet<double>(
-      context: context,
-      builder: (_) => _TempoBlatt(p),
-    );
-
-class _TempoBlatt extends StatefulWidget {
-  final TempoProfil p;
-  const _TempoBlatt(this.p);
-
-  @override
-  State<_TempoBlatt> createState() => _TempoBlattState();
-}
-
-class _TempoBlattState extends State<_TempoBlatt> {
-  late double _kmh = widget.p.kmh;
-  late final _feld = TextEditingController(text: widget.p.kmh.toString().replaceAll('.', ','));
-
-  @override
-  void dispose() {
-    _feld.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final p = widget.p;
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('${p.anzeige}: ${tempoText(_kmh)}', style: Theme.of(context).textTheme.titleMedium),
-          if (p.frei)
-            TextField(
-              controller: _feld,
-              autofocus: true,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(suffixText: 'km/h', helperText: 'jedes Tempo über 0'),
-              onChanged: (t) {
-                final v = double.tryParse(t.replaceAll(',', '.'));
-                if (v != null && p.erlaubt(v)) setState(() => _kmh = v);
-              },
-            )
-          else
-          Slider(
-            value: _kmh,
-            min: p.min,
-            max: p.max,
-            divisions: ((p.max - p.min) * (p.art == 'auto' ? 0.2 : 10)).round(), // Auto in 5-km/h-Schritten
-            label: tempoText(_kmh),
-            onChanged: (v) => setState(() => _kmh = v),
-          ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: FilledButton(
-              onPressed: () => Navigator.of(context).pop((_kmh - p.kmh).abs() < 0.05 ? null : _kmh),
-              child: const Text('Übernehmen'),
-            ),
-          ),
-        ]),
-      ),
-    );
-  }
-}
-
-IconData artIcon(String art) => switch (art) {
-      'fuss' => Icons.directions_walk,
-      'einrad' => Icons.circle_outlined,
-      'auto' => Icons.directions_car,
-      _ => Icons.directions_bike,
-    };
 
 /// Kurzauswahl Verkehrsmittel (Startseite): alle Profile in einer Liste, Antippen macht es aktiv und speichert.
 /// Liefert das neue aktive Profil oder null, wenn nichts geändert wurde.
@@ -259,22 +226,15 @@ Future<TempoProfil?> verkehrsmittelWaehlen(BuildContext context) async {
       initialChildSize: 0.6,
       maxChildSize: 0.9,
       builder: (ctx, scroll) => ListView(controller: scroll, children: [
-        for (final art in grenzen.keys) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Text(artName[art]!,
-                style: Theme.of(ctx).textTheme.labelLarge?.copyWith(color: Theme.of(ctx).colorScheme.primary)),
+        for (final p in t.profile)
+          ListTile(
+            dense: true,
+            leading: Icon(p.icon),
+            title: Text(p.anzeige),
+            trailing: Text(tempoText(p.kmh)),
+            selected: p.name == t.aktiv,
+            onTap: () => Navigator.pop(ctx, p),
           ),
-          for (final p in t.profile.where((p) => p.art == art))
-            ListTile(
-              dense: true,
-              leading: Icon(artIcon(art)),
-              title: Text(p.anzeige),
-              trailing: Text(tempoText(p.kmh)),
-              selected: p.name == t.aktiv,
-              onTap: () => Navigator.pop(ctx, p),
-            ),
-        ],
       ]),
     ),
   );

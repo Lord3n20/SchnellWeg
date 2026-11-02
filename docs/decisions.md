@@ -452,3 +452,18 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   aus D-31.
 - Keine Server-Änderung, ältere Apps sind nicht betroffen.
 - Status: umgesetzt.
+
+## D-34 Profile in der App, Server bekommt nur „meiden“ (02.11.)
+- Betreiber 02.11.: Alle Tempoeinstellungen gehören als Profile in die App, Fahrradprofile u. Ä. legt er selbst an;
+  an den Server geht nur, was er meiden soll.
+- `meiden` in POST /v1/route ersetzt die feste Art: Stufen 0–1 `treppen`, `belag`, `hauptstrassen`, `steigung`,
+  `faehren`, `dunkel`, `autobahn`, `maut`; Schalter `fusswege` (Fahrradkosten mit Rückfall auf Fußwege), `bus` (nur
+  Schiene), `oev` (nur direkter Weg, ohne Fahrplan und Längengrenze, wie beim Auto); `bus_min`, `umstiege`.
+  Tempo mit `meiden` frei über 0. Das Auto behält `art: auto`, weil es sich nicht über Meiden beschreiben lässt.
+- `art` bleibt für ältere Apps unverändert (Natalia), `art` außer `auto` zusammen mit `meiden` → 400.
+- Fahrradticket ist nur noch ein Hinweis der App (`ticket` im Profil), Fernverkehr ein Schalter im Profil (`fern`).
+- tempo.json bekommt `v: 2`. Ältere Stände werden einmalig umgestellt: alle festen Profile werden eigene mit ihren
+  Tempi, Messungen, Namen und bisherigen Regeln; Neuinstallationen haben nur „Zu Fuß“ und „Auto“. Fahrradtyp folgt
+  aus `belag` (≥ 0,8 Road, 0 Mountain, sonst Hybrid), das Klapprad rechnet damit Hybrid statt City.
+- Neue App braucht einen Server mit D-34 (unbekanntes Feld → 400).
+- Status: umgesetzt.

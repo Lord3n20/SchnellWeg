@@ -14,16 +14,12 @@ const _genauMax = 20.0; // m; ungenauere Positionen zählen nicht
 /// Art → (min, max) m/s in Bewegung; darunter Stehen, darüber etwas anderes (Rennen, Bus, Auto).
 const _bewegung = {
   'fuss': (0.6, 3.0),
-  'einrad': (1.0, 7.0),
-  'klapprad': (1.5, 10.0),
-  'fixie': (1.5, 13.0),
-  'rennrad': (2.0, 14.0),
-  'mtb': (1.5, 11.0),
+  'eigen': (1.0, 14.0),
 };
 const _lueckeMax = 5000.0; // ms; größere Lücken im GPS werden nicht überbrückt
 const _zeitMin = Duration(minutes: 2), _streckeMin = 150.0;
 
-/// Unterpunkt „Tempo“: Profile auswählen, von Hand setzen oder messen.
+/// Unterpunkt „Profile“: auswählen, anlegen, bearbeiten, messen, löschen.
 class TempoSeite extends StatefulWidget {
   const TempoSeite({super.key});
 
@@ -54,67 +50,235 @@ class _TempoSeiteState extends State<TempoSeite> {
     });
   }
 
-  Future<void> _vonHand(TempoProfil p) async {
-    final kmh = await tempoWaehlen(context, p);
-    if (kmh == null) return;
-    await _aendern((_) {
-      p.kmh = kmh;
-      p.gemessen = null;
+  /// Bearbeiten oder (neu) anlegen; gespeichert wird erst beim Übernehmen.
+  Future<void> _bearbeiten(TempoProfil p, {bool neu = false}) async {
+    final x = await Navigator.of(context).push<TempoProfil>(MaterialPageRoute(builder: (_) => ProfilSeite(p.kopie())));
+    if (x == null) return;
+    await _aendern((t) {
+      if (neu) {
+        t.profile.add(x);
+      } else {
+        t.profile[t.profile.indexWhere((a) => a.name == x.name)] = x;
+      }
     });
   }
 
-  Future<void> _umbenennen(TempoProfil p) async {
-    final c = TextEditingController(text: p.anzeige);
-    final n = await showDialog<String>(
+  Future<void> _loeschen(TempoProfil p) async {
+    final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Umbenennen'),
-        content: TextField(controller: c, autofocus: true, maxLength: 24, onSubmitted: (v) => Navigator.pop(ctx, v)),
+        title: Text('„${p.anzeige}“ löschen?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Abbrechen')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, c.text), child: const Text('OK')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Abbrechen')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Löschen')),
         ],
       ),
     );
-    if (n == null) return;
-    await _aendern((_) => p.titel = n.trim().isEmpty ? null : n.trim()); // leer = Standardname
+    if (ok != true) return;
+    await _aendern((t) {
+      t.profile.remove(p);
+      if (t.aktiv == p.name) t.aktiv = 'entspannt';
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final t = _t;
     return Scaffold(
-      appBar: AppBar(title: const Text('Tempo')),
+      appBar: AppBar(title: const Text('Profile')),
+      floatingActionButton: t == null
+          ? null
+          : FloatingActionButton.extended(
+              icon: const Icon(Icons.add),
+              label: const Text('Profil'),
+              onPressed: () => _bearbeiten(TempoProfil('p${DateTime.now().millisecondsSinceEpoch}', 'eigen', 15), neu: true),
+            ),
       body: t == null
           ? const Center(child: CircularProgressIndicator())
-          : ListView(children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: Text('Das ausgewählte Profil gilt für Wege zu Haltestellen, Umstiege und direkte Wege; '
-                    'die Verbindung mit der frühesten Ankunft steht oben. '
-                    'Zum Kalibrieren ein Profil messen: ein paar Minuten in diesem Tempo unterwegs sein.'),
+          : ListView(padding: const EdgeInsets.only(bottom: 88), children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Text('Das ausgewählte Profil gilt für Wege zu Haltestellen, Umstiege und direkte Wege. '
+                    'Name und Tempo bleiben auf dem Handy, der Server erfährt nur das Tempo und was er meiden soll.'),
               ),
-              for (final art in grenzen.keys) ...[
-                _Ueberschrift(artName[art]!, artInfo[art]),
-                for (final p in t.profile.where((p) => p.art == art)) ListTile(
-                  leading: Icon(p.name == t.aktiv ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                      color: p.name == t.aktiv ? Theme.of(context).colorScheme.primary : null),
-                  title: Text(p.anzeige),
-                  subtitle: Text(!p.messbar ? 'höchstens ${tempoText(p.kmh)}' : '${tempoText(p.kmh)} · '
-                      '${p.gemessen == null ? 'nicht gemessen' : 'gemessen am ${p.gemessen!.day}.${p.gemessen!.month}.'}'),
-                  onTap: () => _aendern((t) => t.aktiv = p.name),
-                  trailing: PopupMenuButton<String>(
-                    onSelected: (w) => switch (w) { 'messen' => _messen(p), 'name' => _umbenennen(p), _ => _vonHand(p) },
-                    itemBuilder: (_) => [
-                      if (p.messbar) const PopupMenuItem(value: 'messen', child: ListTile(leading: Icon(Icons.gps_fixed), title: Text('Messen'))),
-                      const PopupMenuItem(value: 'hand', child: ListTile(leading: Icon(Icons.tune), title: Text('Von Hand einstellen'))),
-                      if (p.umbenennbar)
-                        const PopupMenuItem(value: 'name', child: ListTile(leading: Icon(Icons.edit), title: Text('Umbenennen'))),
-                    ],
+              for (final p in t.profile) ListTile(
+                leading: Icon(p.name == t.aktiv ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                    color: p.name == t.aktiv ? Theme.of(context).colorScheme.primary : null),
+                title: Text(p.anzeige),
+                subtitle: Text(!p.messbar ? 'höchstens ${tempoText(p.kmh)}' : '${tempoText(p.kmh)} · '
+                    '${p.gemessen == null ? 'nicht gemessen' : 'gemessen am ${p.gemessen!.day}.${p.gemessen!.month}.'}'),
+                onTap: () => _aendern((t) => t.aktiv = p.name),
+                trailing: PopupMenuButton<String>(
+                  onSelected: (w) => switch (w) { 'messen' => _messen(p), 'weg' => _loeschen(p), _ => _bearbeiten(p) },
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(value: 'hand', child: ListTile(leading: Icon(Icons.tune), title: Text('Bearbeiten'))),
+                    if (p.messbar) const PopupMenuItem(value: 'messen', child: ListTile(leading: Icon(Icons.gps_fixed), title: Text('Messen'))),
+                    if (p.eigen) const PopupMenuItem(value: 'weg', child: ListTile(leading: Icon(Icons.delete_outline), title: Text('Löschen'))),
+                  ],
+                ),
+              ),
+            ]),
+    );
+  }
+}
+
+/// Stufen, was die Route meiden soll: Schlüssel wie in /v1/route, Text, für welche Profile.
+const _stufen = [
+  ('treppen', 'Treppen', {'fuss', 'eigen'}),
+  ('belag', 'Schlechter Belag (Schotter, Feldwege)', {'fuss', 'eigen', 'auto'}),
+  ('hauptstrassen', 'Hauptstraßen', {'eigen'}),
+  ('steigung', 'Steigungen', {'fuss', 'eigen'}),
+  ('dunkel', 'Unbeleuchtete Wege', {'fuss', 'eigen'}),
+  ('faehren', 'Fähren', {'fuss', 'eigen', 'auto'}),
+  ('autobahn', 'Autobahn', {'auto'}),
+  ('maut', 'Mautstraßen', {'auto'}),
+];
+
+/// Ein Profil bearbeiten: liefert die geänderte Kopie beim Übernehmen.
+class ProfilSeite extends StatefulWidget {
+  final TempoProfil p;
+  const ProfilSeite(this.p, {super.key});
+
+  @override
+  State<ProfilSeite> createState() => _ProfilSeiteState();
+}
+
+class _ProfilSeiteState extends State<ProfilSeite> {
+  late final TempoProfil p = widget.p;
+  late final _name = TextEditingController(text: p.titel ?? (p.eigen ? '' : p.anzeige));
+  late final _tempo = TextEditingController(text: p.kmh.toString().replaceAll('.', ','));
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _tempo.dispose();
+    super.dispose();
+  }
+
+  double? get _kmh {
+    final v = double.tryParse(_tempo.text.replaceAll(',', '.'));
+    return v != null && p.erlaubt(v) ? v : null;
+  }
+
+  bool get _ok => _kmh != null && (!p.eigen || _name.text.trim().isNotEmpty);
+
+  void _uebernehmen() {
+    if ((_kmh! - p.kmh).abs() >= 0.05) {
+      p.kmh = _kmh!;
+      p.gemessen = null;
+    }
+    if (p.eigen) p.titel = _name.text.trim();
+    Navigator.pop(context, p);
+  }
+
+  Widget _schalter(String titel, String k, {String? unter}) => SwitchListTile(
+        title: Text(titel),
+        subtitle: unter == null ? null : Text(unter),
+        value: p.meiden[k] == true,
+        onChanged: (v) => setState(() => p.setzen(k, v)),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final rad = p.meiden['fusswege'] == true, auto = p.art == 'auto', oev = p.meiden['oev'] == true;
+    final grenze = p.frei ? 'jedes Tempo über 0' : '${tempoText(p.min)} bis ${tempoText(p.max)}';
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(p.eigen ? 'Eigenes Profil' : p.anzeige),
+        actions: [TextButton(onPressed: _ok ? _uebernehmen : null, child: const Text('Übernehmen'))],
+      ),
+      body: ListView(padding: const EdgeInsets.only(bottom: 24), children: [
+        if (p.eigen)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: TextField(
+              controller: _name,
+              maxLength: 24,
+              decoration: const InputDecoration(labelText: 'Name', helperText: 'z. B. Rennrad, Inliner'),
+              onChanged: (_) => setState(() {}),
+            ),
+          ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: TextField(
+            controller: _tempo,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(labelText: auto ? 'Höchsttempo' : 'Tempo', suffixText: 'km/h', helperText: grenze),
+            onChanged: (_) => setState(() {}),
+          ),
+        ),
+        const _Ueberschrift('Meiden', 'Links egal, rechts so weit wie möglich'),
+        if (p.eigen)
+          _schalter('Fußwege', 'fusswege', unter: 'Route über Straßen und Radwege; Fußwege nur, wenn es sonst keinen Weg gibt'),
+        for (final (k, text, fuer) in _stufen)
+          if (fuer.contains(p.art) && !(k == 'hauptstrassen' && !rad) && !(k == 'dunkel' && rad))
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(children: [
+                Expanded(flex: 2, child: Text(text)),
+                Expanded(
+                  flex: 3,
+                  child: Slider(
+                    value: p.stufe(k).clamp(0.0, 1.0),
+                    divisions: 10,
+                    onChanged: (v) => setState(() => p.setzen(k, v)),
                   ),
                 ),
-              ],
-            ]),
+              ]),
+            ),
+        if (!auto) ...[
+          const _Ueberschrift('Bus und Bahn'),
+          _schalter('Bus und Bahn ganz meiden', 'oev', unter: 'Nur der direkte Weg, auch über lange Strecken'),
+          if (!oev) ...[
+            _schalter('Busse meiden', 'bus', unter: 'Nur Schiene'),
+            if (p.meiden['bus'] != true)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(children: [
+                  Expanded(
+                    flex: 2,
+                    child: Text((p.meiden['bus_min'] as int? ?? 0) == 0
+                        ? 'Bus muss nichts sparen'
+                        : 'Bus nur, wenn er ${p.meiden['bus_min']} min spart'),
+                  ),
+                  Expanded(
+                    flex: 3,
+                    child: Slider(
+                      value: (p.meiden['bus_min'] as int? ?? 0).toDouble(),
+                      max: 30,
+                      divisions: 30,
+                      onChanged: (v) => setState(() => p.setzen('bus_min', v.round())),
+                    ),
+                  ),
+                ]),
+              ),
+            ListTile(
+              title: const Text('Umstiege'),
+              trailing: DropdownButton<int?>(
+                value: p.meiden['umstiege'] as int?,
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('egal')),
+                  for (final n in [0, 1, 2, 3]) DropdownMenuItem(value: n, child: Text('höchstens $n')),
+                ],
+                onChanged: (v) => setState(() => v == null ? p.meiden.remove('umstiege') : p.meiden['umstiege'] = v),
+              ),
+            ),
+            SwitchListTile(
+              title: const Text('Fernverkehr meiden'),
+              subtitle: const Text('ICE, IC und andere, die das Deutschlandticket nicht abdeckt'),
+              value: !p.fern,
+              onChanged: (v) => setState(() => p.fern = !v),
+            ),
+            if (p.eigen)
+              SwitchListTile(
+                title: const Text('Fahrradticket nötig'),
+                subtitle: const Text('Nur ein Hinweis in der App, der Server erfährt das nicht'),
+                value: p.ticket,
+                onChanged: (v) => setState(() => p.ticket = v),
+              ),
+          ],
+        ],
+      ]),
     );
   }
 }

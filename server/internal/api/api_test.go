@@ -448,3 +448,67 @@ func TestAuto(t *testing.T) {
 		t.Errorf("ohne Valhalla: Code %d", w.Code)
 	}
 }
+
+func TestMeidenKosten(t *testing.T) {
+	m := Meiden{Treppen: 0.5, Belag: 0.8, Hauptstrassen: 1, Steigung: 0.5, Fusswege: true}
+	k := m.art().kosten(5, 20, 0.25)
+	if len(k) != 2 || k[0].Costing != "bicycle" || k[1].Costing != "pedestrian" {
+		t.Fatalf("Kostenarten: %+v", k)
+	}
+	rad, fuss := k[0].Opts["bicycle"].(map[string]any), k[1].Opts["pedestrian"].(map[string]any)
+	if rad["bicycle_type"] != "Road" || rad["avoid_bad_surfaces"] != 0.8 || rad["use_roads"] != 0.0 || rad["use_hills"] != 0.25 {
+		t.Errorf("Rad: %+v", rad)
+	}
+	if fuss["step_penalty"] != 300.0 || fuss["use_hills"] != 0.25 {
+		t.Errorf("Fuß: %+v", fuss)
+	}
+	// Ohne Fußwege meiden nur Fußgänger-Kosten, ohne Stufen Valhallas Standard
+	k = (&Meiden{}).art().kosten(5, 15, 0.3)
+	if o := k[0].Opts["pedestrian"].(map[string]any); len(k) != 1 || len(o) != 1 || (&Meiden{}).art().Rad {
+		t.Errorf("leer: %+v", k)
+	}
+	if a := (&Meiden{BusMin: 5, NurBahn: true}).art(); !a.Rad || !a.NurBahn || a.BusMalus != 5*time.Minute {
+		t.Errorf("Bus: %+v", a)
+	}
+}
+
+func TestMeidenAnfrage(t *testing.T) {
+	var gefragt []vhRouteReq
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var q vhRouteReq
+		json.NewDecoder(r.Body).Decode(&q)
+		gefragt = append(gefragt, q)
+		if q.Costing == "bicycle" { // kein Radweg: Rückfall auf Fußwege
+			w.WriteHeader(400)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"trip": map[string]any{
+			"legs": []map[string]string{{"shape": "form"}}, "summary": map[string]float64{"time": 600, "length": 2}}})
+	}))
+	defer ts.Close()
+	s := &Server{Valhalla: &Valhalla{URL: ts.URL, Timeout: time.Second, Client: ts.Client()}}
+	body := `{"from":{"lat":50.77,"lon":6.09},"to":{"lat":50.94,"lon":6.96},"time":"2026-10-28T08:00:00+01:00",%s}`
+
+	for _, schlecht := range []string{`"art":"fixie","meiden":{}`, `"meiden":{"treppen":2}`, `"meiden":{"bus_min":-1}`, `"meiden":{"umstiege":-1}`, `"meiden":{},"kmh":0`} {
+		if w, _ := post(s, fmt.Sprintf(body, schlecht)); w.Code != 400 {
+			t.Errorf("%s: Code %d", schlecht, w.Code)
+		}
+	}
+	// ÖV meiden: direkter Weg ohne Fahrplan, jedes Tempo, Rückfall auf die zweite Kostenart
+	w, r := post(s, fmt.Sprintf(body, `"kmh":60,"meiden":{"oev":true,"fusswege":true}`))
+	if w.Code != 200 || len(r.Journeys) != 1 || r.Journeys[0].Legs[0].Mode != "walk" {
+		t.Fatalf("Code %d, %s", w.Code, w.Body)
+	}
+	if len(gefragt) != 2 || gefragt[1].Costing != "pedestrian" || gefragt[0].Locations[0].SearchCutoff != autoFangM {
+		t.Errorf("Valhalla-Anfragen: %+v", gefragt)
+	}
+	// Auto: meiden geht in die Autokosten
+	gefragt = nil
+	if w, _ := post(s, fmt.Sprintf(body, `"art":"auto","kmh":100,"meiden":{"autobahn":1,"maut":1,"belag":0.5}`)); w.Code != 200 {
+		t.Fatalf("Auto: %s", w.Body)
+	}
+	o := gefragt[0].CostingOptions["auto"].(map[string]any)
+	if o["use_highways"] != 0.0 || o["use_tolls"] != 0.0 || o["exclude_unpaved"] != true || o["top_speed"] != 100.0 {
+		t.Errorf("Auto: %+v", o)
+	}
+}

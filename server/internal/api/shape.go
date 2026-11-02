@@ -60,11 +60,7 @@ func (v *Valhalla) Route(ctx context.Context, aLat, aLon, bLat, bLon float64, ks
 }
 
 func (v *Valhalla) route(ctx context.Context, aLat, aLon, bLat, bLon float64, k Kosten, zeit time.Duration) (WalkRoute, error) {
-	fang := 0
-	if k.Costing == "auto" {
-		fang = autoFangM
-	}
-	req := vhRouteReq{Locations: []routeLoc{{aLat, aLon, fang}, {bLat, bLon, fang}}, Costing: k.Costing, CostingOptions: k.Opts,
+	req := vhRouteReq{Locations: []routeLoc{{aLat, aLon, k.FangM}, {bLat, bLon, k.FangM}}, Costing: k.Costing, CostingOptions: k.Opts,
 		DirectionsType: "none"}
 	body, _ := json.Marshal(req)
 	ctx, cancel := context.WithTimeout(ctx, zeit)

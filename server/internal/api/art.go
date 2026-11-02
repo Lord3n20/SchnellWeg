@@ -19,7 +19,8 @@ type Art struct {
 	// BusMalus: Verbindungen mit Bus entfallen, wenn sie nicht mindestens so viel früher ankommen als der direkte
 	// Weg (Klapprad: ein paar Stationen Bus sind kaum schneller als selbst fahren, Betreiber 28.10.).
 	BusMalus time.Duration
-	Auto     bool // Autofahrt von Tür zu Tür ohne ÖV, kmh = Höchsttempo (D-32)
+	Auto     bool    // Autofahrt von Tür zu Tür ohne ÖV, kmh = Höchsttempo (D-32)
+	Meiden   *Meiden // Profil aus der App statt fester Art (D-34)
 }
 
 var arten = map[string]Art{
@@ -40,6 +41,7 @@ type Kosten struct {
 	Costing string
 	Opts    map[string]any
 	Faktor  float64
+	FangM   int // Fangradius auf die Straße in m, 0 = Valhallas Standard (35 km)
 }
 
 // kosten liefert die Valhalla-Kostenarten für Art a in der Reihenfolge, in der sie versucht werden.
@@ -49,10 +51,16 @@ func (a Art) kosten(walkKMH, kmh, scale float64) []Kosten {
 	if a.Stufen > 0 {
 		fuss["step_penalty"] = a.Stufen
 	}
-	k := []Kosten{{"pedestrian", map[string]any{"pedestrian": fuss}, scale}}
+	if m := a.Meiden; m != nil {
+		m.fussOpts(fuss)
+	}
+	k := []Kosten{{Costing: "pedestrian", Opts: map[string]any{"pedestrian": fuss}, Faktor: scale}}
 	if a.RadTyp != "" {
 		rad := map[string]any{"bicycle_type": a.RadTyp, "cycling_speed": kmh, "use_roads": 0.6, "avoid_bad_surfaces": a.Belag}
-		k = append([]Kosten{{"bicycle", map[string]any{"bicycle": rad}, 1}}, k...)
+		if m := a.Meiden; m != nil {
+			m.radOpts(rad)
+		}
+		k = append([]Kosten{{Costing: "bicycle", Opts: map[string]any{"bicycle": rad}, Faktor: 1}}, k...)
 	}
 	return k
 }
