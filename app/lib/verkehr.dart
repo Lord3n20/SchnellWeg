@@ -10,12 +10,19 @@ String meldungText(Meldung m) => switch (m.art) {
       _ => '🔴 ${m.gesperrt ? 'Gesperrt' : 'Stau'} ${m.titel}${m.verzMin > 0 ? ' · +${m.verzMin} min' : ''}',
     };
 
+/// Baustellen kommen abschnittsweise: je Name und Richtung eine Zeile.
+List<Meldung> ohneDoppelte(List<Meldung> l) {
+  final gesehen = <String>{};
+  return [for (final m in l) if (m.art != 'baustelle' || gesehen.add('${m.titel}|${m.richtung}')) m];
+}
+
 /// Kurzfassung in der Verbindungsliste: Staus und Sperrungen einzeln, Baustellen als Anzahl.
 List<String> verkehrKurz(Verbindung v) {
   if (!v.auto) return const [];
   if (!v.verkehrOk) return const ['Ohne aktuelle Verkehrslage'];
-  final wichtig = v.verkehr.where((m) => m.art != 'baustelle').toList();
-  final baustellen = v.verkehr.length - wichtig.length;
+  final alle = ohneDoppelte(v.verkehr);
+  final wichtig = alle.where((m) => m.art != 'baustelle').toList();
+  final baustellen = alle.length - wichtig.length;
   return [
     for (final m in wichtig.take(3)) meldungText(m),
     if (wichtig.length > 3) 'und ${wichtig.length - 3} weitere Meldungen',
@@ -36,7 +43,7 @@ class VerkehrListe extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        for (final m in v.verkehr)
+        for (final m in ohneDoppelte(v.verkehr))
           Padding(
             padding: const EdgeInsets.only(bottom: 6),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

@@ -71,6 +71,7 @@ void main() {
         {'art': 'stau', 'titel': 'A4 X - Y', 'verz_min': 7, 'lat': 50.8, 'lon': 6.1},
         {'art': 'baustelle', 'titel': 'A4 Y - Z', 'max_kmh': 80, 'lat': 50.8, 'lon': 6.2},
         {'art': 'baustelle', 'titel': 'A4 Z - Q', 'lat': 50.8, 'lon': 6.3},
+        {'art': 'baustelle', 'titel': 'A4 Z - Q', 'lat': 50.8, 'lon': 6.31},
       ]
     }));
     expect(verkehrKurz(v), ['🔴 Stau A4 X - Y · +7 min', '🚧 2 Baustellen eingerechnet']);
