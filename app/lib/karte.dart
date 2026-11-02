@@ -272,6 +272,19 @@ class _KarteState extends State<Karte> {
         ],
       ),
       if (_fehlt != null) Positioned(top: 8, left: 8, right: 8, child: _RegionLaden(_fehlt!)),
+      if (widget.standort != null)
+        Positioned(
+          right: 8,
+          bottom: 28, // über dem Quellenhinweis
+          child: IconButton.filledTonal(
+            tooltip: 'Zurück zum Standort',
+            icon: const Icon(Icons.my_location),
+            onPressed: () {
+              _folgen = true;
+              _ausschnitt();
+            },
+          ),
+        ),
     ]);
   }
 }

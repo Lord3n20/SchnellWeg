@@ -3,7 +3,7 @@
 // „-> X“ bzw. „(Li.33)“ = Richtung, H1…H15 bzw. ein Großbuchstabe = Bahnsteig. Die Abfahrten zeigen das Ziel
 // ohnehin, also fällt das für die Anzeige weg; die Server-Daten bleiben roh.
 
-final _richtungKlammer = RegExp(r'\s*\(\s*->[^)]*\)');
+final _richtungKlammer = RegExp(r'\s*\((?:\s*Li\.\s*\d+[a-zA-Z]?)?\s*->[^)]*\)'); // auch „(Li.13 -> TURM)“
 final _richtung = RegExp(r'\s*->.*$');
 final _linie = RegExp(r'\s*\((Li\.\s*)?\d+[a-zA-Z]?\)');
 final _lwsw = RegExp(r'\s+(lw|sw)\b');

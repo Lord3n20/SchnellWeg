@@ -1,6 +1,7 @@
 // Standort über Androids eigenen LocationManager (MainActivity.kt) statt geolocator & Co.,
 // die die Play-Dienste einbinden. Kein Dauer-Tracking: eine Position, wenn die App danach fragt;
-// laufend nur während des Tempo-Messgangs (Seite offen, Bildschirm an), nichts wird gespeichert.
+// laufend nur während des Tempo-Messgangs und solange die Startseite eine Route zeigt (Seite offen, Bildschirm an,
+// D-36), nichts wird gespeichert.
 import 'package:flutter/services.dart';
 
 class Position {
@@ -24,7 +25,7 @@ class Standort {
 
   static const _laufend = EventChannel('schnellweg/standort/laufend');
 
-  /// GPS etwa jede Sekunde, solange abonniert (nur für den Messgang). Fehler: „erlaubnis“ oder „aus“.
+  /// GPS etwa jede Sekunde, solange abonniert (Messgang, Route auf der Startseite). Fehler: „erlaubnis“ oder „aus“.
   static Stream<Fix> laufend() => _laufend.receiveBroadcastStream().map((e) {
         final m = (e as Map).cast<String, double>();
         return Fix(m['lat']!, m['lon']!, m['genau']!, m['zeit']!, m['tempo']!);

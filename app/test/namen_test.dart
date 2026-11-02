@@ -35,4 +35,8 @@ void main() {
     expect(bahnsteig('Aachen Hbf'), isNull);
     expect(bahnsteig('Würselen Kaninsberg lw -> Haaren'), isNull);
   });
+  test('Liniennummer und Richtung in einer Klammer', () {
+    expect(haltName('Königstraße lw (Li.13 -> TURM)'), 'Königstraße');
+    expect(haltSchluessel('Königstraße lw (Li.13 -> TURM)'), haltSchluessel('Königstraße sw'));
+  });
 }

@@ -35,7 +35,7 @@ class Details extends StatelessWidget {
   Widget build(BuildContext context) {
     return UeberSperrbildschirm(child: Scaffold(
       appBar: AppBar(
-        title: Text('${_uhr(v.ab)} – ${_uhr(v.ankunft)} · ${v.ankunft.difference(v.ab).inMinutes} min'),
+        title: Text('${_uhr(v.ab)} – ${_uhr(v.ankunft)} · ${minuten(v.ankunft.difference(v.ab))} min'),
         actions: [if (v.fahrten > 0) ErinnerungKnopf(v: v, halte: halte)],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(20),

@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
 import 'abfahrten.dart';
+import 'abweichung.dart';
 import 'api.dart';
 import 'details.dart';
 import 'einstellungen.dart';
@@ -55,6 +56,8 @@ class _Gruppe {
 }
 
 /// Angetippte Haltestelle: ersetzt unten die Liste bzw. die Verbindungen, die Karte bleibt sichtbar.
+const _neuAbstand = Duration(seconds: 15); // höchstens so oft neu berechnen, wenn man abgewichen ist
+
 class _GewaehlterHalt {
   final Ort ort;
   final List<String> ids;
@@ -93,6 +96,10 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
   List<Strecke> _strecken = [];
   Map<String, Halt> _halteDerVerbindung = {};
   List<LatLng> _naheHalte = [];
+  StreamSubscription<Fix>? _gps; // nur solange eine Route sichtbar ist, die man gerade abläuft oder abfährt (D-36)
+  Abweichung? _abweichung;
+  DateTime? _wegBis; // danach sitzt man in der ersten Fahrt, deren Linie nur von Halt zu Halt gerade ist
+  DateTime? _neuBerechnet;
   TempoProfil _tempo = TempoProfil('entspannt', 'fuss', standardKmh); // bis tempo.json gelesen ist
 
   @override
@@ -115,12 +122,14 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
   void didPushNext() {
     _verdeckt = true;
     _timer?.cancel();
+    _wegStopp();
   }
 
   @override
   void didPopNext() {
     _verdeckt = false;
     _aktualisieren();
+    _wegBeobachten();
   }
 
   @override
@@ -128,6 +137,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     seitenBeobachter.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
+    _wegStopp();
     _api?.schliessen();
     super.dispose();
   }
@@ -135,11 +145,15 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
   @override
   void didChangeAppLifecycleState(AppLifecycleState s) {
     if (s == AppLifecycleState.resumed) {
-      if (!_verdeckt) _aktualisieren(standortNeu: true);
+      if (!_verdeckt) {
+        _aktualisieren(standortNeu: true);
+        _wegBeobachten();
+      }
       _tempoNeuLesen(); // die Schnelleinstellung „Verkehrsmittel“ kann es geändert haben
       if (_api != null) KartenLager.instanz.start(_api!); // prüft höchstens täglich
     } else if (s == AppLifecycleState.paused || s == AppLifecycleState.hidden) {
       _timer?.cancel();
+      _wegStopp();
     }
   }
 
@@ -244,6 +258,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
   }
 
   void _zielWeg() => setState(() {
+        _wegStopp();
         _ziel = null;
         _verbindungen = null;
         _routeHinweis = null;
@@ -286,6 +301,42 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
       _strecken = strecken;
       _halteDerVerbindung = halte;
     });
+    _wegBeobachten();
+  }
+
+  void _wegStopp() {
+    _gps?.cancel();
+    _gps = null;
+    _abweichung = null;
+  }
+
+  /// GPS mitlaufen lassen, solange die gewählte Verbindung gerade läuft: ohne Fahrt bis zum Ziel, mit Fahrt nur auf dem
+  /// Fußweg zum ersten Halt. Geplante Fahrten (andere Zeit gewählt) und verdeckte Seiten brauchen das nicht.
+  void _wegBeobachten() {
+    _wegStopp();
+    final v = _verbindungen;
+    if (v == null || _gewaehlt >= v.length || _zeit != null || _verdeckt || _strecken.isEmpty) return;
+    final erste = v[_gewaehlt].abschnitte.where((a) => a.fahrt).firstOrNull;
+    if (erste != null && !_strecken.first.fuss) return; // beginnt direkt mit der Fahrt
+    final weg = erste == null ? [for (final s in _strecken) ...s.punkte] : _strecken.first.punkte;
+    if (erste != null && !DateTime.now().isBefore(erste.ab)) return;
+    _wegBis = erste?.ab;
+    _abweichung = Abweichung(weg, _tempo.art == 'auto' ? schwelleAuto : schwelleSonst);
+    _gps = Standort.laufend().listen(_fix, onError: (_) => _wegStopp()); // keine Erlaubnis oder GPS aus: dann eben nicht
+  }
+
+  void _fix(Fix f) {
+    final a = _abweichung, ziel = _ziel;
+    if (a == null || ziel == null || !mounted) return;
+    final bis = _wegBis;
+    if ((bis != null && DateTime.now().isAfter(bis)) || abstandZumWeg(f.lat, f.lon, [a.weg.last]) < 30) return _wegStopp();
+    final p = _pos;
+    if (p == null || entfernung(p.lat, p.lon, f.lat, f.lon) > 10) setState(() => _pos = f); // Punkt auf der Karte läuft mit
+    if (!a.pruefen(f.lat, f.lon, f.genau)) return;
+    final zuletzt = _neuBerechnet;
+    if (zuletzt != null && DateTime.now().difference(zuletzt) < _neuAbstand) return;
+    _neuBerechnet = DateTime.now();
+    _routeBerechnen(von: f);
   }
 
   /// Verbindung auf der Karte zeigen und die Detailseite öffnen.
@@ -305,15 +356,19 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     ));
   }
 
-  Future<void> _routeBerechnen({bool lang = false}) async {
+  /// [von]: abgewichen, ab hier neu berechnen. Die alte Route bleibt stehen, bis die neue da ist, und bleibt bei einem Fehler.
+  Future<void> _routeBerechnen({bool lang = false, Position? von}) async {
     final ziel = _ziel;
     if (ziel == null || _api == null) return;
-    setState(() {
-      _verbindungen = null;
-      _routeHinweis = null;
-      _langFrage = false;
-    });
-    final p = await Standort.holen() ?? _pos;
+    if (von == null) {
+      _wegStopp();
+      setState(() {
+        _verbindungen = null;
+        _routeHinweis = null;
+        _langFrage = false;
+      });
+    }
+    final p = von ?? await Standort.holen() ?? _pos;
     if (p == null) return setState(() => _routeHinweis = 'Kein Standort (Berechtigung oder GPS aus?)');
     _pos = p;
     try {
@@ -321,7 +376,8 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
       // früheste Ankunft oben; bei Gleichstand bleibt die Server-Reihenfolge
       final v = [for (final (i, x) in roh.indexed) (i, x)]
         ..sort((a, b) => a.$2.ankunft.compareTo(b.$2.ankunft) != 0 ? a.$2.ankunft.compareTo(b.$2.ankunft) : a.$1 - b.$1);
-      if (!mounted || _ziel != ziel) return;
+      if (!mounted || _ziel != ziel || (von != null && v.isEmpty)) return;
+      if (von != null) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Route neu berechnet')));
       setState(() {
         _verbindungen = [for (final (_, x) in v) x];
         _routeRt = rt;
@@ -331,7 +387,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
       final normal = _verbindungen!.indexWhere((x) => x.eilKmh == null);
       await _waehlen(normal < 0 ? 0 : normal);
     } on ApiFehler catch (e) {
-      if (!mounted || _ziel != ziel) return;
+      if (!mounted || _ziel != ziel || von != null) return;
       setState(() {
         _verbindungen = [];
         _langFrage = e.art == 'fussweg_lang';
@@ -798,7 +854,7 @@ class _VerbindungZeile extends StatelessWidget {
 
     final kopf = [
       '${_uhr(v.ab)} – ${_uhr(v.ankunft)}',
-      '${v.ankunft.difference(v.ab).inMinutes} min',
+      '${minuten(v.ankunft.difference(v.ab))} min',
       v.artText,
     ].join(' · ');
     String zahl(double x) => x.toStringAsFixed(x == x.roundToDouble() ? 0 : 1).replaceAll('.', ',');
