@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -210,6 +211,9 @@ func Load(paths []string, day time.Time, maxWalkM float64) (*Timetable, error) {
 				r.Arr = append(r.Arr, x.arr)
 				r.Dep = append(r.Dep, x.dep)
 			}
+		}
+		if slices.Equal(r.Arr, r.Dep) { // bei drei von vier Mustern; die Zeiten werden nach dem Laden nur gelesen
+			r.Dep = r.Arr
 		}
 		ri := int32(len(tt.Routes))
 		tt.Routes = append(tt.Routes, r)

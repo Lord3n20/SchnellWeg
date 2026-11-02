@@ -181,7 +181,7 @@ class _FahrtState extends State<_Fahrt> {
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 child: Row(children: [
-                  Text('$anzahl ${anzahl == 1 ? 'Halt' : 'Halte'} · ${a.an.difference(a.ab).inMinutes} min',
+                  Text('$anzahl ${anzahl == 1 ? 'Halt' : 'Halte'} · ${minuten(a.an.difference(a.ab))} min',
                       style: TextStyle(color: farbe.outline)),
                   if (namen.isNotEmpty) Icon(_offen ? Icons.expand_less : Icons.expand_more, color: farbe.outline),
                 ]),

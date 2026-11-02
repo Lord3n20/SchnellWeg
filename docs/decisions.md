@@ -555,4 +555,5 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - Fund und Behebung: `Load` nummerierte Muster und Fahrten nach Map-Reihenfolge, zwei Ladevorgänge desselben Fahrplans gaben bei 0,2–0,4 % der Zufallsanfragen andere Wege,
   teils andere Ankunft. Jetzt feste Reihenfolge wie im Feed, bei gleicher Abfahrt zuerst die früher ankommende Fahrt. Zwei Ladevorgänge: 0 von 3000 Anfragen verschieden.
   Gegen die alte Fassung ändern sich 9 von 3000 Anfragen in der Ankunft, in beide Richtungen, also in der Größe des früheren Rauschens. Load auf dem Laptop 5,3 s.
+- Muster mit gleichen Ankunfts- und Abfahrtszeiten (38.483 von 52.308) teilen sich ein Feld: Heap nach dem Laden 146 → 139 MB, bei 3000 Anfragen Ergebnisse bis aufs Byte gleich.
 - Status: umgesetzt.
