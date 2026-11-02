@@ -20,7 +20,7 @@ const artName = {'fuss': 'Zu Fuß', 'eigen': 'Eigenes Profil', 'auto': 'Auto'};
 /// Neue Installation: nur diese; der Rest sind eigene Profile (D-34).
 const _vorgaben = [
   ('entspannt', 'fuss', standardKmh), // ein Gehtempo (D-33); Schlüssel bleibt, die Schnelleinstellung nutzt ihn
-  ('Auto', 'auto', 130.0),
+  ('Auto', 'auto', 120.0),
 ];
 /// Feste Profile vor D-34: werden beim ersten Öffnen einmalig zu eigenen (Name, Tempo, was sie meiden wie vorher, Ticket).
 const _fahrradTreppen = {'fusswege': true, 'treppen': 0.5, 'belag': 0.5, 'bus': true};

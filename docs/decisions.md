@@ -481,5 +481,7 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   nur Kanten `motorway` + `unlimited`, dort gilt `kmh`. Angegebene Limits, Auffahrten und alle anderen Straßen bleiben wie
   von Valhalla; `fixed_speed` schied aus, es gälte auch in der Stadt (23,9 min Aachen–Köln bei 200).
 - Ohne Kantendaten bleibt Valhallas Zeit. Die Route selbst bleibt Valhallas Wahl, sie kennt das höhere Tempo nicht.
-  Beschleunigen, Bremsen und Verkehr sind nicht eingerechnet: Bestzeit auf freier Bahn. Standard 130 wird dadurch auch schneller.
+  Beschleunigen, Bremsen und Verkehr sind nicht eingerechnet.
+- Betreiber 02.11.: Vorgabe für neue Installationen 120 statt 130 km/h, als realistischer Schnitt auf freier Autobahn; höhere Werte
+  bleiben wählbar. Baustellen zählen nur, soweit ihr Limit in OSM steht (Kartenstand, keine Live-Daten).
 - Status: umgesetzt.

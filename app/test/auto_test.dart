@@ -49,6 +49,6 @@ void main() {
     }));
     final t = await Tempo.oeffnen();
     expect((t.aktiv, t.aktuell.kmh, t.aktuell.titel), ('Einrad', 17.0, 'Skates'));
-    expect(t.profile.singleWhere((p) => p.art == 'auto').kmh, 130.0);
+    expect(t.profile.singleWhere((p) => p.art == 'auto').kmh, 120.0);
   });
 }
