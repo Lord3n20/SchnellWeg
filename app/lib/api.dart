@@ -93,6 +93,9 @@ class HaltRef {
         name = j['name'] as String;
 }
 
+/// Dauer in ganzen Minuten, überall gleich gerundet.
+int minuten(Duration d) => (d.inSeconds / 60).round();
+
 class Abschnitt {
   final bool fahrt; // sonst Fußweg oder Autofahrt
   final bool auto; // Autofahrt von Tür zu Tür (D-32)
@@ -241,7 +244,7 @@ class Api {
     final j = jsonDecode(utf8.decode(daten)) as Map<String, dynamic>;
     final out = <String, List<Abfahrt>>{};
     (j['departures'] as Map<String, dynamic>).forEach((id, l) {
-      out[id] = [for (final a in (l as List).cast<Map<String, dynamic>>()) Abfahrt.json(a)];
+      out[id] = [for (final a in ((l as List?) ?? const []).cast<Map<String, dynamic>>()) Abfahrt.json(a)];
     });
     return (out, j['rt'] == true);
   }

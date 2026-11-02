@@ -485,3 +485,19 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - Betreiber 02.11.: Vorgabe für neue Installationen 120 statt 130 km/h, als realistischer Schnitt auf freier Autobahn; höhere Werte
   bleiben wählbar. Baustellen zählen nur, soweit ihr Limit in OSM steht (Kartenstand, keine Live-Daten).
 - Status: umgesetzt.
+
+## D-36 Neu berechnen beim Abweichen (02.11.)
+- Betreiber 02.11.: Weicht man von der Route ab, soll sofort neu berechnet werden. Die App hat keine Navigation im
+  Hintergrund; das GPS läuft nur, solange die Startseite sichtbar ist und die gewählte Verbindung gerade läuft: ohne Fahrt bis
+  30 m vor dem Ziel, mit Fahrt nur auf dem Fußweg bis zur Abfahrt (Fahrten sind von Halt zu Halt gerade, taugen nicht als
+  Vergleich). Nichts wird gespeichert. Ausnahme von „Kein Dauer-Tracking“ in `standort.dart`, begründet durch den Wunsch.
+- Abgewichen heißt: 3 Fixe in Folge mehr als 60 m (Auto) bzw. 40 m plus GPS-Genauigkeit neben dem Weg; Fixe ungenauer als 50 m zählen
+  nicht. Neu höchstens alle 15 s. Die alte Route bleibt stehen, bis die neue da ist, und bleibt bei einem Fehler.
+- Status: umgesetzt.
+
+## D-37 /v1/departures antwortet nie mit null (02.11.)
+- Fund: Halt ohne Abfahrt im Zeitfenster oder unbekannter Halt ergab `null`; die App brach daran ab (`l as List`, kein ApiFehler),
+  die Liste „Haltestellen in der Nähe“ blieb leer, ohne Hinweis und ohne weiteren Abruf. Vorgesehen war `null` als Zeichen,
+  /v1/stops neu zu laden, das hat die App nie umgesetzt.
+- Server liefert jetzt immer `[]`, damit sind auch vorhandene Apps (Natalia) ohne Update sicher; die App verträgt beides.
+- Status: umgesetzt.

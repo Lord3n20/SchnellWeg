@@ -54,7 +54,7 @@ func TestDepartures(t *testing.T) {
 		t.Fatalf("Code %d %s", w.Code, body)
 	}
 	for _, want := range []string{`"rt":true`, `"A":[{"line":"1","dep":"2026-10-28T08:00:00+01:00","trip_id":"t1","dep_rt":"2026-10-28T08:05:00+01:00"}`,
-		`"trip_id":"t2"`, `"B":null`, `"X":null`} {
+		`"trip_id":"t2"`, `"B":[]`, `"X":[]`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("fehlt %s in %s", want, body)
 		}
@@ -193,5 +193,16 @@ func TestMap(t *testing.T) {
 		if c := get(p, nil).Code; c != 404 && c != 503 {
 			t.Fatalf("%s: %d", p, c)
 		}
+	}
+}
+
+func TestAbfahrtenNieNull(t *testing.T) {
+	s := testServer(time.Date(2026, 10, 28, 0, 0, 0, 0, Berlin))
+	w := httptest.NewRecorder()
+	// Weit nach Betriebsschluss hat kein Halt eine Abfahrt, der zweite Halt ist unbekannt
+	body := `{"stops":["A","gibtsnicht"],"time":"2026-10-28T23:59:00+01:00"}`
+	s.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/v1/departures", strings.NewReader(body)))
+	if w.Code != 200 || strings.Contains(w.Body.String(), "null") {
+		t.Errorf("Code %d, %s", w.Code, w.Body)
 	}
 }

@@ -198,10 +198,10 @@ func (s *Server) departures(w http.ResponseWriter, r *http.Request) {
 	for _, id := range req.Stops {
 		si, ok := tt.StopIndex[id]
 		if !ok {
-			out[id] = nil // unbekannt (anderer Fahrplanstand) → App lädt /v1/stops neu
+			out[id] = []depOut{} // unbekannt (anderer Fahrplanstand); nie null: ältere Apps brechen daran ab
 			continue
 		}
-		var list []depOut
+		list := []depOut{} // auch ohne Abfahrt im Zeitfenster eine Liste, nie null
 		for k, ri := range tt.StopRoutes[si] {
 			rr := &tt.Routes[ri]
 			pos := tt.StopPos[si][k]
