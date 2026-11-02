@@ -1,9 +1,14 @@
 package raptor
 
 import (
+	"archive/zip"
+	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Zwei Linien A→B und B→C, Umstieg an B per Fußweg zu B'.
@@ -138,6 +143,52 @@ func TestIsFern(t *testing.T) {
 		"NJ": true, "RJX": true, "IC17": false, "RE4": false, "RB20": false, "S1": false, "E": false, "EW": false, "33": false} {
 		if IsFern(line) != want {
 			t.Errorf("%s: erwartet %v", line, want)
+		}
+	}
+}
+
+// Dasselbe GTFS ergibt bei jedem Laden denselben Fahrplan, auch bei Fahrten mit gleicher Abfahrt.
+func TestLoadDeterministisch(t *testing.T) {
+	stops, trips, times := "stop_id,stop_name,stop_lat,stop_lon\n", "route_id,service_id,trip_id\n", "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n"
+	for i := 0; i < 12; i++ {
+		stops += fmt.Sprintf("s%d,Halt %d,50.%d,6.%d\n", i, i, 100+i, 100+i)
+	}
+	for i := 0; i < 60; i++ {
+		trips += fmt.Sprintf("r,alle,t%d\n", i)
+		a, b := i%12, (i+1+i%3)%12
+		times += fmt.Sprintf("t%d,08:%02d:00,08:%02d:00,s%d,1\nt%d,09:%02d:00,09:%02d:00,s%d,2\n", i, i%4, i%4, a, i, i%7, i%7, b)
+	}
+	pfad := filepath.Join(t.TempDir(), "g.zip")
+	f, err := os.Create(pfad)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := zip.NewWriter(f)
+	for n, inhalt := range map[string]string{
+		"stops.txt": stops, "trips.txt": trips, "stop_times.txt": times,
+		"routes.txt":   "route_id,route_short_name,route_type\nr,1,3\n",
+		"calendar.txt": "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\nalle,1,1,1,1,1,1,1,20200101,20991231\n",
+	} {
+		d, _ := w.Create(n)
+		d.Write([]byte(inhalt))
+	}
+	w.Close()
+	f.Close()
+	tag := time.Date(2026, 11, 3, 0, 0, 0, 0, time.UTC)
+	erst, err := Load([]string{pfad}, tag, 400)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(erst.Routes) < 2 {
+		t.Fatalf("Test braucht mehrere Muster, hat %d", len(erst.Routes))
+	}
+	for i := 0; i < 20; i++ {
+		tt, err := Load([]string{pfad}, tag, 400)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(tt.Routes, erst.Routes) || !reflect.DeepEqual(tt.StopRoutes, erst.StopRoutes) {
+			t.Fatalf("Durchlauf %d: anderer Fahrplan", i)
 		}
 	}
 }

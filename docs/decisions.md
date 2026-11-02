@@ -552,6 +552,7 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - Jetzt eine Liste der gesetzten Labels mit Kette je Halt (`head`, `next`): 8 MB je Router in der Messung (400 Zufallsanfragen über ganz DE).
 - Geprüft auf demselben geladenen Fahrplan, alter gegen neuen Router: 3000 Zufallsanfragen (auch Ticketfilter, Nur-Bahn, Gehtempo), 954 Verbindungen, 0 Abweichungen.
   Anfragen im Mittel 26 → 25 ms auf dem Laptop.
-- Fund, nicht behoben: zwei Ladevorgänge desselben Fahrplans liefern bei 0,2–0,4 % der Zufallsanfragen andere Wege, teils andere Ankunft (Musternummern und Reihenfolge
-  hängen an Map-Iteration in `Load`). Vergleiche von Router-Fassungen deshalb nur im selben Prozess.
+- Fund und Behebung: `Load` nummerierte Muster und Fahrten nach Map-Reihenfolge, zwei Ladevorgänge desselben Fahrplans gaben bei 0,2–0,4 % der Zufallsanfragen andere Wege,
+  teils andere Ankunft. Jetzt feste Reihenfolge wie im Feed, bei gleicher Abfahrt zuerst die früher ankommende Fahrt. Zwei Ladevorgänge: 0 von 3000 Anfragen verschieden.
+  Gegen die alte Fassung ändern sich 9 von 3000 Anfragen in der Ankunft, in beide Richtungen, also in der Größe des früheren Rauschens. Load auf dem Laptop 5,3 s.
 - Status: umgesetzt.

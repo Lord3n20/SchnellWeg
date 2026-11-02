@@ -165,8 +165,10 @@ func Load(paths []string, day time.Time, maxWalkM float64) (*Timetable, error) {
 	}
 
 	// Muster bilden
+	// Reihenfolge wie im Feed, nicht aus der Map: Muster und Fahrten bekommen bei jedem Laden dieselben Nummern, gleiche Anfragen dieselben Wege
 	type pat struct{ trips []*trip }
 	pats := map[string]*pat{}
+	var order []*pat
 	for _, t := range all {
 		var b strings.Builder
 		if t.info.Fern {
@@ -182,13 +184,20 @@ func Load(paths []string, day time.Time, maxWalkM float64) (*Timetable, error) {
 		k := b.String()
 		if pats[k] == nil {
 			pats[k] = &pat{}
+			order = append(order, pats[k])
 		}
 		pats[k].trips = append(pats[k].trips, t)
 	}
 	tt.StopRoutes = make([][]int32, len(tt.Stops))
 	tt.StopPos = make([][]int32, len(tt.Stops))
-	for _, p := range pats {
-		sort.Slice(p.trips, func(i, j int) bool { return p.trips[i].st[0].dep < p.trips[j].st[0].dep })
+	for _, p := range order {
+		sort.SliceStable(p.trips, func(i, j int) bool { // bei gleicher Abfahrt zuerst die früher ankommende
+			a, b := p.trips[i].st, p.trips[j].st
+			if a[0].dep != b[0].dep {
+				return a[0].dep < b[0].dep
+			}
+			return a[len(a)-1].arr < b[len(b)-1].arr
+		})
 		n := len(p.trips[0].st)
 		r := Route{Stops: make([]int32, n), Arr: make([]int32, 0, n*len(p.trips)), Dep: make([]int32, 0, n*len(p.trips)),
 			NTrips: len(p.trips), Trips: make([]TripInfo, 0, len(p.trips)), Fern: p.trips[0].info.Fern, Bahn: p.trips[0].info.Bahn}
@@ -329,7 +338,12 @@ func (tt *Timetable) loadFeed(path, pre string, day time.Time, fern bool) ([]*tr
 			all = append(all, y)
 		}
 	}
-
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].info.ID != all[j].info.ID {
+			return all[i].info.ID < all[j].info.ID
+		}
+		return !all[i].info.PrevDay && all[j].info.PrevDay
+	})
 	return all, nil
 }
 
