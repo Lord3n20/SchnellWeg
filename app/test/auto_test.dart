@@ -77,4 +77,22 @@ void main() {
     expect(verkehrKurz(v), ['🔴 Stau A4 X - Y · +7 min', '🚧 2 Baustellen eingerechnet']);
     expect(meldungText(v.verkehr[1]), '🚧 Baustelle A4 Y - Z · max. 80 km/h');
   });
+
+  test('Umfahrung ist nur ein Angebot: normale Route zuerst, außer sie ist gesperrt', () {
+    Verbindung j(Map<String, dynamic> mehr) => Verbindung.json({
+          'trips': 0,
+          'dep': '2026-11-02T15:00:00+01:00',
+          'arr': '2026-11-02T16:00:00+01:00',
+          'legs': const [],
+          ...mehr,
+        });
+    final normal = j({}), angebot = j({'umfahrung': 'stau'});
+    final zu = j({
+      'verkehr': [
+        {'art': 'sperrung', 'titel': 'A4', 'gesperrt': true, 'lat': 50.8, 'lon': 6.1}
+      ]
+    });
+    expect(normal.rang, lessThan(angebot.rang));
+    expect(angebot.rang, lessThan(zu.rang));
+  });
 }

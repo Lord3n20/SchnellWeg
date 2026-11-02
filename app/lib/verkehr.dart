@@ -21,9 +21,15 @@ List<String> verkehrKurz(Verbindung v) {
   if (!v.auto) return const [];
   if (!v.verkehrOk) return const ['Ohne aktuelle Verkehrslage'];
   final alle = ohneDoppelte(v.verkehr);
+  final angebot = switch (v.umfahrung) {
+    'stau' => ['↪ Umfahrung: spart Zeit, bleibt auf großen Straßen'],
+    'sperrung' => ['↪ Umfährt die Sperrung'],
+    _ => const <String>[],
+  };
   final wichtig = alle.where((m) => m.art != 'baustelle').toList();
   final baustellen = alle.length - wichtig.length;
   return [
+    ...angebot,
     for (final m in wichtig.take(3)) meldungText(m),
     if (wichtig.length > 3) 'und ${wichtig.length - 3} weitere Meldungen',
     if (baustellen > 0) '🚧 ${baustellen == 1 ? '1 Baustelle' : '$baustellen Baustellen'} eingerechnet',

@@ -174,19 +174,20 @@ type stopOut struct {
 }
 
 type legOut struct {
-	Mode     string    `json:"mode"` // walk | ride | drive (Auto, D-32)
-	From     *stopOut  `json:"from"` // null = Start- bzw. Zielort
-	To       *stopOut  `json:"to"`
-	Dep      time.Time `json:"dep"`
-	Arr      time.Time `json:"arr"`
-	Line     string    `json:"line,omitempty"`
-	Headsign string    `json:"headsign,omitempty"`
-	TripID   string    `json:"trip_id,omitempty"`
-	Fern     bool      `json:"fern,omitempty"`  // nicht im Deutschlandticket
-	Rad      bool      `json:"rad,omitempty"`   // Fahrrad fährt mit: Fahrradticket nötig (D-21; nicht beim Klapprad)
-	Risk     bool      `json:"risk,omitempty"`  // Anschluss an diese Fahrt laut Prognose gefährdet
-	Shape    string    `json:"shape,omitempty"` // Fußweg: Wegform (encoded polyline, Genauigkeit 6)
-	Stops    []string  `json:"stops,omitempty"` // Fahrt: Halte-IDs vom Ein- bis zum Ausstieg
+	Mode     string       `json:"mode"` // walk | ride | drive (Auto, D-32)
+	From     *stopOut     `json:"from"` // null = Start- bzw. Zielort
+	To       *stopOut     `json:"to"`
+	Dep      time.Time    `json:"dep"`
+	Arr      time.Time    `json:"arr"`
+	Line     string       `json:"line,omitempty"`
+	Headsign string       `json:"headsign,omitempty"`
+	TripID   string       `json:"trip_id,omitempty"`
+	Fern     bool         `json:"fern,omitempty"`     // nicht im Deutschlandticket
+	Rad      bool         `json:"rad,omitempty"`      // Fahrrad fährt mit: Fahrradticket nötig (D-21; nicht beim Klapprad)
+	Risk     bool         `json:"risk,omitempty"`     // Anschluss an diese Fahrt laut Prognose gefährdet
+	Schritte []schrittOut `json:"schritte,omitempty"` // Weg von Tür zu Tür: Abbiegehinweise
+	Shape    string       `json:"shape,omitempty"`    // Fußweg: Wegform (encoded polyline, Genauigkeit 6)
+	Stops    []string     `json:"stops,omitempty"`    // Fahrt: Halte-IDs vom Ein- bis zum Ausstieg
 	liveOut
 }
 
@@ -198,6 +199,7 @@ type journeyOut struct {
 	RT        bool         `json:"rt,omitempty"`         // mindestens eine Fahrt mit Echtzeit
 	Risk      string       `json:"risk,omitempty"`       // "anschluss" (Umstieg gefährdet) | "ausfall" (Fahrt/Halt fällt aus)
 	Eil       float64      `json:"eil_kmh,omitempty"`    // nur mit diesem Tempo zum ersten Halt erreichbar (D-31)
+	Umfahrung string       `json:"umfahrung,omitempty"`  // Auto: Angebot, das „stau“ oder „sperrung“ umfährt (D-39)
 	Verkehr   []meldungOut `json:"verkehr,omitempty"`    // Auto: Meldungen auf der Route (D-38)
 	VerkehrOK bool         `json:"verkehr_ok,omitempty"` // Auto: Verkehrslage war verfügbar
 	Legs      []legOut     `json:"legs"`

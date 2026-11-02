@@ -40,10 +40,12 @@ const radMinKMH, radMaxKMH = 5.0, 60.0 // Bereich von Valhallas cycling_speed
 
 // Kosten ist eine Valhalla-Kostenart samt Faktor, mit dem ihre Zeiten zur Zeit im gewählten Tempo werden.
 type Kosten struct {
-	Costing string
-	Opts    map[string]any
-	Faktor  float64
-	FangM   int // Fangradius auf die Straße in m, 0 = Valhallas Standard (35 km)
+	Costing  string
+	Opts     map[string]any
+	Faktor   float64
+	FangM    int            // Fangradius auf die Straße in m, 0 = Valhallas Standard (35 km)
+	Schritte bool           // Abbiegehinweise mitliefern (Wege von Tür zu Tür)
+	Polygone [][][2]float64 // Bereiche, die die Route meidet (Umfahrung, D-39)
 }
 
 // kosten liefert die Valhalla-Kostenarten für Art a in der Reihenfolge, in der sie versucht werden.

@@ -3,6 +3,9 @@ import 'dart:math';
 
 import 'package:latlong2/latlong.dart';
 
+import 'api.dart';
+import 'halte_db.dart';
+
 const schwelleAuto = 60.0, schwelleSonst = 40.0; // Meter neben dem Weg, dazu die GPS-Genauigkeit
 const _maxGenau = 50.0; // ungenauer sagt der Fix nichts (Tunnel, Häuserschlucht)
 const _fixeDaneben = 3; // ein Ausreißer allein löst nichts aus
@@ -45,3 +48,28 @@ class Abweichung {
     return ++_daneben >= _fixeDaneben;
   }
 }
+
+/// Der nächste Abbiegehinweis von hier aus und wie weit es bis dahin ist, null ohne Hinweise oder hinter dem letzten.
+(Schritt, double)? naechsterSchritt(List<LatLng> form, List<Schritt> schritte, double lat, double lon) {
+  if (form.isEmpty || schritte.isEmpty) return null;
+  var hier = 0;
+  var best = double.infinity;
+  for (var i = 0; i < form.length; i++) {
+    final d = entfernung(lat, lon, form[i].latitude, form[i].longitude);
+    if (d < best) (best, hier) = (d, i);
+  }
+  for (final s in schritte) {
+    if (s.i <= hier || s.i >= form.length) continue;
+    var meter = best;
+    for (var i = hier; i < s.i; i++) {
+      meter += entfernung(form[i].latitude, form[i].longitude, form[i + 1].latitude, form[i + 1].longitude);
+    }
+    return (s, meter);
+  }
+  return null;
+}
+
+/// „In 350 m“ / „In 2,4 km“, auf ruhige Schritte gerundet, damit die Anzeige nicht flackert.
+String inMetern(double m) => m < 1000
+    ? 'In ${(m / 50).round() * 50} m'
+    : 'In ${(m / 1000).toStringAsFixed(1).replaceAll('.', ',')} km';

@@ -27,12 +27,20 @@ type vhRouteReq struct {
 	Costing        string         `json:"costing"`
 	CostingOptions map[string]any `json:"costing_options"`
 	DirectionsType string         `json:"directions_type"`
+	// DirectionsOptions: Abbiegehinweise auf Deutsch; nur für Wege von Tür zu Tür
+	DirectionsOptions map[string]any `json:"directions_options,omitempty"`
+	ExcludePolygons   [][][2]float64 `json:"exclude_polygons,omitempty"` // Bereiche, die die Route meidet ([lon, lat])
 }
 
 type vhRouteResp struct {
 	Trip struct {
 		Legs []struct {
-			Shape string `json:"shape"`
+			Shape     string `json:"shape"`
+			Maneuvers []struct {
+				Instruction string  `json:"instruction"`
+				Length      float64 `json:"length"` // km
+				Begin       int     `json:"begin_shape_index"`
+			} `json:"maneuvers"`
 		} `json:"legs"`
 		Summary struct {
 			Time   float64 `json:"time"`   // s
@@ -43,9 +51,17 @@ type vhRouteResp struct {
 
 // WalkRoute ist ein Weg von Valhalla: Form, Zeit im gewählten Tempo und Länge.
 type WalkRoute struct {
-	Shape string
-	Sec   float64
-	M     float64
+	Shape    string
+	Sec      float64
+	M        float64
+	Schritte []schrittOut
+}
+
+// schrittOut ist ein Abbiegehinweis: I = Stelle in der Wegform, ab der er gilt.
+type schrittOut struct {
+	Text string `json:"text"`
+	M    int    `json:"m"`
+	I    int    `json:"i"`
 }
 
 // Route holt den Weg zwischen zwei Punkten mit der ersten Kostenart aus ks, die einen findet.
@@ -61,7 +77,10 @@ func (v *Valhalla) Route(ctx context.Context, aLat, aLon, bLat, bLon float64, ks
 
 func (v *Valhalla) route(ctx context.Context, aLat, aLon, bLat, bLon float64, k Kosten, zeit time.Duration) (WalkRoute, error) {
 	req := vhRouteReq{Locations: []routeLoc{{aLat, aLon, k.FangM}, {bLat, bLon, k.FangM}}, Costing: k.Costing, CostingOptions: k.Opts,
-		DirectionsType: "none"}
+		DirectionsType: "none", ExcludePolygons: k.Polygone}
+	if k.Schritte {
+		req.DirectionsOptions = map[string]any{"directions_type": "instructions", "language": "de-DE", "units": "km"}
+	}
 	body, _ := json.Marshal(req)
 	ctx, cancel := context.WithTimeout(ctx, zeit)
 	defer cancel()
@@ -85,7 +104,13 @@ func (v *Valhalla) route(ctx context.Context, aLat, aLon, bLat, bLon float64, k 
 	if len(r.Trip.Legs) != 1 || r.Trip.Legs[0].Shape == "" {
 		return WalkRoute{}, errMatrix
 	}
-	return WalkRoute{r.Trip.Legs[0].Shape, r.Trip.Summary.Time * k.Faktor, r.Trip.Summary.Length * 1000}, nil
+	weg := WalkRoute{Shape: r.Trip.Legs[0].Shape, Sec: r.Trip.Summary.Time * k.Faktor, M: r.Trip.Summary.Length * 1000}
+	for _, m := range r.Trip.Legs[0].Maneuvers {
+		if k.Schritte && m.Instruction != "" {
+			weg.Schritte = append(weg.Schritte, schrittOut{m.Instruction, int(m.Length*1000 + 0.5), m.Begin})
+		}
+	}
+	return weg, nil
 }
 
 type pt struct{ lat, lon float64 }

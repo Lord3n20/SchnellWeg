@@ -93,6 +93,16 @@ class HaltRef {
         name = j['name'] as String;
 }
 
+/// Abbiegehinweis auf einem Weg von Tür zu Tür; [i] = Stelle in der Wegform, ab der er gilt.
+class Schritt {
+  final String text;
+  final int m, i;
+  Schritt.json(Map<String, dynamic> j)
+      : text = j['text'] as String,
+        m = (j['m'] as int?) ?? 0,
+        i = (j['i'] as int?) ?? 0;
+}
+
 /// Dauer in ganzen Minuten, überall gleich gerundet.
 int minuten(Duration d) => (d.inSeconds / 60).round();
 
@@ -108,6 +118,7 @@ class Abschnitt {
   final String wegArt; // womit man den Weg ohne Fahrt zurücklegt: fuss | rad | eigen (Anzeige, D-34)
   final String form; // Fußweg/Auto: Wegform (encoded polyline, Genauigkeit 6), "" = unbekannt
   final List<String> halte; // Fahrt: Halte-IDs vom Ein- bis zum Ausstieg
+  final List<Schritt> schritte;
 
   Abschnitt.json(Map<String, dynamic> j, {bool ticket = false, this.wegArt = 'fuss'})
       : fahrt = j['mode'] == 'ride',
@@ -126,7 +137,8 @@ class Abschnitt {
         faelltAus = j['canceled'] == true,
         entfaellt = j['skipped'] == true,
         form = (j['shape'] as String?) ?? '',
-        halte = (j['stops'] as List?)?.cast<String>() ?? const [];
+        halte = (j['stops'] as List?)?.cast<String>() ?? const [],
+        schritte = [for (final s in ((j['schritte'] as List?) ?? const []).cast<Map<String, dynamic>>()) Schritt.json(s)];
 
   /// Verspätung der Abfahrt in ganzen Minuten, null ohne Echtzeit.
   int? get versp => abRt == null ? null : (abRt!.difference(ab).inSeconds / 60).round();
@@ -159,6 +171,7 @@ class Verbindung {
   final List<Abschnitt> abschnitte;
   final List<Meldung> verkehr;
   final bool verkehrOk; // Verkehrslage war verfügbar
+  final String umfahrung; // "" | stau | sperrung: Angebot statt der normalen Route (D-39)
 
   Verbindung.json(Map<String, dynamic> j, {bool ticket = false, this.wegArt = 'fuss'})
       : fahrten = j['trips'] as int,
@@ -169,10 +182,16 @@ class Verbindung {
         eilKmh = (j['eil_kmh'] as num?)?.toDouble(),
         verkehr = [for (final m in ((j['verkehr'] as List?) ?? const []).cast<Map<String, dynamic>>()) Meldung.json(m)],
         verkehrOk = j['verkehr_ok'] == true,
+        umfahrung = (j['umfahrung'] as String?) ?? '',
         abschnitte = [for (final l in (j['legs'] as List).cast<Map<String, dynamic>>()) Abschnitt.json(l, ticket: ticket, wegArt: wegArt)];
 
   DateTime get ankunft => anRt ?? an;
   bool get auto => abschnitte.any((a) => a.auto);
+  bool get gesperrt => verkehr.any((m) => m.gesperrt);
+
+  /// Reihenfolge in der Liste vor der Ankunftszeit: Eine Umfahrung ist nur ein Angebot und wird nie von selbst gewählt;
+  /// vor ihr steht nur eine Route, die gesperrt ist, hinter ihr (D-39).
+  int get rang => gesperrt ? 2 : (umfahrung.isNotEmpty ? 1 : 0);
 
   /// „direkt“, „1 Umstieg“ … für die Kopfzeilen.
   String get artText => auto

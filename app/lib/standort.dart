@@ -25,8 +25,8 @@ class Standort {
 
   static const _laufend = EventChannel('schnellweg/standort/laufend');
 
-  /// GPS etwa jede Sekunde, solange abonniert (Messgang, Route auf der Startseite). Fehler: „erlaubnis“ oder „aus“.
-  static Stream<Fix> laufend() => _laufend.receiveBroadcastStream().map((e) {
+  /// GPS etwa jede Sekunde, solange abonniert (Messgang, Route auf der Startseite); [bildschirmAn] hält dabei das Display an. Fehler: „erlaubnis“ oder „aus“.
+  static Stream<Fix> laufend({bool bildschirmAn = true}) => _laufend.receiveBroadcastStream(bildschirmAn).map((e) {
         final m = (e as Map).cast<String, double>();
         return Fix(m['lat']!, m['lon']!, m['genau']!, m['zeit']!, m['tempo']!);
       });

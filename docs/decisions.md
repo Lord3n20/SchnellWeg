@@ -514,3 +514,18 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - Fahrzeit: Verzögerung der Staus kommt dazu; in Baustellen gilt `Max. N km/h` aus der Beschreibung, wenn es unter dem sonstigen Tempo liegt.
 - Grenzen: nur Autobahnen. Die Route weicht Staus und Sperrungen nicht aus, die App zeigt sie nur.
 - Status: umgesetzt.
+
+## D-39 Umfahrung nur als Angebot, Abbiegehinweise (02.11.)
+- Betreiber 02.11.: nicht lenken wie Google Maps, Waze oder Apple Karten, weil man dort oft im Stau landet, den die Umleitung selbst erzeugt;
+  umfahren nur, wenn es Zeit spart. Die Umfahrung ist deshalb eine zweite Verbindung, die nie von selbst gewählt wird.
+- Angeboten nur bei Stau ab 5 min, wenn sie mindestens 5 min und 10 % der Fahrzeit spart und höchstens 2 km mehr auf kleinen Straßen fährt
+  (tertiary, unclassified, residential, service). Bei einem Neuberechnen nach Abweichen gilt dasselbe. Über den Verkehr abseits der
+  Autobahn wissen wir nichts, die Ersparnis ist also bestenfalls; darum die Hürde.
+- Ausnahme: wirklich gesperrte Straße. Dann ist die normale Route nicht fahrbar, Zeit- und Straßen-Hürde entfallen und die Umfahrung steht oben.
+  Sperrungen der API sind fast immer einzelne Abfahrten (`isBlocked` false), darum strenger Abgleich: 80 % der Meldung höchstens 25 m auf der
+  Route. Wer nur vorbeifährt, zählt nicht.
+- Technik: `exclude_polygons` als kleine Box (±0,0003°) in der Mitte der Meldung; `use_living_streets` und `use_tracks` 0.
+- Abbiegehinweise: Wege von Tür zu Tür bringen `schritte` mit (Valhalla, de-DE). Die App zeigt sie in den Details und den nächsten über der
+  Karte. Keine Sprachansage.
+- GPS-Stream hielt das Display an (für den Messgang gedacht), das galt mit D-36 auch für jede sichtbare Route. Jetzt nur noch beim Auto.
+- Status: umgesetzt.

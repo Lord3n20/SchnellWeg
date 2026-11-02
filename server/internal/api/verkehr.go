@@ -25,6 +25,10 @@ const (
 	verkehrWarte = 3 * time.Second  // so lange wartet eine Anfrage, danach gilt der vorige Stand
 	verkehrParal = 4
 	meldungM     = 60.0 // so weit neben der Route gilt eine Meldung noch als auf der Route
+	// Sperrungen sind fast immer einzelne Abfahrten: wer nur daran vorbeifährt, darf nicht als gesperrt gelten.
+	sperrungM      = 25.0
+	sperrungAnteil = 0.8
+	meldungAnteil  = 0.5
 )
 
 // Autobahnen im Gebiet der Tiles (config/region.geojson); die Box wirft den Rest dieser Straßen weg.
@@ -221,7 +225,7 @@ func dekodieren(s string) []pt {
 
 // amWeg: liegt p höchstens meldungM neben weg, auf einem Stück, das etwa in Richtung (rx, ry) läuft? Richtungsfahrbahnen
 // liegen oft näher beieinander als die Daten genau sind, deshalb zählt die Richtung.
-func amWeg(p pt, rx, ry float64, weg []pt) (int, bool) {
+func amWeg(p pt, rx, ry float64, weg []pt, meter float64) (int, bool) {
 	mLat, mLon := 111320.0, 111320.0*math.Cos(p.lat*math.Pi/180)
 	for i := 0; i+1 < len(weg); i++ {
 		ax, ay := (weg[i].lon-p.lon)*mLon, (weg[i].lat-p.lat)*mLat
@@ -232,7 +236,7 @@ func amWeg(p pt, rx, ry float64, weg []pt) (int, bool) {
 		}
 		t := max(0, min(1, -(ax*dx+ay*dy)/l))
 		x, y := ax+t*dx, ay+t*dy
-		if x*x+y*y <= meldungM*meldungM && (dx*rx+dy*ry)/math.Sqrt(l) > 0.7 {
+		if x*x+y*y <= meter*meter && (dx*rx+dy*ry)/math.Sqrt(l) > 0.7 {
 			return i, true
 		}
 	}
@@ -249,8 +253,8 @@ func richtung(a, b pt) (float64, float64) {
 	return x / l, y / l
 }
 
-// aufRoute: mindestens die Hälfte der Meldung liegt in ihrer Fahrtrichtung auf der Route; Rückgabe ist die Stelle auf der Route.
-func aufRoute(form, route []pt) (int, bool) {
+// aufRoute: mindestens der Anteil der Meldung liegt in ihrer Fahrtrichtung auf der Route; Rückgabe ist die Stelle auf der Route.
+func aufRoute(form, route []pt, meter, anteil float64) (int, bool) {
 	if len(form) < 2 || len(route) < 2 {
 		return 0, false
 	}
@@ -262,14 +266,14 @@ func aufRoute(form, route []pt) (int, bool) {
 			continue
 		}
 		proben++
-		if at, ok := amWeg(form[i], rx, ry, route); ok {
+		if at, ok := amWeg(form[i], rx, ry, route, meter); ok {
 			treffer++
 			if erste < 0 {
 				erste = at
 			}
 		}
 	}
-	return max(erste, 0), proben > 0 && treffer*2 >= proben
+	return max(erste, 0), proben > 0 && float64(treffer) >= anteil*float64(proben)
 }
 
 // meldungOut geht an die App.
@@ -308,7 +312,11 @@ func aufDerRoute(alle []Meldung, route []pt) []Meldung {
 		if !drin {
 			continue
 		}
-		if at, ok := aufRoute(m.Form, route); ok {
+		meter, anteil := meldungM, meldungAnteil
+		if m.Art == "sperrung" {
+			meter, anteil = sperrungM, sperrungAnteil
+		}
+		if at, ok := aufRoute(m.Form, route, meter, anteil); ok {
 			f = append(f, fund{m, at})
 		}
 	}
@@ -319,7 +327,7 @@ func aufDerRoute(alle []Meldung, route []pt) []Meldung {
 			if b.m.Art != "stau" {
 				return false
 			}
-			_, ok := aufRoute(x.m.Form, b.m.Form)
+			_, ok := aufRoute(x.m.Form, b.m.Form, meldungM, meldungAnteil)
 			return ok
 		})
 		if !doppelt {

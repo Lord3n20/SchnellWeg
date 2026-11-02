@@ -45,7 +45,7 @@ class MainActivity : FlutterActivity() {
                     }
                     laufend = l
                     lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, mainExecutor, l)
-                    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    if (args != false) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 }
 
                 override fun onCancel(args: Any?) = laufendBeenden()

@@ -101,6 +101,9 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
   Abweichung? _abweichung;
   DateTime? _wegBis; // danach sitzt man in der ersten Fahrt, deren Linie nur von Halt zu Halt gerade ist
   DateTime? _neuBerechnet;
+  List<LatLng> _schrittForm = [];
+  List<Schritt> _schritte = [];
+  (Schritt, double)? _naechster; // Abbiegehinweis über der Karte
   TempoProfil _tempo = TempoProfil('entspannt', 'fuss', standardKmh); // bis tempo.json gelesen ist
 
   @override
@@ -309,6 +312,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     _gps?.cancel();
     _gps = null;
     _abweichung = null;
+    _naechster = null;
   }
 
   /// GPS mitlaufen lassen, solange die gewählte Verbindung gerade läuft: ohne Fahrt bis zum Ziel, mit Fahrt nur auf dem
@@ -323,7 +327,12 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     if (erste != null && !DateTime.now().isBefore(erste.ab)) return;
     _wegBis = erste?.ab;
     _abweichung = Abweichung(weg, _tempo.art == 'auto' ? schwelleAuto : schwelleSonst);
-    _gps = Standort.laufend().listen(_fix, onError: (_) => _wegStopp()); // keine Erlaubnis oder GPS aus: dann eben nicht
+    final tuer = erste == null && v[_gewaehlt].abschnitte.length == 1 ? v[_gewaehlt].abschnitte.first : null;
+    _schritte = tuer?.schritte ?? const [];
+    _schrittForm = tuer == null ? const [] : [for (final (lat, lon) in polyline(tuer.form)) LatLng(lat, lon)];
+    // Beim Auto bleibt das Display an wie bei einer Navigation, zu Fuß geht es normal aus (dann pausiert auch das GPS)
+    _gps = Standort.laufend(bildschirmAn: _tempo.art == 'auto')
+        .listen(_fix, onError: (_) => _wegStopp()); // keine Erlaubnis oder GPS aus: dann eben nicht
   }
 
   void _fix(Fix f) {
@@ -332,7 +341,12 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     final bis = _wegBis;
     if ((bis != null && DateTime.now().isAfter(bis)) || abstandZumWeg(f.lat, f.lon, [a.weg.last]) < 30) return _wegStopp();
     final p = _pos;
-    if (p == null || entfernung(p.lat, p.lon, f.lat, f.lon) > 10) setState(() => _pos = f); // Punkt auf der Karte läuft mit
+    if (p == null || entfernung(p.lat, p.lon, f.lat, f.lon) > 10) {
+      setState(() {
+        _pos = f; // Punkt auf der Karte läuft mit
+        _naechster = naechsterSchritt(_schrittForm, _schritte, f.lat, f.lon);
+      });
+    }
     if (!a.pruefen(f.lat, f.lon, f.genau)) return;
     final zuletzt = _neuBerechnet;
     if (zuletzt != null && DateTime.now().difference(zuletzt) < _neuAbstand) return;
@@ -376,7 +390,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
       final (roh, rt) = await _api!.route(p.lat, p.lon, ziel.lat, ziel.lon, kmh: _tempo.kmh, art: _tempo.serverArt, meiden: _tempo.serverMeiden, ticket: _tempo.ticket, wegArt: _tempo.wegArt, fern: _tempo.fern, lang: lang, ab: _zeit, ankunft: _ankunft, knapp: true);
       // früheste Ankunft oben; bei Gleichstand bleibt die Server-Reihenfolge
       final v = [for (final (i, x) in roh.indexed) (i, x)]
-        ..sort((a, b) => a.$2.ankunft.compareTo(b.$2.ankunft) != 0 ? a.$2.ankunft.compareTo(b.$2.ankunft) : a.$1 - b.$1);
+        ..sort((a, b) => a.$2.rang != b.$2.rang ? a.$2.rang - b.$2.rang : a.$2.ankunft.compareTo(b.$2.ankunft) != 0 ? a.$2.ankunft.compareTo(b.$2.ankunft) : a.$1 - b.$1);
       if (!mounted || _ziel != ziel || (von != null && v.isEmpty)) return;
       if (von != null) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Route neu berechnet')));
       setState(() {
@@ -656,6 +670,15 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
               ),
           ]),
         ),
+        if (_naechster case (final s, final m))
+          Container(
+            width: double.infinity,
+            color: farbe.primaryContainer,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Text('${inMetern(m)}: ${s.text}',
+                maxLines: 2, overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontWeight: FontWeight.w600, color: farbe.onPrimaryContainer)),
+          ),
         Expanded(
           flex: 5,
           child: Karte(

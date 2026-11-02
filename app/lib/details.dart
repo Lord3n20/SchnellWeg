@@ -66,6 +66,16 @@ class Details extends StatelessWidget {
                 _Fahrt(a, halte)
               else if (a.an.difference(a.ab).inSeconds >= 30 || a.form.isNotEmpty)
                 _Fuss(a, ziel: i == v.abschnitte.length - 1 ? zielName : null),
+            for (final a in v.abschnitte)
+              if (a.schritte.isNotEmpty)
+                ExpansionTile(title: Text('Wegbeschreibung (${a.schritte.length} Schritte)'), children: [
+                  for (final s in a.schritte)
+                    ListTile(
+                      dense: true,
+                      title: Text(s.text),
+                      trailing: s.m == 0 ? null : Text(s.m < 1000 ? '${s.m} m' : '${(s.m / 1000).toStringAsFixed(1).replaceAll('.', ',')} km'),
+                    ),
+                ]),
             _Zeile(
               icon: Icons.place,
               farbe: Theme.of(context).colorScheme.error,

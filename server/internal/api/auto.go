@@ -7,6 +7,7 @@ import (
 	"errors"
 	"maps"
 	"net/http"
+	"slices"
 	"time"
 )
 
@@ -47,6 +48,7 @@ func (s *Server) tuerZuTuer(w http.ResponseWriter, r *http.Request, req routeReq
 	var weg WalkRoute
 	err := errMatrix
 	for _, k := range ks {
+		k.Schritte = true
 		if weg, err = s.Valhalla.route(r.Context(), *req.From.Lat, *req.From.Lon, *req.To.Lat, *req.To.Lon, k, autoZeit); err == nil {
 			break
 		}
@@ -59,25 +61,92 @@ func (s *Server) tuerZuTuer(w http.ResponseWriter, r *http.Request, req routeReq
 		fail(w, http.StatusServiceUnavailable, aus)
 		return
 	}
-	var lage []meldungOut
-	lageOK := false
+	reise := func(weg WalkRoute, lage fahrtLage, umfahrung string) journeyOut {
+		dauer := time.Duration(weg.Sec+0.5) * time.Second
+		dep := t.Truncate(time.Second)
+		arr := dep.Add(dauer)
+		if req.Ankunft { // so losfahren, dass man pünktlich ankommt
+			dep, arr = dep.Add(-dauer), dep
+		}
+		return journeyOut{Dep: dep, Arr: arr, Verkehr: lage.out, VerkehrOK: lage.ok, Umfahrung: umfahrung,
+			Legs: []legOut{{Mode: mode, Dep: dep, Arr: arr, Shape: weg.Shape, Schritte: weg.Schritte}}}
+	}
+	var js []journeyOut
 	if mode == "drive" {
 		kmh := 0.0
 		if req.KMH != nil {
 			kmh = *req.KMH
 		}
-		lage, lageOK = s.fahrzeitAnpassen(r.Context(), &weg, kmh)
-	}
-	dauer := time.Duration(weg.Sec+0.5) * time.Second
-	dep := t.Truncate(time.Second)
-	arr := dep.Add(dauer)
-	if req.Ankunft { // so losfahren, dass man pünktlich ankommt
-		dep, arr = dep.Add(-dauer), dep
+		lage := s.fahrzeitAnpassen(r.Context(), &weg, kmh)
+		js = append(js, reise(weg, lage, ""))
+		if alt, altLage, art := s.umfahrung(r.Context(), req, ks, weg, lage, kmh); art != "" {
+			js = append(js, reise(alt, altLage, art))
+		}
+	} else {
+		js = append(js, reise(weg, fahrtLage{}, ""))
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
-	json.NewEncoder(w).Encode(routeResp{ShapeMs: since(t0), Journeys: []journeyOut{{Dep: dep, Arr: arr, Verkehr: lage, VerkehrOK: lageOK,
-		Legs: []legOut{{Mode: mode, Dep: dep, Arr: arr, Shape: weg.Shape}}}}})
+	json.NewEncoder(w).Encode(routeResp{ShapeMs: since(t0), Journeys: js})
+}
+
+// Umfahrung (D-39): ein Angebot, nie der Normalfall. Wenn alle dem gleichen Hinweis auf Nebenstraßen folgen, stehen sie dort im
+// nächsten Stau, und über deren Verkehr wissen wir nichts. Deshalb nur mit deutlichem Vorteil und auf großen Straßen. Bei einer
+// Sperrung gilt beides nicht: da geht es nicht anders.
+const (
+	umfahrenAbMin  = 5    // kleinere Staus sind es nicht wert
+	umfahrenGewinn = 300  // s, so viel muss sie mindestens sparen …
+	umfahrenAnteil = 0.1  // … und so viel von der Fahrzeit
+	umfahrenKleinM = 2000 // so viel mehr darf sie auf kleinen Straßen fahren
+	umfahrenMax    = 8    // Bereiche je Anfrage
+	umfahrenBox    = 0.0003
+)
+
+func (s *Server) umfahrung(ctx context.Context, req routeReq, ks []Kosten, weg WalkRoute, lage fahrtLage, kmh float64) (WalkRoute, fahrtLage, string) {
+	var polys [][][2]float64
+	gesperrt := false
+	for _, m := range lage.auf {
+		if m.VerzMin < umfahrenAbMin && !m.Gesperrt || len(polys) == umfahrenMax {
+			continue
+		}
+		gesperrt = gesperrt || m.Gesperrt
+		p, d := m.Form[len(m.Form)/2], umfahrenBox
+		polys = append(polys, [][2]float64{{p.lon - d, p.lat - d}, {p.lon + d, p.lat - d}, {p.lon + d, p.lat + d}, {p.lon - d, p.lat + d}, {p.lon - d, p.lat - d}})
+	}
+	if polys == nil {
+		return WalkRoute{}, fahrtLage{}, ""
+	}
+	var alt WalkRoute
+	err := errMatrix
+	for _, k := range ks {
+		k.Schritte, k.Polygone = true, polys
+		o := maps.Clone(k.Opts)
+		a, _ := o[k.Costing].(map[string]any)
+		a = maps.Clone(a)
+		if a == nil {
+			a = map[string]any{}
+		}
+		a["use_living_streets"], a["use_tracks"] = 0, 0
+		o[k.Costing] = a
+		k.Opts = o
+		if alt, err = s.Valhalla.route(ctx, *req.From.Lat, *req.From.Lon, *req.To.Lat, *req.To.Lon, k, autoZeit); err == nil {
+			break
+		}
+	}
+	if err != nil || alt.Shape == weg.Shape {
+		return WalkRoute{}, fahrtLage{}, ""
+	}
+	altLage := s.fahrzeitAnpassen(ctx, &alt, kmh)
+	if slices.ContainsFunc(altLage.auf, func(m Meldung) bool { return m.Gesperrt }) {
+		return WalkRoute{}, fahrtLage{}, "" // führt in die nächste Sperrung
+	}
+	if gesperrt {
+		return alt, altLage, "sperrung"
+	}
+	if weg.Sec-alt.Sec < max(umfahrenGewinn, umfahrenAnteil*weg.Sec) || altLage.kleinM > lage.kleinM+umfahrenKleinM {
+		return WalkRoute{}, fahrtLage{}, ""
+	}
+	return alt, altLage, "stau"
 }
 
 type vhTraceResp struct {
@@ -115,17 +184,24 @@ func (v *Valhalla) kanten(ctx context.Context, shape string) (t vhTraceResp) {
 	return t
 }
 
+// fahrtLage ist, was Tempo und Verkehr aus einer Autoroute machen.
+type fahrtLage struct {
+	out    []meldungOut
+	ok     bool      // Verkehrslage war verfügbar
+	auf    []Meldung // Meldungen auf der Route
+	kleinM float64   // davon abseits großer Straßen; ohne Kantendaten 0
+}
+
 // fahrzeitAnpassen rechnet Tempo und Verkehrslage in die Fahrzeit ein (D-35, D-38). Auf Autobahn ohne Limit gilt kmh, denn
 // Valhalla rechnet dort pauschal 105 km/h und top_speed senkt nur; Limits gelten weiter, in Baustellen auch deren Limit, dazu kommt
 // die gemeldete Verzögerung. Fehlen Kanten oder Meldungen, bleibt der jeweilige Teil weg: dann nur ungenauer, kein Fehler.
-func (s *Server) fahrzeitAnpassen(ctx context.Context, weg *WalkRoute, kmh float64) ([]meldungOut, bool) {
+func (s *Server) fahrzeitAnpassen(ctx context.Context, weg *WalkRoute, kmh float64) fahrtLage {
 	route := dekodieren(weg.Shape)
-	var auf []Meldung
-	ok := false
+	var l fahrtLage
 	if s.Verkehr != nil {
 		var alle []Meldung
-		alle, ok = s.Verkehr.Holen(ctx)
-		auf = aufDerRoute(alle, route)
+		alle, l.ok = s.Verkehr.Holen(ctx)
+		l.auf = aufDerRoute(alle, route)
 	}
 	t := s.Valhalla.kanten(ctx, weg.Shape)
 	form := route
@@ -133,6 +209,10 @@ func (s *Server) fahrzeitAnpassen(ctx context.Context, weg *WalkRoute, kmh float
 		form = dekodieren(t.Shape)
 	}
 	for _, e := range t.Edges {
+		switch e.RoadClass {
+		case "tertiary", "unclassified", "residential", "service_other":
+			l.kleinM += e.Length * 1000
+		}
 		if e.Speed <= 0 {
 			continue
 		}
@@ -143,9 +223,9 @@ func (s *Server) fahrzeitAnpassen(ctx context.Context, weg *WalkRoute, kmh float
 		if e.Von >= 0 && e.Bis > e.Von && e.Bis < len(form) {
 			mitte := form[(e.Von+e.Bis)/2]
 			rx, ry := richtung(form[e.Von], form[e.Bis])
-			for _, m := range auf {
+			for _, m := range l.auf {
 				if m.MaxKmh > 0 && float64(m.MaxKmh) < v {
-					if _, drin := amWeg(mitte, rx, ry, m.Form); drin {
+					if _, drin := amWeg(mitte, rx, ry, m.Form, meldungM); drin {
 						v = float64(m.MaxKmh)
 					}
 				}
@@ -153,11 +233,10 @@ func (s *Server) fahrzeitAnpassen(ctx context.Context, weg *WalkRoute, kmh float
 		}
 		weg.Sec -= e.Length * 3600 * (1/e.Speed - 1/v)
 	}
-	var out []meldungOut
-	for _, m := range auf {
+	for _, m := range l.auf {
 		weg.Sec += float64(m.VerzMin) * 60
-		out = append(out, meldungOut{Art: m.Art, Titel: m.Titel, Richtung: m.Richtung, VerzMin: m.VerzMin, Kmh: m.Kmh, MaxKmh: m.MaxKmh,
+		l.out = append(l.out, meldungOut{Art: m.Art, Titel: m.Titel, Richtung: m.Richtung, VerzMin: m.VerzMin, Kmh: m.Kmh, MaxKmh: m.MaxKmh,
 			Gesperrt: m.Gesperrt, Lat: m.Form[0].lat, Lon: m.Form[0].lon})
 	}
-	return out, ok
+	return l
 }

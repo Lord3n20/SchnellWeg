@@ -721,3 +721,93 @@ func fakeRoute(t *testing.T) *Valhalla {
 	t.Cleanup(ts.Close)
 	return &Valhalla{URL: ts.URL, Timeout: time.Second, Client: ts.Client()}
 }
+
+func TestUmfahrung(t *testing.T) {
+	route := []pt{{50.8, 6.1}, {50.8, 6.15}, {50.8, 6.2}}
+	umweg := []pt{{50.8, 6.1}, {50.82, 6.15}, {50.8, 6.2}}
+	var delay string
+	var umwegSec, kleinKm float64
+	blockiert := "false"
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		teil := strings.Split(r.URL.Path, "/")
+		l := []map[string]any{}
+		if teil[1] == "A4" && teil[3] == "warning" {
+			l = append(l, map[string]any{"title": "A4 | Stau", "subtitle": "West -> Ost", "delayTimeValue": delay, "isBlocked": blockiert,
+				"geometry": map[string]any{"coordinates": [][]float64{{6.11, 50.8}, {6.13, 50.8}, {6.14, 50.8}}}})
+		}
+		json.NewEncoder(w).Encode(map[string]any{teil[3]: l})
+	}))
+	defer api.Close()
+	var bereiche int
+	vh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var q struct {
+			vhRouteReq
+			Encoded string `json:"encoded_polyline"`
+		}
+		json.NewDecoder(r.Body).Decode(&q)
+		if r.URL.Path == "/trace_attributes" {
+			e := []map[string]any{}
+			if q.Encoded == polyline6(umweg) {
+				e = append(e, map[string]any{"length": kleinKm, "speed": 0, "road_class": "residential"})
+			}
+			json.NewEncoder(w).Encode(map[string]any{"edges": e})
+			return
+		}
+		form, sec := route, 600.0
+		if len(q.ExcludePolygons) > 0 {
+			bereiche = len(q.ExcludePolygons)
+			form, sec = umweg, umwegSec
+		}
+		json.NewEncoder(w).Encode(map[string]any{"trip": map[string]any{"summary": map[string]float64{"time": sec, "length": 7},
+			"legs": []map[string]any{{"shape": polyline6(form), "maneuvers": []map[string]any{
+				{"instruction": "Rechts abbiegen.", "length": 1.5, "begin_shape_index": 1}, {"instruction": "", "length": 0, "begin_shape_index": 2}}}}}})
+	}))
+	defer vh.Close()
+	frage := func() (*httptest.ResponseRecorder, routeResp) {
+		s := &Server{Valhalla: &Valhalla{URL: vh.URL, Timeout: time.Second, Client: vh.Client()},
+			Verkehr: &Verkehr{URL: api.URL, Client: api.Client(), UA: "Test"}}
+		return post(s, `{"from":{"lat":50.8,"lon":6.1},"to":{"lat":50.8,"lon":6.2},"art":"auto","kmh":120}`)
+	}
+	fall := func(name, d string, sec, klein float64, block, soll string) {
+		t.Helper()
+		delay, umwegSec, kleinKm, blockiert, bereiche = d, sec, klein, block, 0
+		w, r := frage()
+		got := ""
+		if len(r.Journeys) > 1 {
+			got = r.Journeys[1].Umfahrung
+		}
+		if w.Code != 200 || got != soll || r.Journeys[0].Umfahrung != "" {
+			t.Errorf("%s: Umfahrung %q, erwartet %q: %s", name, got, soll, w.Body)
+		}
+	}
+	// Normale Route mit Stau: 600 s + 30 min = 2400 s
+	fall("spart deutlich", "30", 900, 0, "false", "stau")
+	if bereiche != 1 {
+		t.Errorf("Bereiche: %d", bereiche)
+	}
+	fall("spart zu wenig", "30", 2200, 0, "false", "")
+	fall("über Nebenstraßen", "30", 900, 3, "false", "")
+	fall("Nebenstraßen knapp erlaubt", "30", 900, 1.5, "false", "stau")
+	fall("kleiner Stau", "3", 100, 0, "false", "")
+	fall("Sperrung: auch langsamer und über Nebenstraßen", "0", 5000, 9, "true", "sperrung")
+	_, r := frage()
+	if l := r.Journeys[0].Legs[0]; len(l.Schritte) != 1 || l.Schritte[0] != (schrittOut{"Rechts abbiegen.", 1500, 1}) {
+		t.Errorf("Schritte: %+v", l.Schritte)
+	}
+}
+
+func TestSperrungNurAufDerRampeSelbst(t *testing.T) {
+	route := []pt{{50.8, 6.1}, {50.8, 6.2}}
+	// 40 m neben der Fahrbahn, gleiche Richtung: eine Abfahrt, an der man vorbeifährt
+	daneben := []pt{{50.80036, 6.11}, {50.80036, 6.12}}
+	auf := []pt{{50.8, 6.11}, {50.8, 6.12}}
+	for _, f := range []struct {
+		art  string
+		form []pt
+		soll int
+	}{{"sperrung", daneben, 0}, {"sperrung", auf, 1}, {"stau", daneben, 1}} {
+		if got := len(aufDerRoute([]Meldung{{Art: f.art, Form: f.form}}, route)); got != f.soll {
+			t.Errorf("%s %v: %d", f.art, f.form[0], got)
+		}
+	}
+}
