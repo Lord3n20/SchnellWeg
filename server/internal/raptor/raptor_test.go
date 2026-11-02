@@ -45,6 +45,19 @@ func TestWalkScale(t *testing.T) {
 	}
 }
 
+// Derselbe Router rechnet nach einer großen Anfrage genauso wie frisch: keine Labels bleiben hängen (D-41).
+func TestRouterWiederverwendet(t *testing.T) {
+	r := NewRouter(testTT())
+	frisch := NewRouter(testTT()).Query(50, []Access{{0, 0}}, []Access{{3, 30}}, 2)
+	r.Query(50, []Access{{0, 0}, {2, 0}}, []Access{{3, 0}, {1, 0}}, 6)
+	if res := r.Query(50, []Access{{0, 0}}, []Access{{3, 30}}, 2); !reflect.DeepEqual(res, frisch) {
+		t.Fatalf("wiederverwendet %+v, frisch %+v", res, frisch)
+	}
+	if res := r.Query(50, []Access{{0, 0}}, []Access{{3, 30}}, 1); len(res.Journeys) != 0 {
+		t.Fatalf("mit 1 Fahrt darf kein Weg aus der vorigen Anfrage übrig sein: %+v", res)
+	}
+}
+
 func TestSpaeterStart(t *testing.T) {
 	r := NewRouter(testTT())
 	res := r.Query(150, []Access{{0, 0}}, []Access{{3, 0}}, 3)

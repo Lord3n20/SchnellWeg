@@ -544,4 +544,14 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   Kurs laufen zwischen den GPS-Fixen weich, nah an der Route (35 m) wird der Punkt auf die Route gelegt.
 - Display bleibt an, im Hintergrund kein GPS. Neu berechnen wie D-36, alle 3 min Stau und Ankunft frisch; wie D-39 bleibt eine Umfahrung ein Knopf, den man
   antippt, eine gewählte wird nicht zurückgestellt. Restzeit = Anteil des Restwegs an der Fahrzeit.
-- Status: umgesetzt, auf dem Gerät noch nicht geprüft (Drehen der Vektorkarte, Bildrate).
+- Status: umgesetzt, Betreiber 02.11.: Ansicht passt beim Fahren.
+
+## D-41 RAPTOR-Labels nur noch für erreichte Halte (02.11.)
+- Container 272–280 MiB, Ziel < 250. Heap-Profil mit dem echten Fahrplan: 202.277 Halte × 7 Runden × 28 Byte = 38 MB je Router, zwei Router, angelegt erst
+  bei der ersten Anfrage. Das war der Sprung von ~160 auf ~250 MB Heap. Eine Anfrage belegt davon im Mittel 5 %, im schlimmsten Fall 18 %.
+- Jetzt eine Liste der gesetzten Labels mit Kette je Halt (`head`, `next`): 8 MB je Router in der Messung (400 Zufallsanfragen über ganz DE).
+- Geprüft auf demselben geladenen Fahrplan, alter gegen neuen Router: 3000 Zufallsanfragen (auch Ticketfilter, Nur-Bahn, Gehtempo), 954 Verbindungen, 0 Abweichungen.
+  Anfragen im Mittel 26 → 25 ms auf dem Laptop.
+- Fund, nicht behoben: zwei Ladevorgänge desselben Fahrplans liefern bei 0,2–0,4 % der Zufallsanfragen andere Wege, teils andere Ankunft (Musternummern und Reihenfolge
+  hängen an Map-Iteration in `Load`). Vergleiche von Router-Fassungen deshalb nur im selben Prozess.
+- Status: umgesetzt.

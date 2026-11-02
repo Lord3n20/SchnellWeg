@@ -43,8 +43,9 @@ type Journey struct {
 
 // label merkt sich, wie ein Halt in einer Runde verbessert wurde.
 type label struct {
-	set      bool
+	k        uint8 // Runde
 	kind     uint8 // 0 Zugang, 1 Fahrt, 2 Fußweg
+	next     int32 // Label desselben Halts aus einer früheren Runde (Index + 1 in Router.labels, 0 = keins)
 	arr      int32
 	sec      int32 // Gehzeit bei Zugang/Fußweg
 	from     int32 // Fußweg: Ausgangshalt
@@ -62,26 +63,29 @@ type Router struct {
 	routeFrom         []int32
 	markedList        []int32
 	touched           []int32
-	labels            [][]label // [Runde][Halt]
-	labelSet          []int32   // gesetzte Einträge (Runde*n+Halt) zum Zurücksetzen
-	NoFern            bool      // Fernverkehrs-Routen auslassen (Ticketfilter)
-	NurBahn           bool      // nur Schiene (Fahrrad, D-21)
-	WalkScale         float64   // Umstiegs-Gehzeiten × Faktor (Gehtempo, D-12); 0 = unverändert, mindestens 60 s bleiben
+	head              []int32 // Halt → jüngstes Label (Index + 1 in labels, 0 = keins)
+	labels            []label // nur gesetzte Labels: eine Anfrage erreicht im Mittel 5 % von Runden × Halte (D-41)
+	NoFern            bool    // Fernverkehrs-Routen auslassen (Ticketfilter)
+	NurBahn           bool    // nur Schiene (Fahrrad, D-21)
+	WalkScale         float64 // Umstiegs-Gehzeiten × Faktor (Gehtempo, D-12); 0 = unverändert, mindestens 60 s bleiben
 }
 
 func (r *Router) setLabel(k int, s int32, l label) {
-	if !r.labels[k][s].set {
-		r.labelSet = append(r.labelSet, int32(k*len(r.best))+s)
+	l.k, l.next = uint8(k), r.head[s]
+	if h := l.next; h != 0 && int(r.labels[h-1].k) == k { // Runden steigen nur, also kann nur das jüngste dieselbe sein
+		l.next = r.labels[h-1].next
+		r.labels[h-1] = l
+		return
 	}
-	l.set = true
-	r.labels[k][s] = l
+	r.labels = append(r.labels, l)
+	r.head[s] = int32(len(r.labels))
 }
 
 // at liefert das jüngste Label von s in Runde ≤ k (also die Ankunft mit höchstens k Fahrten).
 func (r *Router) at(k int, s int32) (int, *label) {
-	for ; k >= 0; k-- {
-		if l := &r.labels[k][s]; l.set {
-			return k, l
+	for i := r.head[s]; i != 0; i = r.labels[i-1].next {
+		if l := &r.labels[i-1]; int(l.k) <= k {
+			return int(l.k), l
 		}
 	}
 	return -1, nil
@@ -89,7 +93,7 @@ func (r *Router) at(k int, s int32) (int, *label) {
 
 func NewRouter(tt *Timetable) *Router {
 	n := len(tt.Stops)
-	return &Router{tt: tt, best: make([]int32, n), round: make([]int32, n), prev: make([]int32, n),
+	return &Router{tt: tt, best: make([]int32, n), round: make([]int32, n), prev: make([]int32, n), head: make([]int32, n),
 		marked: make([]bool, n), routeMark: make([]bool, len(tt.Routes)), routeFrom: make([]int32, len(tt.Routes))}
 }
 
@@ -97,17 +101,10 @@ func NewRouter(tt *Timetable) *Router {
 func (r *Router) Query(dep int32, from, to []Access, maxTrips int) Result {
 	tt := r.tt
 	for i := range r.best {
-		r.best[i], r.round[i], r.marked[i] = inf, inf, false
+		r.best[i], r.round[i], r.marked[i], r.head[i] = inf, inf, false, 0
 	}
 	r.markedList = r.markedList[:0]
-	n := len(r.best)
-	for _, i := range r.labelSet {
-		r.labels[int(i)/n][int(i)%n] = label{}
-	}
-	r.labelSet = r.labelSet[:0]
-	for len(r.labels) <= maxTrips {
-		r.labels = append(r.labels, make([]label, n))
-	}
+	r.labels = r.labels[:0]
 	mark := func(s int32) {
 		if !r.marked[s] {
 			r.marked[s] = true
@@ -239,7 +236,7 @@ func (r *Router) journey(k int, to []Access) (Journey, bool) {
 	_, l := r.at(k, bestA.Stop)
 	legs := []Leg{{Kind: Walk, From: bestA.Stop, To: -1, Dep: l.arr, Arr: best}}
 	s := bestA.Stop
-	for guard := 0; guard < 4*len(r.labels)+8; guard++ {
+	for guard, grenze := 0, 4*(k+1)+8; guard < grenze; guard++ {
 		kk, l := r.at(k, s)
 		if l == nil {
 			return Journey{}, false
