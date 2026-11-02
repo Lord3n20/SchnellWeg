@@ -206,3 +206,16 @@ func TestAbfahrtenNieNull(t *testing.T) {
 		t.Errorf("Code %d, %s", w.Code, w.Body)
 	}
 }
+
+// Fällt nur ein Dienst aus, gilt sein Stand nicht länger als der Gesamtstand: kein alter Stau für immer.
+func TestVerkehrAlterTeilFaelltWeg(t *testing.T) {
+	jetzt := time.Now()
+	v := &Verkehr{geholt: jetzt, stand: map[string]verkehrTeil{
+		"A4/warning": {[]Meldung{{Titel: "alt"}}, jetzt.Add(-verkehrAlt - time.Minute)},
+		"A4/closure": {[]Meldung{{Titel: "frisch"}}, jetzt},
+	}}
+	alle, ok := v.Holen(context.Background())
+	if !ok || len(alle) != 1 || alle[0].Titel != "frisch" {
+		t.Fatalf("ok %v, Meldungen %+v", ok, alle)
+	}
+}

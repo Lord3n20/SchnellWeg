@@ -544,6 +544,8 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   Kurs laufen zwischen den GPS-Fixen weich, nah an der Route (35 m) wird der Punkt auf die Route gelegt.
 - Display bleibt an, im Hintergrund kein GPS. Neu berechnen wie D-36, alle 3 min Stau und Ankunft frisch; wie D-39 bleibt eine Umfahrung ein Knopf, den man
   antippt, eine gewählte wird nicht zurückgestellt. Restzeit = Anteil des Restwegs an der Fahrzeit.
+- Nachtrag: Der Abbiegehinweis richtet sich nach dem Abschnitt der Route, nicht nach dem nächsten Stützpunkt; auf langen geraden Stücken fiel er sonst Hunderte Meter vor dem Abzweig weg.
+  Nur die jüngste Routenanfrage zählt, eine verspätete Antwort ersetzt keine gewählte Umfahrung mehr. Der Stand eines ausgefallenen Verkehrsdienstes gilt höchstens 30 min.
 - Status: umgesetzt, Betreiber 02.11.: Ansicht passt beim Fahren.
 
 ## D-41 RAPTOR-Labels nur noch für erreichte Halte (02.11.)

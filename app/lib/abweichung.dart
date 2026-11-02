@@ -52,18 +52,15 @@ class Abweichung {
 /// Der nächste Abbiegehinweis von hier aus und wie weit es bis dahin ist, null ohne Hinweise oder hinter dem letzten.
 (Schritt, double)? naechsterSchritt(List<LatLng> form, List<Schritt> schritte, double lat, double lon) {
   if (form.isEmpty || schritte.isEmpty) return null;
-  var hier = 0;
-  var best = double.infinity;
-  for (var i = 0; i < form.length; i++) {
-    final d = entfernung(lat, lon, form[i].latitude, form[i].longitude);
-    if (d < best) (best, hier) = (d, i);
-  }
+  // Abschnitt statt nächster Stützpunkt: Auf einem langen geraden Stück liegt der Abzweig sonst schon lange vorher am nächsten und sein Hinweis fiele weg
+  final hier = aufWeg(form, lat, lon);
   for (final s in schritte) {
-    if (s.i <= hier || s.i >= form.length) continue;
-    var meter = best;
-    for (var i = hier; i < s.i; i++) {
+    if (s.i <= hier.i || s.i >= form.length) continue;
+    var meter = entfernung(hier.punkt.latitude, hier.punkt.longitude, form[hier.i + 1].latitude, form[hier.i + 1].longitude);
+    for (var i = hier.i + 1; i < s.i; i++) {
       meter += entfernung(form[i].latitude, form[i].longitude, form[i + 1].latitude, form[i + 1].longitude);
     }
+    if (meter < 1 && s.i == form.length - 1) return null; // am Ende angekommen
     return (s, meter);
   }
   return null;

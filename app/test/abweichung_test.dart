@@ -55,6 +55,20 @@ void main() {
     expect(inMetern(2380), 'In 2,4 km');
   });
 
+  test('Abbiegehinweis bleibt auf einem langen geraden Stück bis zur Abzweigung', () {
+    // 1,4 km gerade nach Osten, dann links ab und 110 m weiter ins Ziel
+    final form = [const LatLng(50.77, 6.08), const LatLng(50.77, 6.10), const LatLng(50.771, 6.10)];
+    final l = [
+      Schritt.json({'text': 'Links abbiegen', 'i': 1, 'typ': 15}),
+      Schritt.json({'text': 'Ziel', 'i': 2, 'typ': 4}),
+    ];
+    final (a, m) = naechsterSchritt(form, l, 50.77, 6.096)!; // näher am Abzweig als am Start
+    expect(a.text, 'Links abbiegen');
+    expect(m, closeTo(282, 5));
+    expect(naechsterSchritt(form, l, 50.77, 6.0999)!.$1.text, 'Links abbiegen');
+    expect(naechsterSchritt(form, l, 50.7705, 6.10)!.$1.text, 'Ziel'); // hinter der Abzweigung
+  });
+
   test('Fahransicht: Lotpunkt, Rest, Kurs, Zoom', () {
     final weg = [const LatLng(50.77, 6.08), const LatLng(50.77, 6.09), const LatLng(50.78, 6.09)];
     final h = aufWeg(weg, 50.7702, 6.085);

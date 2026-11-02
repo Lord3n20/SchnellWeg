@@ -59,6 +59,7 @@ class _FahrenState extends State<Fahren> with SingleTickerProviderStateMixin, Wi
   StreamSubscription<Fix>? _gps;
   Timer? _takt;
   DateTime? _neuBerechnet;
+  int _ladeNr = 0; // nur die jüngste Anfrage zählt, eine spätere Antwort darf keine neuere Route oder gewählte Umfahrung ersetzen
   bool _angekommen = false, _ohneGps = false;
 
   final _blick = ValueNotifier<Fahrblick?>(null);
@@ -179,9 +180,10 @@ class _FahrenState extends State<Fahren> with SingleTickerProviderStateMixin, Wi
   }
 
   Future<void> _laden(Position von, {bool abgewichen = false}) async {
+    final nr = ++_ladeNr;
     try {
       final l = await widget.neu(von);
-      if (!mounted || l.isEmpty) return;
+      if (!mounted || nr != _ladeNr || l.isEmpty) return;
       setState(() {
         _route(l.first);
         _aufUmfahrung = l.first.umfahrung.isNotEmpty;
@@ -196,6 +198,7 @@ class _FahrenState extends State<Fahren> with SingleTickerProviderStateMixin, Wi
   void _umfahrungNehmen() {
     final a = _angebot;
     if (a == null) return;
+    _ladeNr++;
     setState(() {
       _route(a);
       _angebot = null;

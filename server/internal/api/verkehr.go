@@ -52,10 +52,15 @@ type Verkehr struct {
 	Client  *http.Client
 
 	mu       sync.Mutex
-	stand    map[string][]Meldung // je Straße + Dienst, fällt einer aus, bleibt sein voriger Stand
+	stand    map[string]verkehrTeil // je Straße + Dienst, fällt einer aus, bleibt sein voriger Stand bis verkehrAlt
 	geholt   time.Time
 	versucht time.Time
 	laeuft   chan struct{}
+}
+
+type verkehrTeil struct {
+	meldungen []Meldung
+	geholt    time.Time
 }
 
 // Holen liefert die Meldungen; ok = false, wenn es keinen brauchbaren Stand gibt.
@@ -83,8 +88,10 @@ func (v *Verkehr) Holen(ctx context.Context) (alle []Meldung, ok bool) {
 	if v.geholt.IsZero() || time.Since(v.geholt) > verkehrAlt {
 		return nil, false
 	}
-	for _, l := range v.stand {
-		alle = append(alle, l...)
+	for _, t := range v.stand {
+		if time.Since(t.geholt) <= verkehrAlt { // sonst stünde ein längst aufgelöster Stau noch da, wenn nur dieser Dienst ausfällt
+			alle = append(alle, t.meldungen...)
+		}
 	}
 	return alle, true
 }
@@ -118,10 +125,10 @@ func (v *Verkehr) abrufen(fertig chan struct{}) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if v.stand == nil {
-		v.stand = map[string][]Meldung{}
+		v.stand = map[string]verkehrTeil{}
 	}
 	for k, l := range neu {
-		v.stand[k] = l
+		v.stand[k] = verkehrTeil{l, time.Now()}
 	}
 	if treffer > 0 {
 		v.geholt = time.Now()
