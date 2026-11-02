@@ -30,8 +30,15 @@ class VerkehrsmittelKachel : TileService() {
     private fun anzeige(profil: String, j: JSONObject?): String = j?.optString("titel", "").orEmpty()
         .ifEmpty { mapOf("entspannt" to "Zu Fuß", "Einrad" to "Custom 1", "Einrad schnell" to "Custom 2")[profil] ?: profil }
 
-    private fun istFuss(profil: String) =
-        profil in setOf("entspannt", "normal", "schnell") // normal / schnell aus Ständen vor D-33
+    // Art aus tempo.json; ohne Eintrag (Stand vor D-34, die App stellt ihn beim nächsten Öffnen um) nach dem Schlüssel
+    private fun artVon(profil: String): String =
+        lesen().optJSONObject("profile")?.optJSONObject(profil)?.optString("art", "").orEmpty().ifEmpty {
+            when (profil) {
+                "entspannt", "normal", "schnell" -> "fuss"
+                "Auto" -> "auto"
+                else -> "eigen"
+            }
+        }
 
     override fun onStartListening() = zeigen()
 
@@ -39,9 +46,7 @@ class VerkehrsmittelKachel : TileService() {
         val t = qsTile ?: return
         val profil = aktiv()
         t.label = "Verkehrsmittel"
-        val titel = lesen().optJSONObject("profile")?.optJSONObject(profil)?.optString("titel", "").orEmpty()
-        t.subtitle = titel.ifEmpty { mapOf("entspannt" to "Zu Fuß", "Einrad" to "Custom 1", "Einrad schnell" to "Custom 2")[profil] ?: profil }
-            .replaceFirstChar { it.uppercase() }
+        t.subtitle = anzeige(profil, lesen().optJSONObject("profile")?.optJSONObject(profil)).replaceFirstChar { it.uppercase() }
         t.icon = Icon.createWithResource(this, when (artVon(profil)) {
             "fuss" -> R.drawable.kachel_fuss
             "auto" -> R.drawable.kachel_auto
