@@ -254,9 +254,9 @@ void main() {
       await pruefen(t, 'Zu Fuß', {'1,9': false, '2': true, '5,5': true, '5.5': true, '8': true, '8,1': false, '0': false, '-3': false, '': false, 'abc': false, ',': false, '1,2,3': false, 'NaN': false});
     });
 
-    testWidgets('Auto 30–200', (t) async {
+    testWidgets('Auto 30–500', (t) async {
       _schreiben(_v2());
-      await pruefen(t, 'Auto', {'29,9': false, '30': true, '200': true, '200,1': false, '0': false});
+      await pruefen(t, 'Auto', {'29,9': false, '30': true, '350': true, '500': true, '500,1': false, '0': false});
     });
 
     testWidgets('eigenes Profil: alles über 0', (t) async {

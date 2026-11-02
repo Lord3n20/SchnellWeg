@@ -399,6 +399,10 @@ func TestAuto(t *testing.T) {
 	var gefragt vhRouteReq
 	code := 200
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/route" {
+			w.WriteHeader(400)
+			return
+		}
 		gefragt = vhRouteReq{}
 		json.NewDecoder(r.Body).Decode(&gefragt)
 		if code != 200 {
@@ -434,7 +438,7 @@ func TestAuto(t *testing.T) {
 	if got := r.Journeys[0].Dep.In(Berlin).Format("15:04"); got != "07:10" {
 		t.Errorf("Ankunftszeit: los %s statt 07:10", got)
 	}
-	for _, k := range []string{`,"kmh":29`, `,"kmh":201`} {
+	for _, k := range []string{`,"kmh":29`, `,"kmh":501`} {
 		if w, _ := post(s, fmt.Sprintf(body, k)); w.Code != 400 {
 			t.Errorf("%s: Code %d, erwartet 400", k, w.Code)
 		}
@@ -542,6 +546,46 @@ func TestRadTempoAusserhalbValhalla(t *testing.T) {
 		if got := k.Opts["bicycle"].(map[string]any)["cycling_speed"]; got != c.vh || k.Faktor != c.faktor {
 			t.Errorf("%v km/h: cycling_speed %v, Faktor %v", c.kmh, got, k.Faktor)
 		}
+	}
+}
+
+func TestAutoFreieAutobahn(t *testing.T) {
+	traceCode := 200
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/trace_attributes" {
+			if traceCode != 200 {
+				w.WriteHeader(traceCode)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]any{"edges": []map[string]any{
+				{"length": 100, "speed": 100, "speed_limit": "unlimited", "road_class": "motorway"},
+				{"length": 60, "speed": 120, "speed_limit": 120, "road_class": "motorway"}, // Limit gilt weiter
+				{"length": 5, "speed": 89, "road_class": "motorway"},                       // Auffahrt ohne Angabe
+				{"length": 5, "speed": 50, "speed_limit": "unlimited", "road_class": "primary"},
+			}})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"trip": map[string]any{
+			"legs": []map[string]string{{"shape": "form"}}, "summary": map[string]float64{"time": 7200, "length": 170}}})
+	}))
+	defer ts.Close()
+	s := &Server{Valhalla: &Valhalla{URL: ts.URL, Timeout: time.Second, Client: ts.Client()}}
+	dauer := func(kmh int) time.Duration {
+		w, r := post(s, fmt.Sprintf(`{"from":{"lat":50.77,"lon":6.09},"to":{"lat":50.94,"lon":6.96},"art":"auto","kmh":%d}`, kmh))
+		if w.Code != 200 {
+			t.Fatalf("kmh %d: Code %d, %s", kmh, w.Code, w.Body)
+		}
+		return r.Journeys[0].Arr.Sub(r.Journeys[0].Dep)
+	}
+	if got := dauer(300); got != 80*time.Minute { // 100 km in 20 statt 60 min
+		t.Errorf("300 km/h: %v", got)
+	}
+	if got := dauer(80); got != 2*time.Hour { // langsamer als Valhallas Annahme: top_speed regelt das schon
+		t.Errorf("80 km/h: %v", got)
+	}
+	traceCode = 400
+	if got := dauer(300); got != 2*time.Hour {
+		t.Errorf("ohne Kantendaten: %v", got)
 	}
 }
 

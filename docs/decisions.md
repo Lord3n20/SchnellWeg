@@ -431,7 +431,7 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - Betreiber 02.11.: die Routenberechnung fürs Auto fehlte noch. Neue Art `auto` in POST /v1/route: Valhalla-Kosten
   `auto`, eine Verbindung von Tür zu Tür ohne ÖV, unabhängig vom Fahrplan (auch `anderer_betriebstag` entfällt).
   Antwort: ein Abschnitt `mode: "drive"` mit Wegform. Alte Apps fragen `auto` nicht an und sehen nichts davon.
-- `kmh` (30–200, App: Profil „Auto“, Vorgabe 130) ist das Höchsttempo (`top_speed`), kein Reisetempo; deshalb kein
+- `kmh` (30–200, seit D-35 30–500, App: Profil „Auto“, Vorgabe 130) ist das Höchsttempo (`top_speed`), kein Reisetempo; deshalb kein
   Messgang. Live Aachen Hbf → Köln Hbf: 130 km/h 52 min, 80 km/h 80 min, je ~78 km.
 - `search_cutoff` 2 km statt Valhallas 35 km: sonst endete die Route für Ziele außerhalb der Tiles still am Rand.
   Kein Weg → 422 `kein_autoweg`, Valhalla nicht erreichbar → 503 `auto_aus`.
@@ -471,4 +471,15 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   Beim Auto schließt `belag` Feldwege nur aus, wenn es einen anderen Weg gibt. Knapp bei eigenen Profilen höchstens
   1,5 × Tempo, Weg ohne Fahrt nur einmal in der Liste. tempo.json wird atomar geschrieben, nicht lesbare Stände landen
   als `tempo.json.kaputt`.
+- Status: umgesetzt.
+
+## D-35 Auto: Tempo zählt auf Autobahn ohne Limit (02.11.)
+- Betreiber 02.11.: Auto soll auch deutlich schneller als 200 gehen (Beispiel 350 km/h). Allein die Grenze anheben brächte
+  nichts: Valhalla rechnet Autobahn mit `speed_limit: unlimited` pauschal mit 105 km/h, `top_speed` senkt nur. Aachen–Köln
+  blieb von 130 bis 350 km/h bei 52 min (54 von 78 km sind solche Autobahn).
+- Grenze jetzt 30–500 km/h. Nach der Route fragt der Server `/trace_attributes` (live ~8 ms) und zieht die gesparte Zeit ab:
+  nur Kanten `motorway` + `unlimited`, dort gilt `kmh`. Angegebene Limits, Auffahrten und alle anderen Straßen bleiben wie
+  von Valhalla; `fixed_speed` schied aus, es gälte auch in der Stadt (23,9 min Aachen–Köln bei 200).
+- Ohne Kantendaten bleibt Valhallas Zeit. Die Route selbst bleibt Valhallas Wahl, sie kennt das höhere Tempo nicht.
+  Beschleunigen, Bremsen und Verkehr sind nicht eingerechnet: Bestzeit auf freier Bahn. Standard 130 wird dadurch auch schneller.
 - Status: umgesetzt.

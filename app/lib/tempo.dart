@@ -13,7 +13,7 @@ const standardKmh = 4.3;
 const grenzen = {
   'fuss': (2.0, 8.0),
   'eigen': (0.01, double.infinity),
-  'auto': (30.0, 200.0),
+  'auto': (30.0, 500.0),
 };
 const artName = {'fuss': 'Zu Fuß', 'eigen': 'Eigenes Profil', 'auto': 'Auto'};
 
