@@ -512,3 +512,25 @@ func TestMeidenAnfrage(t *testing.T) {
 		t.Errorf("Auto: %+v", o)
 	}
 }
+
+func TestWegOhneFahrtNurEinmal(t *testing.T) {
+	s := testServer(time.Date(2026, 10, 28, 0, 0, 0, 0, Berlin))
+	// Start und Ziel am selben Halt: RAPTOR fände je Minute später wieder den Weg ohne Fahrt
+	body := `{"from":{"lat":50.7700,"lon":6.08},"to":{"lat":50.7701,"lon":6.08},"time":"2026-10-28T07:50:00+01:00"}`
+	zaehle := func(r routeResp) (n int) {
+		for _, j := range r.Journeys {
+			if j.Trips == 0 {
+				n++
+			}
+		}
+		return n
+	}
+	s.DirectM = 0 // ohne direkten Weg bleibt der von RAPTOR
+	if w, r := post(s, body); w.Code != 200 || zaehle(r) != 1 {
+		t.Errorf("ohne direkten Weg: %s", w.Body)
+	}
+	s.DirectM, s.DirectMax = 3000, time.Hour // mit direktem Weg nur dieser
+	if w, r := post(s, body); w.Code != 200 || zaehle(r) != 1 {
+		t.Errorf("mit direktem Weg: %s", w.Body)
+	}
+}

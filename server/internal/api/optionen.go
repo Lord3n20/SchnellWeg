@@ -37,7 +37,9 @@ func optionen(rt *raptor.Router, dep int32, from, to []raptor.Access, maxTrips i
 		}
 		naechste := int32(math.MaxInt32)
 		for _, j := range res.Journeys {
-			if !slices.ContainsFunc(alle, func(o raptor.Journey) bool { return gleich(o, j) }) {
+			// Ein Weg ohne Fahrt reicht: je Minute später losgehen wäre sonst eine neue „Verbindung“ und nähme echten den Platz
+			doppelt := func(o raptor.Journey) bool { return gleich(o, j) || o.Trips == 0 && j.Trips == 0 }
+			if !slices.ContainsFunc(alle, doppelt) {
 				alle = append(alle, j)
 			}
 			naechste = min(naechste, abfahrt(j))

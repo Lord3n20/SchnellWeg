@@ -100,7 +100,9 @@ class _Fuss extends StatelessWidget {
     final wohin = a.nach != null ? 'zu ${_mitSteig(a.nach!)}' : 'zu ${ziel ?? 'Ziel'}';
     final laenge = meter > 0 ? ' · ${meter < 1000 ? '${(meter / 10).round() * 10} m' : '${(meter / 100).round() / 10} km'.replaceAll('.', ',')}' : '';
     return _Zeile(
-      icon: a.auto ? Icons.directions_car : Icons.directions_walk,
+      icon: a.auto
+          ? Icons.directions_car
+          : switch (a.wegArt) { 'rad' => Icons.directions_bike, 'eigen' => Icons.arrow_forward, _ => Icons.directions_walk },
       farbe: Theme.of(context).colorScheme.outline,
       titel: '${a.auto ? 'Fahren' : 'Gehen'} $wohin',
       unter: '${min < 1 ? '< 1' : min} min$laenge',

@@ -99,6 +99,9 @@ class TempoProfil {
         _ => meiden['fusswege'] == true ? Icons.directions_bike : Icons.circle_outlined,
       };
 
+  /// Nur für die Anzeige der Wege ohne Fahrt.
+  String get wegArt => art == 'fuss' ? 'fuss' : (meiden['fusswege'] == true ? 'rad' : 'eigen');
+
   double get min => grenzen[art]!.$1;
   double get max => grenzen[art]!.$2;
 

@@ -282,7 +282,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     if (p == null) return setState(() => _routeHinweis = 'Kein Standort (Berechtigung oder GPS aus?)');
     _pos = p;
     try {
-      final (roh, rt) = await _api!.route(p.lat, p.lon, ziel.lat, ziel.lon, kmh: _tempo.kmh, art: _tempo.serverArt, meiden: _tempo.serverMeiden, ticket: _tempo.ticket, fern: _tempo.fern, lang: lang, ab: _zeit, ankunft: _ankunft, knapp: true);
+      final (roh, rt) = await _api!.route(p.lat, p.lon, ziel.lat, ziel.lon, kmh: _tempo.kmh, art: _tempo.serverArt, meiden: _tempo.serverMeiden, ticket: _tempo.ticket, wegArt: _tempo.wegArt, fern: _tempo.fern, lang: lang, ab: _zeit, ankunft: _ankunft, knapp: true);
       // früheste Ankunft oben; bei Gleichstand bleibt die Server-Reihenfolge
       final v = [for (final (i, x) in roh.indexed) (i, x)]
         ..sort((a, b) => a.$2.ankunft.compareTo(b.$2.ankunft) != 0 ? a.$2.ankunft.compareTo(b.$2.ankunft) : a.$1 - b.$1);
@@ -712,7 +712,7 @@ class _VerbindungZeile extends StatelessWidget {
       if (!a.fahrt) {
         if (min < 1) continue;
         pfeil();
-        teile.add(TextSpan(text: '${a.auto ? '🚗' : '🚶'} $min min'));
+        teile.add(TextSpan(text: '${a.auto ? '🚗' : const {'rad': '🚲', 'eigen': '➡️'}[a.wegArt] ?? '🚶'} $min min'));
         continue;
       }
       pfeil();

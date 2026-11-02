@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -364,7 +365,8 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 		out.Journeys = radVergleich(out.Journeys, bus, *d, art.BusMalus)
 		out.Journeys = append([]journeyOut{*d}, out.Journeys...)
 	} else if d != nil {
-		out.Journeys = append(out.Journeys, *d) // als Vergleich hinten, die App wählt zuerst die erste Verbindung
+		// als Vergleich hinten, die App wählt zuerst die erste Verbindung; der echte Weg ersetzt RAPTORs Schätzung ohne Fahrt
+		out.Journeys = append(slices.DeleteFunc(out.Journeys, func(j journeyOut) bool { return j.Trips == 0 }), *d)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

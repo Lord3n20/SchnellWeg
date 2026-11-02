@@ -71,7 +71,10 @@ class VerkehrsmittelKachel : TileService() {
     private fun waehlen(profil: String) {
         val j = lesen()
         j.put("aktiv", profil)
-        if (!j.has("profile")) j.put("profile", JSONObject())
+        if (!j.has("profile")) { // noch nie gespeichert: kein alter Stand, den die App umstellen müsste
+            j.put("v", 2)
+            j.put("profile", JSONObject())
+        }
         datei.writeText(j.toString())
         zeigen()
     }

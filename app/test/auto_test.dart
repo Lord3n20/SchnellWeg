@@ -21,6 +21,20 @@ void main() {
     expect(v.artText, 'mit dem Auto');
   });
 
+  test('Weg ohne Fahrt heißt nach dem Profil', () {
+    const zeit = {'dep': '2026-11-02T08:00:00+01:00', 'arr': '2026-11-02T08:50:00+01:00'};
+    final j = {
+      'trips': 0,
+      ...zeit,
+      'legs': [
+        {'mode': 'walk', 'from': null, 'to': null, ...zeit},
+      ],
+    };
+    expect(Verbindung.json(j).artText, 'nur zu Fuß');
+    final r = Verbindung.json(j, wegArt: 'rad');
+    expect((r.artText, r.abschnitte.single.wegArt), ('ohne Bus und Bahn', 'rad'));
+  });
+
   test('tempo.json ohne Auto-Profil behält Werte und Auswahl', () async {
     TestWidgetsFlutterBinding.ensureInitialized();
     final dir = Directory.systemTemp.createTempSync('tempo');
