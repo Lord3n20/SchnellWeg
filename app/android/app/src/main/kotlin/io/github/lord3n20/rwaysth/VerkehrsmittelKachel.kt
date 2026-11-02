@@ -36,7 +36,7 @@ class VerkehrsmittelKachel : TileService() {
         arten.firstOrNull { (_, _, p) -> p == profil }?.first
             ?: (if (profil.startsWith("Einrad")) "einrad" else null)
             ?: arten.firstOrNull { (_, name, _) -> profil.startsWith(name) }?.first
-            ?: "fuss" // entspannt / normal / schnell
+            ?: "fuss" // entspannt; normal / schnell aus Ständen vor D-33
 
     override fun onStartListening() = zeigen()
 
@@ -45,7 +45,7 @@ class VerkehrsmittelKachel : TileService() {
         val profil = aktiv()
         t.label = "Verkehrsmittel"
         val titel = lesen().optJSONObject("profile")?.optJSONObject(profil)?.optString("titel", "").orEmpty()
-        t.subtitle = titel.ifEmpty { mapOf("Einrad" to "Custom 1", "Einrad schnell" to "Custom 2")[profil] ?: profil }
+        t.subtitle = titel.ifEmpty { mapOf("entspannt" to "Zu Fuß", "Einrad" to "Custom 1", "Einrad schnell" to "Custom 2")[profil] ?: profil }
             .replaceFirstChar { it.uppercase() }
         t.icon = Icon.createWithResource(this, when (artVon(profil)) {
             "fuss" -> R.drawable.kachel_fuss

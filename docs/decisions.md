@@ -440,3 +440,15 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - Zeitbudget: Abweichung vom Ziel für erste/letzte Meile (< 100 ms): Aachen–Köln gemessen ~360 ms, die Anfrage hat
   5 s statt 300 ms. Valhalla rechnet sie mit seinen vorhandenen Threads, keine Dauerlast.
 - Status: umgesetzt.
+
+## D-33 Ein Gehtempo mit Puffer (02.11.)
+- Betreiber 02.11.: Für zu Fuß reicht eine Gehgeschwindigkeit; ein Puffer in beide Richtungen soll zeigen, ob man
+  für die Verbindung entspannter oder schneller gehen muss.
+- Statt der drei Fuß-Profile gibt es eines (Schlüssel bleibt `entspannt`, Anzeige „Zu Fuß“, Standard 4,3 km/h).
+  Alte tempo.json: War `normal`/`schnell` aktiv, wird dessen Tempo das Gehtempo, sonst bleibt das von `entspannt`.
+- Die App rechnet je Verbindung das nötige Tempo zum ersten Halt (Gehtempo × Gehzeit / Zeit bis zur Abfahrt, mit
+  Echtzeit) und vergleicht mit dem Gehtempo ± 20 % (`tempoPuffer`): darunter „Entspannt“, im Puffer „Normales
+  Tempo passt“, darüber „Schneller gehen“. Nur zu Fuß und ohne Ankunftszeit; knappe Verbindungen behalten den Hinweis
+  aus D-31.
+- Keine Server-Änderung, ältere Apps sind nicht betroffen.
+- Status: umgesetzt.

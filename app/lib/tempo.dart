@@ -42,9 +42,7 @@ const artInfo = {
 bool istRad(String art) => const {'klapprad', 'fixie', 'rennrad', 'mtb'}.contains(art);
 
 const _vorgaben = [
-  ('entspannt', 'fuss', standardKmh),
-  ('normal', 'fuss', 5.0),
-  ('schnell', 'fuss', 6.0),
+  ('entspannt', 'fuss', standardKmh), // ein Gehtempo (D-33); Schlüssel bleibt, die Schnelleinstellung nutzt ihn
   ('Einrad', 'einrad', 12.0),
   ('Einrad schnell', 'einrad', 15.0),
   ('Klapprad entspannt', 'klapprad', 12.0),
@@ -64,7 +62,24 @@ const _vorgaben = [
 /// Profile vor D-22 (ein Fahrrad = heute Fixie): Werte und Auswahl werden übernommen.
 const _alteNamen = {'Fixie': 'Fahrrad', 'Fixie schnell': 'Fahrrad schnell'};
 /// Anzeigenamen der Custom-Profile, solange keiner selbst vergeben ist (Schlüssel bleiben „Einrad …“, die Kachel nutzt sie).
-const _customTitel = {'Einrad': 'Custom 1', 'Einrad schnell': 'Custom 2'};
+const _customTitel = {'entspannt': 'Zu Fuß', 'Einrad': 'Custom 1', 'Einrad schnell': 'Custom 2'};
+/// Frühere Fuß-Profile (vor D-33): war eines aktiv, gilt sein Tempo als das eine Gehtempo.
+const _alteFuss = {'normal', 'schnell'};
+
+/// Puffer ums Gehtempo in beide Richtungen (D-33): so weit daneben gilt noch als normales Tempo.
+const tempoPuffer = 0.2;
+
+enum GehStufe { entspannter, normal, schneller }
+
+/// Wie man zum ersten Halt gehen muss: Zugangsweg `weg` (beim Gehtempo `kmh` gerechnet), `frei` bis zur Abfahrt.
+/// Liefert Stufe und nötiges Tempo; null, wenn die Abfahrt schon vorbei ist.
+(GehStufe, double)? gehHinweis(Duration weg, Duration frei, double kmh) {
+  if (frei <= Duration.zero) return null;
+  final noetig = kmh * weg.inSeconds / frei.inSeconds;
+  if (noetig < kmh * (1 - tempoPuffer)) return (GehStufe.entspannter, noetig);
+  if (noetig > kmh * (1 + tempoPuffer)) return (GehStufe.schneller, noetig);
+  return (GehStufe.normal, noetig);
+}
 
 class TempoProfil {
   final String name, art;
@@ -103,18 +118,7 @@ class Tempo {
   static Future<Tempo> oeffnen() async {
     final t = _vorgabe();
     try {
-      final j = jsonDecode(await (await _datei('tempo.json')).readAsString()) as Map<String, dynamic>;
-      final p = j['profile'] as Map<String, dynamic>;
-      for (final x in t.profile) {
-        final e = (p[x.name] ?? p[_alteNamen[x.name]]) as Map<String, dynamic>?;
-        if (x.umbenennbar) x.titel = e?['titel'] as String?;
-        final v = (e?['kmh'] as num?)?.toDouble();
-        if (v == null || !x.erlaubt(v)) continue;
-        x.kmh = v;
-        x.gemessen = DateTime.tryParse(e!['gemessen'] as String? ?? '');
-      }
-      final aktiv = _alteNamen.entries.where((e) => e.value == j['aktiv']).firstOrNull?.key ?? j['aktiv'];
-      if (t.profile.any((x) => x.name == aktiv)) t.aktiv = aktiv as String;
+      t._uebernehmen(jsonDecode(await (await _datei('tempo.json')).readAsString()) as Map<String, dynamic>);
       return t;
     } on FileSystemException {
       // noch nie gespeichert
@@ -138,6 +142,26 @@ class Tempo {
     }
     return t;
   }
+
+  /// Gespeicherten Stand in die Vorgaben übernehmen; ältere Stände werden dabei umgestellt.
+  void _uebernehmen(Map<String, dynamic> j) {
+    final p = j['profile'] as Map<String, dynamic>;
+    final alterFuss = _alteFuss.contains(j['aktiv']) ? j['aktiv'] : null;
+    for (final x in profile) {
+      final e = ((x.name == 'entspannt' ? p[alterFuss] : null) ?? p[x.name] ?? p[_alteNamen[x.name]]) as Map<String, dynamic>?;
+      if (x.umbenennbar) x.titel = e?['titel'] as String?;
+      final v = (e?['kmh'] as num?)?.toDouble();
+      if (v == null || !x.erlaubt(v)) continue;
+      x.kmh = v;
+      x.gemessen = DateTime.tryParse(e!['gemessen'] as String? ?? '');
+    }
+    final a = _alteNamen.entries.where((e) => e.value == j['aktiv']).firstOrNull?.key ?? j['aktiv'];
+    if (profile.any((x) => x.name == a)) aktiv = a as String;
+  }
+
+  /// Nur zum Testen der Umstellung älterer Stände.
+  @visibleForTesting
+  static Tempo ausJson(Map<String, dynamic> j) => _vorgabe().._uebernehmen(j);
 
   /// Nur das aktive Profil (für die Startseite).
   static Future<TempoProfil> laden() async => (await oeffnen()).aktuell;

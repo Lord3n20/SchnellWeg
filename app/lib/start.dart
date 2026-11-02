@@ -489,7 +489,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
                     ),
                     ActionChip(
                       avatar: Icon(artIcon(_tempo.art), size: 18),
-                      label: Text(_tempo.art == 'fuss' ? 'Zu Fuß ${_tempo.anzeige}' : _tempo.anzeige),
+                      label: Text(_tempo.anzeige),
                       tooltip: 'Verkehrsmittel',
                       onPressed: () async {
                         final p = await verkehrsmittelWaehlen(context);
@@ -608,7 +608,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     return RefreshIndicator(
       onRefresh: _routeBerechnen,
       child: ListView(children: [
-        for (final (i, x) in v.indexed) _VerbindungZeile(x, kmh: _tempo.kmh, gewaehlt: i == _gewaehlt, onTap: () => _details(i)),
+        for (final (i, x) in v.indexed) _VerbindungZeile(x, kmh: _tempo.kmh, zuFuss: _tempo.art == 'fuss', bezug: _ankunft ? null : _zeit ?? DateTime.now(), gewaehlt: i == _gewaehlt, onTap: () => _details(i)),
       ]),
     );
   }
@@ -691,9 +691,11 @@ String _uhr(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toSt
 class _VerbindungZeile extends StatelessWidget {
   final Verbindung v;
   final double kmh; // gewähltes Tempo, für den Hinweis bei knappen Verbindungen
+  final bool zuFuss;
+  final DateTime? bezug; // ab wann man losgehen kann; null im Ankunftsmodus (kein Gehhinweis)
   final bool gewaehlt;
   final VoidCallback onTap;
-  const _VerbindungZeile(this.v, {required this.kmh, required this.gewaehlt, required this.onTap});
+  const _VerbindungZeile(this.v, {required this.kmh, required this.zuFuss, this.bezug, required this.gewaehlt, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -735,6 +737,20 @@ class _VerbindungZeile extends StatelessWidget {
     ].join(' · ');
     String zahl(double x) => x.toStringAsFixed(x == x.roundToDouble() ? 0 : 1).replaceAll('.', ',');
     final eil = v.eilKmh;
+    // Gehhinweis mit Puffer (D-33): nur zu Fuß, nur wenn die Verbindung mit einem Fußweg zum ersten Halt beginnt
+    (Color, String)? gehen;
+    if (eil == null && zuFuss && bezug != null && v.abschnitte.length >= 2 && !v.abschnitte[0].fahrt && v.abschnitte[1].fahrt) {
+      final (w, f) = (v.abschnitte[0], v.abschnitte[1]);
+      final weg = w.an.difference(w.ab), frei = (f.abRt ?? f.ab).difference(bezug!);
+      final luft = (frei - weg).inMinutes;
+      final luftText = luft > 0 ? ' · $luft min Luft' : '';
+      gehen = switch (gehHinweis(weg, frei, kmh)) {
+        (GehStufe.entspannter, final n) => (farbe.primary, '🌿 Entspannt: ${n < 2 ? 'viel Zeit' : '${zahl(n)} km/h reichen'}$luftText'),
+        (GehStufe.normal, _) => (farbe.outline, '🚶 Normales Tempo passt$luftText'),
+        (GehStufe.schneller, final n) => (farbe.tertiary, '⚡ Schneller gehen: ${zahl(n)} km/h (sonst ${zahl(kmh)})'),
+        null => null,
+      };
+    }
     final warnung = switch (v.risiko) {
       'anschluss' => 'Anschluss gefährdet',
       'ausfall' => 'Fahrt fällt aus',
@@ -763,6 +779,11 @@ class _VerbindungZeile extends StatelessWidget {
               padding: const EdgeInsets.only(top: 4),
               child: Text('⚡ Knapp: nur mit ${zahl(eil)} km/h zum ersten Halt (sonst ${zahl(kmh)}) – sofort los',
                   style: TextStyle(color: farbe.tertiary, fontWeight: FontWeight.w600)),
+            ),
+          if (gehen != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(gehen.$2, style: TextStyle(color: gehen.$1)),
             ),
           if (warnung != null)
             Padding(
