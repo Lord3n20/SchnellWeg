@@ -428,7 +428,9 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - Nachtrag 02.11.: Bei dichtem Zubringer (Elisenbrunnen→Düren bei 4,3 km/h, Bus alle 1–2 min zum Zug) brauchten
   spätere Busse zum selben Zug alle 5 Abfragen auf, am Ende schlug der letzte die übrigen: nur eine Verbindung.
   Jetzt zählen nur ungeschlagene Verbindungen, höchstens 10 Abfragen; ohne neue Ankunft verdoppelt sich der Schritt,
-  mit neuer halbiert er sich (mindestens 1 min). Springt er über den letzten Bus, geht es dort neu los.
+  mit neuer halbiert er sich (mindestens 1 min). Springt er über den letzten Bus, geht es dort neu los. Danach bis zu
+  4 Abfragen, um zur schnellsten Verbindung den spätesten Bus zu finden. Verbindungen, die ≥ 30 min und > 1,5× länger
+  dauern als die kürzeste, fallen raus (live: Bonn über Nachtbus 5 h 44 statt 2 h), außer früheste Ankunft und reiner Weg.
 - Status: umgesetzt.
 
 ## D-32 Autorouten (02.11.)

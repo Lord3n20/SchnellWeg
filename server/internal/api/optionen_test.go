@@ -64,3 +64,33 @@ func TestOptionenLetzterBus(t *testing.T) {
 		t.Fatalf("erwartet beide Züge, bekam %d: %+v", len(out), out)
 	}
 }
+
+// Nach den Sprüngen muss der letzte Bus zum schnellsten Zug gefunden werden, nicht ein früherer.
+func TestOptionenSpaetesterBus(t *testing.T) {
+	const h = 3600
+	tt := netz(takt(8*h, 13*h, 120), takt(8*h+40*60, 13*h, h))
+	out := optionen(raptor.NewRouter(tt), 8*h-120, abA, anC, 3, 4.3, 0)
+	// Bus 08:34 ist um 08:39 am Zug 08:40, Zugang 60 s
+	if got := abfahrt(out[0].j); got != 8*h+33*60 {
+		t.Fatalf("losgehen %d:%02d statt 08:33", got/h, got%h/60)
+	}
+}
+
+// Weniger Umstiege rechtfertigen keine Stunden: Der Direktbus (5 h) fällt neben dem Zug (1 h) weg.
+func TestOptionenUnsinnigLang(t *testing.T) {
+	const h = 3600
+	tt := netz(takt(8*h, 13*h, 120), takt(8*h+40*60, 13*h, h))
+	tt.Routes = append(tt.Routes, raptor.Route{Stops: []int32{0, 2}, NTrips: 1, Arr: []int32{9 * h, 14 * h}, Dep: []int32{9 * h, 14 * h},
+		Trips: []raptor.TripInfo{{ID: "direkt", Line: "90N"}}})
+	tt.StopRoutes[0], tt.StopPos[0] = []int32{0, 2}, []int32{0, 0}
+	tt.StopRoutes[2], tt.StopPos[2] = []int32{1, 2}, []int32{1, 1}
+	out := optionen(raptor.NewRouter(tt), 8*h-120, abA, anC, 3, 4.3, 0)
+	if len(out) < 3 {
+		t.Fatalf("erwartet mindestens 3 Verbindungen, bekam %d", len(out))
+	}
+	for _, o := range out {
+		if o.j.Trips == 1 {
+			t.Errorf("Direktbus trotz 5 h dabei: %+v", o.j)
+		}
+	}
+}
