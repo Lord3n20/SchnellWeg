@@ -16,6 +16,8 @@ import 'api.dart';
 import 'darstellung.dart';
 import 'kartenlager.dart';
 
+const _treffer = 24.0; // so viele Pixel um den Finger gilt ein Antippen als Treffer auf eine Haltestelle
+const _trefferAb = 14.0; // darunter liegen zu viele Halte unter dem Finger: Antippen meint den Punkt
 const _detailAb = 10.0; // ab dieser Zoomstufe fällt die grobe Übersicht auf
 const _feinAb = 10.0; // darunter reicht die Übersicht (bis Z9 + Hochskalieren), die Bundesländer werden nicht gezeichnet –
 // bei 9–10 kosteten beide Vektorebenen zusammen zu viel (lange Verbindungen, App „reagiert nicht“)
@@ -76,13 +78,15 @@ class Karte extends StatefulWidget {
   final LatLng? standort, ziel;
   final List<LatLng> halte;
   final List<Strecke> strecken;
-  final void Function(LatLng)? onAntippen; // Punkt als Ziel übernehmen
+  final LatLng? markiert; // angetippte Haltestelle
+  final void Function(LatLng, double trefferMeter)? onAntippen; // trefferMeter: Umkreis für Haltestellen, 0 = keine
   const Karte({
     super.key,
     this.standort,
     this.ziel,
     this.halte = const [],
     this.strecken = const [],
+    this.markiert,
     this.onAntippen,
   });
 
@@ -110,6 +114,11 @@ class _KarteState extends State<Karte> {
   void didUpdateWidget(Karte alt) {
     super.didUpdateWidget(alt);
     if (alt.strecken != widget.strecken || alt.ziel != widget.ziel) _folgen = true;
+    final m = widget.markiert;
+    if (m != null && m != alt.markiert && _bereit && !_kamera.camera.visibleBounds.contains(m)) {
+      _folgen = false; // Haltestelle aus der Liste liegt außerhalb des Ausschnitts: hinbewegen, Zoom bleibt
+      WidgetsBinding.instance.addPostFrameCallback((_) => _kamera.move(m, _kamera.camera.zoom));
+    }
     if (_folgen) WidgetsBinding.instance.addPostFrameCallback((_) => _ausschnitt());
   }
 
@@ -154,6 +163,12 @@ class _KarteState extends State<Karte> {
     if (punkte.length < 2) return;
     _kamera.fitCamera(CameraFit.coordinates(
         coordinates: punkte, padding: const EdgeInsets.all(36), maxZoom: 17));
+  }
+
+  double _trefferMeter(LatLng p) {
+    final zoom = _kamera.camera.zoom;
+    if (zoom < _trefferAb) return 0;
+    return _treffer * 156543.03 * cos(p.latitude * pi / 180) / pow(2, zoom); // Meter je Pixel (Web-Mercator)
   }
 
   @override
@@ -204,7 +219,7 @@ class _KarteState extends State<Karte> {
             _ausschnitt();
             _pruefeRegion(_kamera.camera);
           },
-          onTap: widget.onAntippen == null ? null : (_, p) => widget.onAntippen!(p),
+          onTap: widget.onAntippen == null ? null : (_, p) => widget.onAntippen!(p, _trefferMeter(p)),
           onPositionChanged: (c, vomNutzer) {
             if (vomNutzer) _folgen = false;
             _pruefeRegion(c);
@@ -236,6 +251,8 @@ class _KarteState extends State<Karte> {
             for (final s in widget.strecken.where((s) => !s.fuss))
               for (final p in [s.punkte.first, s.punkte.last])
                 CircleMarker(point: p, radius: 5, color: farbe.surface, borderColor: linienFarbe(s.linie), borderStrokeWidth: 3),
+            if (widget.markiert != null)
+              CircleMarker(point: widget.markiert!, radius: 9, color: farbe.primary, borderColor: farbe.surface, borderStrokeWidth: 3),
             if (widget.standort != null) ...[
               CircleMarker(point: widget.standort!, radius: 11, color: farbe.primary.withValues(alpha: 0.2)),
               CircleMarker(point: widget.standort!, radius: 6, color: farbe.primary, borderColor: Colors.white, borderStrokeWidth: 2),

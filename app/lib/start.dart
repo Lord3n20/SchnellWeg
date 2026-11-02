@@ -1,12 +1,13 @@
 // Startseite nach docs/app-ui.md: Von/Nach, Karte, Haltestellen in der Nähe mit nächster Abfahrt.
 // Abfahrten werden nur abgefragt, solange die Seite sichtbar ist (alle 30 s, kein Hintergrund-Polling; auch nicht,
 // solange eine Unterseite sie verdeckt).
-// Ziel per Suche oder durch Antippen der Karte. Mit gewähltem Ziel zeigt die Seite statt der Haltestellen kurze Zusammenfassungen der Verbindungen.
+// Ziel per Suche oder durch Antippen der Karte; eine angetippte Haltestelle (Karte oder Liste) öffnet ihre Abfahrten. Mit gewähltem Ziel zeigt die Seite statt der Haltestellen kurze Zusammenfassungen der Verbindungen.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
+import 'abfahrten.dart';
 import 'api.dart';
 import 'details.dart';
 import 'einstellungen.dart';
@@ -48,8 +49,19 @@ class _Gruppe {
   final String name;
   final double meter;
   final List<String> ids;
+  final Halt naechster;
   List<Abfahrt> abfahrten = [];
-  _Gruppe(this.name, this.meter, this.ids);
+  _Gruppe(this.name, this.meter, this.ids, this.naechster);
+}
+
+/// Angetippte Haltestelle: ersetzt unten die Liste bzw. die Verbindungen, die Karte bleibt sichtbar.
+class _GewaehlterHalt {
+  final Ort ort;
+  final List<String> ids;
+  List<Abfahrt>? abfahrten;
+  bool rt = true;
+  String? fehler;
+  _GewaehlterHalt(this.ort, this.ids);
 }
 
 class Start extends StatefulWidget {
@@ -70,6 +82,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
   bool _rt = false;
   String? _hinweis;
   Ort? _ziel;
+  _GewaehlterHalt? _halt;
   List<Verbindung>? _verbindungen; // null = wird berechnet
   bool _routeRt = false;
   String? _routeHinweis;
@@ -190,19 +203,41 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
   Future<void> _zielSetzen(Ort o) async {
     setState(() {
       _ziel = o;
+      _halt = null;
       _strecken = [];
     });
     await _routeBerechnen();
   }
 
-  /// Angetippter Kartenpunkt als Ziel; benannt nach der nächsten Haltestelle, weil es keine Rückwärtssuche gibt.
-  Future<void> _zielAusKarte(LatLng p) async {
+  /// Abfahrten dieser Haltestelle (alle Bahnsteige gleichen Namens in der Nähe) unter der Karte zeigen.
+  Future<void> _haltOeffnen(Halt h) async {
+    final db = _db;
+    if (db == null) return;
+    final bahnsteige = bahnsteigeVon(h, [for (final (x, _) in await db.naechste(h.lat, h.lon, radius: 400)) x]);
+    if (!mounted) return;
+    setState(() => _halt = _GewaehlterHalt(halteOrt(h, bahnsteige), [for (final x in bahnsteige) x.id]));
+    await _aktualisieren();
+  }
+
+  void _haltZu() {
+    setState(() => _halt = null);
+    _aktualisieren();
+  }
+
+  /// Karte angetippt: auf einer Haltestelle ihre Abfahrten, sonst der Punkt als Ziel, benannt nach der nächsten
+  /// Haltestelle, weil es keine Rückwärtssuche gibt.
+  Future<void> _karteAngetippt(LatLng p, double trefferMeter) async {
     if (_api == null || _db == null) return;
+    if (trefferMeter > 0) {
+      final treffer = await _db!.naechste(p.latitude, p.longitude, radius: trefferMeter);
+      if (treffer.isNotEmpty) return _haltOeffnen(treffer.first.$1);
+    }
     final nah = await _db!.naechste(p.latitude, p.longitude, radius: 300);
     final name = nah.isEmpty ? 'Punkt auf der Karte' : 'Punkt bei ${haltName(nah.first.$1.name)}';
     if (!mounted) return;
     setState(() {
       _ziel = Ort('karte', name, '', p.latitude, p.longitude);
+      _halt = null;
       _strecken = [];
     });
     await _routeBerechnen();
@@ -392,13 +427,27 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     if (_api == null || !mounted) return;
     if (standortNeu || _pos == null) {
       final p = await Standort.holen();
-      if (p == null && _pos == null) return setState(() => _hinweis = 'Kein Standort (Berechtigung oder GPS aus?)');
-      _pos = p ?? _pos;
-      _gruppen = await _gruppieren(_pos!);
-      Losgehen.instanz.pruefen(_api!, _pos!, _tempo).ignore(); // nebenher, höchstens alle 5 min
+      if (p == null && _pos == null) {
+        setState(() => _hinweis = 'Kein Standort (Berechtigung oder GPS aus?)');
+        if (_halt == null) return; // eine angetippte Haltestelle braucht keinen Standort
+      } else {
+        _pos = p ?? _pos;
+        _gruppen = await _gruppieren(_pos!);
+        Losgehen.instanz.pruefen(_api!, _pos!, _tempo).ignore(); // nebenher, höchstens alle 5 min
+      }
     }
     final ids = [for (final g in _gruppen) ...g.ids].take(_maxIds).toList();
-    if (ids.isNotEmpty) {
+    if (_halt case final halt?) {
+      // Nur die gewählte Haltestelle abfragen; die Liste darunter ist nicht zu sehen.
+      try {
+        final (abf, rt) = await _api!.abfahrten(halt.ids, n: 10);
+        halt.abfahrten = [for (final id in halt.ids) ...?abf[id]]..sort((a, b) => a.erwartet.compareTo(b.erwartet));
+        halt.rt = rt;
+        halt.fehler = null;
+      } on ApiFehler catch (e) {
+        halt.fehler = 'Abfahrten nicht geladen ($e)';
+      }
+    } else if (ids.isNotEmpty) {
       try {
         final (abf, rt) = await _api!.abfahrten(ids);
         for (final g in _gruppen) {
@@ -429,7 +478,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
       if (g != null) {
         g.ids.add(h.id);
       } else if (gruppen.length < _maxNamen) {
-        gruppen[k] = _Gruppe(haltName(h.name), m, [h.id]);
+        gruppen[k] = _Gruppe(haltName(h.name), m, [h.id], h);
       }
     }
     return gruppen.values.toList();
@@ -438,7 +487,13 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
   @override
   Widget build(BuildContext context) {
     final farbe = Theme.of(context).colorScheme;
-    return Scaffold(
+    final halt = _halt;
+    return PopScope(
+      canPop: halt == null, // Zurück schließt zuerst die Haltestelle
+      onPopInvokedWithResult: (geschlossen, _) {
+        if (!geschlossen && _halt != null) _haltZu();
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: const Text('SchnellWeg'),
         actions: [
@@ -551,22 +606,49 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
             ziel: _ziel == null ? null : LatLng(_ziel!.lat, _ziel!.lon),
             halte: _naheHalte,
             strecken: _strecken,
-            onAntippen: _zielAusKarte,
+            markiert: halt == null ? null : LatLng(halt.ort.lat, halt.ort.lon),
+            onAntippen: _karteAngetippt,
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: Row(children: [
-            Text(_ziel == null ? 'Haltestellen in der Nähe' : 'Verbindungen',
-                style: Theme.of(context).textTheme.titleSmall),
-            const Spacer(),
-            if (_ziel != null) FavoritStern(_ziel!, klein: true),
-            if (_ziel == null ? _gruppen.isNotEmpty && !_rt : (_verbindungen?.isNotEmpty ?? false) && !_routeRt)
-              Text('nur Fahrplan', style: TextStyle(fontSize: 12, color: farbe.outline)),
-          ]),
-        ),
-        Expanded(flex: 6, child: _ziel == null ? _halteListe() : _routeListe()),
+        if (halt != null) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 4, 0),
+            child: Row(children: [
+              Expanded(
+                child: Text(halt.ort.name,
+                    maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleSmall),
+              ),
+              if (halt.abfahrten?.isNotEmpty == true && !halt.rt)
+                Text('nur Fahrplan', style: TextStyle(fontSize: 12, color: farbe.outline)),
+              FavoritStern(halt.ort),
+              TextButton.icon(
+                onPressed: () => _zielSetzen(halt.ort),
+                icon: const Icon(Icons.directions, size: 18),
+                label: const Text('Hierhin'),
+              ),
+              IconButton(icon: const Icon(Icons.close), tooltip: 'Schließen', onPressed: _haltZu),
+            ]),
+          ),
+          Expanded(
+            flex: 6,
+            child: HaltAbfahrten(abfahrten: halt.abfahrten, fehler: halt.fehler, onRefresh: _aktualisieren),
+          ),
+        ] else ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Row(children: [
+              Text(_ziel == null ? 'Haltestellen in der Nähe' : 'Verbindungen',
+                  style: Theme.of(context).textTheme.titleSmall),
+              const Spacer(),
+              if (_ziel != null) FavoritStern(_ziel!, klein: true),
+              if (_ziel == null ? _gruppen.isNotEmpty && !_rt : (_verbindungen?.isNotEmpty ?? false) && !_routeRt)
+                Text('nur Fahrplan', style: TextStyle(fontSize: 12, color: farbe.outline)),
+            ]),
+          ),
+          Expanded(flex: 6, child: _ziel == null ? _halteListe() : _routeListe()),
+        ],
       ]),
+      ),
     );
   }
 
@@ -578,7 +660,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
             listenable: Losgehen.instanz,
             builder: (context, _) => ListView(children: [
               if (Losgehen.instanz.plan case final p?) _TerminZeile(p, onTap: () => _terminAlsZiel(p)),
-              for (final g in _gruppen) _HaltZeile(g),
+              for (final g in _gruppen) _HaltZeile(g, onTap: () => _haltOeffnen(g.naechster)),
             ]),
           ),
         );
@@ -645,46 +727,27 @@ class _Feld extends StatelessWidget {
 
 class _HaltZeile extends StatelessWidget {
   final _Gruppe g;
-  const _HaltZeile(this.g);
+  final VoidCallback onTap;
+  const _HaltZeile(this.g, {required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final farbe = Theme.of(context).colorScheme;
     final jetzt = DateTime.now();
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Expanded(child: Text(g.name, style: const TextStyle(fontWeight: FontWeight.w600))),
-          Text('${(g.meter / 10).round() * 10} m', style: TextStyle(color: farbe.outline)),
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Expanded(child: Text(g.name, style: const TextStyle(fontWeight: FontWeight.w600))),
+            Text('${(g.meter / 10).round() * 10} m', style: TextStyle(color: farbe.outline)),
+          ]),
+          for (final a in g.abfahrten.take(3))
+            Padding(padding: const EdgeInsets.only(left: 12, top: 2), child: AbfahrtZeile(a, jetzt)),
         ]),
-        for (final a in g.abfahrten.take(3))
-          Padding(
-            padding: const EdgeInsets.only(left: 12, top: 2),
-            child: Text.rich(TextSpan(children: [
-              TextSpan(text: a.line, style: const TextStyle(fontWeight: FontWeight.w600)),
-              TextSpan(text: ' → ${zielName(a.headsign)}   '),
-              if (a.canceled)
-                TextSpan(text: 'fällt aus', style: TextStyle(color: farbe.error))
-              else ...[
-                TextSpan(text: _wann(a.erwartet, jetzt)),
-                if ((a.versp ?? 0) != 0)
-                  TextSpan(
-                    text: ' (${a.versp! > 0 ? '+' : ''}${a.versp})',
-                    style: TextStyle(color: a.versp! > 0 ? farbe.error : farbe.primary),
-                  ),
-              ],
-            ])),
-          ),
-      ]),
+      ),
     );
-  }
-
-  static String _wann(DateTime t, DateTime jetzt) {
-    final min = t.difference(jetzt).inSeconds / 60;
-    if (min < 0.5) return 'jetzt';
-    if (min < 60) return 'in ${min.round()} min';
-    return '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
   }
 }
 

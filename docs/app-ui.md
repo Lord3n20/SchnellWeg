@@ -27,5 +27,7 @@
 ## Datenschutz-Folgen (passt zu CLAUDE.md)
 - Halte in der Nähe werden **auf dem Handy** aus der lokalen Haltestellen-SQLite bestimmt; der Server bekommt
   nur Halte-IDs für die nächsten Abfahrten, nie den Standort.
+- Antippen einer Haltestelle (Karte ab Zoom 14 oder Liste) → unter der Karte die Abfahrten genau dieser Haltestelle (Karte
+  markiert sie), „Hierhin“ macht sie zum Ziel, Schließen/Zurück führt zur vorigen Ansicht; Antippen der Karte daneben → Punkt als Ziel.
 - Abfahrten-Abruf nur, solange die Startseite sichtbar ist (kein Hintergrund-Polling), Aktualisierung ≈ 30 s.
 - Server braucht dafür einen Endpunkt „nächste Abfahrten für Halte-IDs“ (gebündelt, eine Anfrage für alle Halte).
