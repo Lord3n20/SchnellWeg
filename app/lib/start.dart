@@ -699,7 +699,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
                   style: Theme.of(context).textTheme.titleSmall),
               const Spacer(),
               if (_ziel != null) FavoritStern(_ziel!, klein: true),
-              if (_ziel == null ? _gruppen.isNotEmpty && !_rt : (_verbindungen?.isNotEmpty ?? false) && !_routeRt)
+              if (_ziel == null ? _gruppen.isNotEmpty && !_rt : (_verbindungen?.any((v) => v.fahrten > 0) ?? false) && !_routeRt)
                 Text('nur Fahrplan', style: TextStyle(fontSize: 12, color: farbe.outline)),
             ]),
           ),
