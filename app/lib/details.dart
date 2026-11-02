@@ -33,7 +33,6 @@ class Details extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final umstiege = v.fahrten - 1;
     return UeberSperrbildschirm(child: Scaffold(
       appBar: AppBar(
         title: Text('${_uhr(v.ab)} – ${_uhr(v.ankunft)} · ${v.ankunft.difference(v.ab).inMinutes} min'),
@@ -45,7 +44,7 @@ class Details extends StatelessWidget {
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                switch (umstiege) { -1 => 'nur zu Fuß', 0 => 'direkt', 1 => '1 Umstieg', _ => '$umstiege Umstiege' },
+                v.artText,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
@@ -101,9 +100,9 @@ class _Fuss extends StatelessWidget {
     final wohin = a.nach != null ? 'zu ${_mitSteig(a.nach!)}' : 'zu ${ziel ?? 'Ziel'}';
     final laenge = meter > 0 ? ' · ${meter < 1000 ? '${(meter / 10).round() * 10} m' : '${(meter / 100).round() / 10} km'.replaceAll('.', ',')}' : '';
     return _Zeile(
-      icon: Icons.directions_walk,
+      icon: a.auto ? Icons.directions_car : Icons.directions_walk,
       farbe: Theme.of(context).colorScheme.outline,
-      titel: 'Gehen $wohin',
+      titel: '${a.auto ? 'Fahren' : 'Gehen'} $wohin',
       unter: '${min < 1 ? '< 1' : min} min$laenge',
       zeit: _uhr(a.ab),
     );

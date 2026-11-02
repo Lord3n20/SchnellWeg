@@ -394,3 +394,57 @@ func TestOptionenUndKnapp(t *testing.T) {
 		t.Errorf("ankunft+knapp: %s", w.Body)
 	}
 }
+
+func TestAuto(t *testing.T) {
+	var gefragt vhRouteReq
+	code := 200
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gefragt = vhRouteReq{}
+		json.NewDecoder(r.Body).Decode(&gefragt)
+		if code != 200 {
+			w.WriteHeader(code)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"trip": map[string]any{
+			"legs": []map[string]string{{"shape": "form"}}, "summary": map[string]float64{"time": 3000, "length": 78}}})
+	}))
+	defer ts.Close()
+	// Ohne Fahrplan: das Auto braucht keinen.
+	s := &Server{Valhalla: &Valhalla{URL: ts.URL, Timeout: time.Second, Client: ts.Client()}}
+	body := `{"from":{"lat":50.77,"lon":6.09},"to":{"lat":50.94,"lon":6.96},"time":"2026-10-28T08:00:00+01:00","art":"auto"%s}`
+
+	w, r := post(s, fmt.Sprintf(body, `,"kmh":120`))
+	if w.Code != 200 || len(r.Journeys) != 1 {
+		t.Fatalf("Code %d, %s", w.Code, w.Body)
+	}
+	j := r.Journeys[0]
+	if l := j.Legs[0]; j.Trips != 0 || len(j.Legs) != 1 || l.Mode != "drive" || l.Shape != "form" || j.Arr.Sub(j.Dep) != 50*time.Minute {
+		t.Errorf("Fahrt falsch: %s", w.Body)
+	}
+	opts, _ := gefragt.CostingOptions["auto"].(map[string]any)
+	if gefragt.Costing != "auto" || opts["top_speed"] != 120.0 || gefragt.Locations[1].SearchCutoff != autoFangM {
+		t.Errorf("Valhalla-Anfrage: %+v", gefragt)
+	}
+	if w, _ := post(s, fmt.Sprintf(body, "")); w.Code != 200 {
+		t.Errorf("ohne kmh: Code %d", w.Code)
+	} else if opts, _ := gefragt.CostingOptions["auto"].(map[string]any); opts["top_speed"] != nil {
+		t.Errorf("ohne kmh kein Höchsttempo: %+v", opts)
+	}
+	_, r = post(s, fmt.Sprintf(body, `,"kmh":120,"ankunft":true`))
+	if got := r.Journeys[0].Dep.In(Berlin).Format("15:04"); got != "07:10" {
+		t.Errorf("Ankunftszeit: los %s statt 07:10", got)
+	}
+	for _, k := range []string{`,"kmh":29`, `,"kmh":201`} {
+		if w, _ := post(s, fmt.Sprintf(body, k)); w.Code != 400 {
+			t.Errorf("%s: Code %d, erwartet 400", k, w.Code)
+		}
+	}
+	code = 400 // kein Weg oder außerhalb der Tiles
+	if w, _ := post(s, fmt.Sprintf(body, "")); w.Code != 422 || !strings.Contains(w.Body.String(), "kein_autoweg") {
+		t.Errorf("kein Weg: Code %d, %s", w.Code, w.Body)
+	}
+	s.Valhalla = nil
+	if w, _ := post(s, fmt.Sprintf(body, "")); w.Code != 503 {
+		t.Errorf("ohne Valhalla: Code %d", w.Code)
+	}
+}

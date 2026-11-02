@@ -110,8 +110,8 @@ type routeReq struct {
 	Time  *time.Time `json:"time"`  // Abfahrt frühestens; fehlt sie, gilt jetzt
 	Fern  bool       `json:"fern"`  // Fernverkehr zulassen; sonst nur, was das Deutschlandsemesterticket abdeckt
 	Debug bool       `json:"debug"` // Zeiten der Valhalla-Aufrufe aufschlüsseln (nur Messung, keine Orte)
-	KMH   *float64   `json:"kmh"`   // Gehtempo (App-Einstellung, D-12); fehlt es, gilt BaseKMH
-	Art   string     `json:"art"`   // fuss (Standard) | einrad | klapprad | fixie | rennrad | mtb (D-21, D-22); rad = fixie
+	KMH   *float64   `json:"kmh"`   // Gehtempo (App-Einstellung, D-12); fehlt es, gilt BaseKMH; beim Auto Höchsttempo
+	Art   string     `json:"art"`   // fuss (Standard) | einrad | klapprad | fixie | rennrad | mtb (D-21, D-22) | auto (D-32); rad = fixie
 	Lang  bool       `json:"lang"`  // auch mit sehr langem Zugangsweg (> LangM) genau rechnen (D-25)
 	// Ankunft: time ist die späteste Ankunft statt der frühesten Abfahrt (D-27)
 	Ankunft bool `json:"ankunft"`
@@ -155,7 +155,7 @@ type stopOut struct {
 }
 
 type legOut struct {
-	Mode     string    `json:"mode"` // walk | ride
+	Mode     string    `json:"mode"` // walk | ride | drive (Auto, D-32)
 	From     *stopOut  `json:"from"` // null = Start- bzw. Zielort
 	To       *stopOut  `json:"to"`
 	Dep      time.Time `json:"dep"`
@@ -199,11 +199,6 @@ func fail(w http.ResponseWriter, code int, kind string) {
 }
 
 func (s *Server) route(w http.ResponseWriter, r *http.Request) {
-	p := s.Current()
-	if p == nil {
-		fail(w, http.StatusServiceUnavailable, "fahrplan_laedt")
-		return
-	}
 	var req routeReq
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 	dec.DisallowUnknownFields()
@@ -217,6 +212,15 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	t := time.Now()
 	if req.Time != nil {
 		t = *req.Time
+	}
+	if art.Auto { // braucht keinen Fahrplan
+		s.autoRoute(w, r, req, t)
+		return
+	}
+	p := s.Current()
+	if p == nil {
+		fail(w, http.StatusServiceUnavailable, "fahrplan_laedt")
+		return
 	}
 	base := DayBase(p.Day)
 	dep := t.Sub(base)

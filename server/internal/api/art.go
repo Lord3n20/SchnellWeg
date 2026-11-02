@@ -19,6 +19,7 @@ type Art struct {
 	// BusMalus: Verbindungen mit Bus entfallen, wenn sie nicht mindestens so viel früher ankommen als der direkte
 	// Weg (Klapprad: ein paar Stationen Bus sind kaum schneller als selbst fahren, Betreiber 28.10.).
 	BusMalus time.Duration
+	Auto     bool // Autofahrt von Tür zu Tür ohne ÖV, kmh = Höchsttempo (D-32)
 }
 
 var arten = map[string]Art{
@@ -31,6 +32,7 @@ var arten = map[string]Art{
 	"rad":      {Min: 6, Max: 40, Rad: true, NurBahn: true, RadTyp: "Hybrid", Belag: 0.5, Stufen: 300}, // App vor D-22 = Fixie
 	"rennrad":  {Min: 10, Max: 45, Rad: true, NurBahn: true, RadTyp: "Road", Belag: 0.8, Stufen: 600},
 	"mtb":      {Min: 6, Max: 35, Rad: true, NurBahn: true, RadTyp: "Mountain", Stufen: 180}, // überall lang, Treppen nur, wenn's viel spart
+	"auto":     {Min: 30, Max: 200, Auto: true},
 }
 
 // Kosten ist eine Valhalla-Kostenart samt Faktor, mit dem ihre Zeiten zur Zeit im gewählten Tempo werden.

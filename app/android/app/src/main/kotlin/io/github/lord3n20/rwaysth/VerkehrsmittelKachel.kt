@@ -7,7 +7,7 @@ import android.service.quicksettings.TileService
 import org.json.JSONObject
 import java.io.File
 
-// Schnelleinstellung „Verkehrsmittel“: zeigt das aktive Tempo-Profil, Antippen öffnet die Auswahl Fuß/Custom/Räder.
+// Schnelleinstellung „Verkehrsmittel“: zeigt das aktive Tempo-Profil, Antippen öffnet die Auswahl Fuß/Custom/Räder/Auto.
 // Schreibt nur `aktiv` in tempo.json (dieselbe Datei wie lib/tempo.dart); die App liest sie beim Zurückkommen neu
 // und rechnet die aktuelle Verbindung damit neu.
 class VerkehrsmittelKachel : TileService() {
@@ -19,6 +19,7 @@ class VerkehrsmittelKachel : TileService() {
         Triple("fixie", "Fixie", "Fixie"),
         Triple("rennrad", "Rennrad", "Rennrad"),
         Triple("mtb", "Mountainbike", "Mountainbike"),
+        Triple("auto", "Auto", "Auto"),
     )
 
     private val datei get() = File(filesDir, "tempo.json")
@@ -46,7 +47,11 @@ class VerkehrsmittelKachel : TileService() {
         val titel = lesen().optJSONObject("profile")?.optJSONObject(profil)?.optString("titel", "").orEmpty()
         t.subtitle = titel.ifEmpty { mapOf("Einrad" to "Custom 1", "Einrad schnell" to "Custom 2")[profil] ?: profil }
             .replaceFirstChar { it.uppercase() }
-        t.icon = Icon.createWithResource(this, if (artVon(profil) == "fuss") R.drawable.kachel_fuss else R.drawable.kachel_rad)
+        t.icon = Icon.createWithResource(this, when (artVon(profil)) {
+            "fuss" -> R.drawable.kachel_fuss
+            "auto" -> R.drawable.kachel_auto
+            else -> R.drawable.kachel_rad
+        })
         t.state = Tile.STATE_ACTIVE
         t.updateTile()
     }

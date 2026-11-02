@@ -100,13 +100,13 @@ class _TempoSeiteState extends State<TempoSeite> {
                   leading: Icon(p.name == t.aktiv ? Icons.radio_button_checked : Icons.radio_button_unchecked,
                       color: p.name == t.aktiv ? Theme.of(context).colorScheme.primary : null),
                   title: Text(p.anzeige),
-                  subtitle: Text('${tempoText(p.kmh)} · '
+                  subtitle: Text(!p.messbar ? 'höchstens ${tempoText(p.kmh)}' : '${tempoText(p.kmh)} · '
                       '${p.gemessen == null ? 'nicht gemessen' : 'gemessen am ${p.gemessen!.day}.${p.gemessen!.month}.'}'),
                   onTap: () => _aendern((t) => t.aktiv = p.name),
                   trailing: PopupMenuButton<String>(
                     onSelected: (w) => switch (w) { 'messen' => _messen(p), 'name' => _umbenennen(p), _ => _vonHand(p) },
                     itemBuilder: (_) => [
-                      const PopupMenuItem(value: 'messen', child: ListTile(leading: Icon(Icons.gps_fixed), title: Text('Messen'))),
+                      if (p.messbar) const PopupMenuItem(value: 'messen', child: ListTile(leading: Icon(Icons.gps_fixed), title: Text('Messen'))),
                       const PopupMenuItem(value: 'hand', child: ListTile(leading: Icon(Icons.tune), title: Text('Von Hand einstellen'))),
                       if (p.umbenennbar)
                         const PopupMenuItem(value: 'name', child: ListTile(leading: Icon(Icons.edit), title: Text('Umbenennen'))),

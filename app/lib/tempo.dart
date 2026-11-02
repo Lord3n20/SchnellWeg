@@ -18,6 +18,7 @@ const grenzen = {
   'fixie': (6.0, 40.0),
   'rennrad': (10.0, 45.0),
   'mtb': (6.0, 35.0),
+  'auto': (30.0, 200.0),
 };
 const artName = {
   'fuss': 'Zu Fuß',
@@ -26,6 +27,7 @@ const artName = {
   'fixie': 'Fixie',
   'rennrad': 'Rennrad',
   'mtb': 'Mountainbike',
+  'auto': 'Auto',
 };
 /// Was die Art für die Route bedeutet (wie der Server sie rechnet, D-22).
 const artInfo = {
@@ -35,6 +37,7 @@ const artInfo = {
   'fixie': 'Wege wie zu Fuß, Treppen getragen; nur Bahn, Fahrradticket nötig',
   'rennrad': 'Straßen und Radwege, keine Fußwege, Treppen nur zur Not; nur Bahn, Fahrradticket nötig',
   'mtb': 'Überall lang, meidet Treppen; nur Bahn, Fahrradticket nötig',
+  'auto': 'Direkt über die Straße, ohne Bus und Bahn; das Tempo ist das Höchsttempo, Stau und Parkplatzsuche zählen nicht',
 };
 bool istRad(String art) => const {'klapprad', 'fixie', 'rennrad', 'mtb'}.contains(art);
 
@@ -56,6 +59,7 @@ const _vorgaben = [
   ('Mountainbike entspannt', 'mtb', 12.0),
   ('Mountainbike', 'mtb', 16.0),
   ('Mountainbike schnell', 'mtb', 20.0),
+  ('Auto', 'auto', 130.0),
 ];
 /// Profile vor D-22 (ein Fahrrad = heute Fixie): Werte und Auswahl werden übernommen.
 const _alteNamen = {'Fixie': 'Fahrrad', 'Fixie schnell': 'Fahrrad schnell'};
@@ -74,6 +78,7 @@ class TempoProfil {
   String get anzeige => titel ?? _customTitel[name] ?? name;
   bool get umbenennbar => art == 'einrad';
   bool get frei => max.isInfinite; // Tempo per Eingabe statt Regler
+  bool get messbar => art != 'auto'; // das Auto hat ein Höchsttempo, kein Reisetempo
   bool erlaubt(double v) => v > 0 && v >= min && v <= max;
 
   double get min => grenzen[art]!.$1;
@@ -193,7 +198,7 @@ class _TempoBlattState extends State<_TempoBlatt> {
             value: _kmh,
             min: p.min,
             max: p.max,
-            divisions: ((p.max - p.min) * 10).round(),
+            divisions: ((p.max - p.min) * (p.art == 'auto' ? 0.2 : 10)).round(), // Auto in 5-km/h-Schritten
             label: tempoText(_kmh),
             onChanged: (v) => setState(() => _kmh = v),
           ),
@@ -213,6 +218,7 @@ class _TempoBlattState extends State<_TempoBlatt> {
 IconData artIcon(String art) => switch (art) {
       'fuss' => Icons.directions_walk,
       'einrad' => Icons.circle_outlined,
+      'auto' => Icons.directions_car,
       _ => Icons.directions_bike,
     };
 

@@ -242,7 +242,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
             zwischen: punkte.length > 2 ? punkte.sublist(1, punkte.length - 1) : const []));
       } else {
         final form = [for (final (lat, lon) in polyline(a.form)) LatLng(lat, lon)];
-        strecken.add(Strecke([von, ...form, nach], true, ''));
+        strecken.add(Strecke([von, ...form, nach], !a.auto, a.auto ? 'Auto' : ''));
       }
     }
     if (!mounted || _ziel != ziel) return;
@@ -309,6 +309,8 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
             },
           'anderer_betriebstag' => 'Fahrplan für diesen Tag noch nicht geladen',
           'fahrplan_laedt' => 'Server lädt gerade den Fahrplan',
+          'kein_autoweg' => 'Keine Autoroute gefunden (Straßendaten bisher nur Raum Aachen, Köln, Bonn, Lüttich)',
+          'auto_aus' => 'Autorouten gerade nicht verfügbar',
           _ => 'Route nicht berechnet ($e)',
         };
       });
@@ -706,7 +708,7 @@ class _VerbindungZeile extends StatelessWidget {
       if (!a.fahrt) {
         if (min < 1) continue;
         pfeil();
-        teile.add(TextSpan(text: '🚶 $min min'));
+        teile.add(TextSpan(text: '${a.auto ? '🚗' : '🚶'} $min min'));
         continue;
       }
       pfeil();
@@ -726,11 +728,10 @@ class _VerbindungZeile extends StatelessWidget {
       if (a.risiko) teile.add(TextSpan(text: ' ⚠', style: TextStyle(color: farbe.error)));
     }
 
-    final umstiege = v.fahrten - 1;
     final kopf = [
       '${_uhr(v.ab)} – ${_uhr(v.ankunft)}',
       '${v.ankunft.difference(v.ab).inMinutes} min',
-      switch (umstiege) { -1 => 'nur zu Fuß', 0 => 'direkt', 1 => '1 Umstieg', _ => '$umstiege Umstiege' },
+      v.artText,
     ].join(' · ');
     String zahl(double x) => x.toStringAsFixed(x == x.roundToDouble() ? 0 : 1).replaceAll('.', ',');
     final eil = v.eilKmh;

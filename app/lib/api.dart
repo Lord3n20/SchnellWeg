@@ -94,18 +94,20 @@ class HaltRef {
 }
 
 class Abschnitt {
-  final bool fahrt; // sonst Fußweg
+  final bool fahrt; // sonst Fußweg oder Autofahrt
+  final bool auto; // Autofahrt von Tür zu Tür (D-32)
   final HaltRef? von, nach; // null = Start- bzw. Zielort
   final DateTime ab, an;
   final DateTime? abRt, anRt;
   final String linie, ziel;
   final bool fern, risiko, faelltAus, entfaellt;
   final bool rad; // Fahrrad fährt mit → Fahrradticket nötig (D-21)
-  final String form; // Fußweg: Wegform (encoded polyline, Genauigkeit 6), "" = unbekannt
+  final String form; // Fußweg/Auto: Wegform (encoded polyline, Genauigkeit 6), "" = unbekannt
   final List<String> halte; // Fahrt: Halte-IDs vom Ein- bis zum Ausstieg
 
   Abschnitt.json(Map<String, dynamic> j)
       : fahrt = j['mode'] == 'ride',
+        auto = j['mode'] == 'drive',
         von = j['from'] == null ? null : HaltRef.json(j['from'] as Map<String, dynamic>),
         nach = j['to'] == null ? null : HaltRef.json(j['to'] as Map<String, dynamic>),
         ab = _zeit(j['dep'])!,
@@ -144,6 +146,12 @@ class Verbindung {
         abschnitte = [for (final l in (j['legs'] as List).cast<Map<String, dynamic>>()) Abschnitt.json(l)];
 
   DateTime get ankunft => anRt ?? an;
+  bool get auto => abschnitte.any((a) => a.auto);
+
+  /// „direkt“, „1 Umstieg“ … für die Kopfzeilen.
+  String get artText => auto
+      ? 'mit dem Auto'
+      : switch (fahrten - 1) { -1 => 'nur zu Fuß', 0 => 'direkt', 1 => '1 Umstieg', final n => '$n Umstiege' };
 }
 
 /// Dekodiert eine encoded polyline (Valhalla: Genauigkeit 6) zu (lat, lon)-Paaren; kaputte Eingaben → leer.
@@ -260,7 +268,7 @@ class Api {
           if (ab != null && ankunft) 'ankunft': true, // ab ist dann die späteste Ankunft (D-27)
           if (fern) 'fern': true,
           'kmh': ?kmh,
-          'art': ?art, // fuss | einrad | klapprad | fixie | rennrad | mtb (D-21, D-22)
+          'art': ?art, // fuss | einrad | klapprad | fixie | rennrad | mtb (D-21, D-22) | auto (D-32)
           if (lang) 'lang': true, // auch mit Fußweg > 5 km genau rechnen (D-25)
           if (knapp && !ankunft) 'knapp': true, // auch Verbindungen, die nur mit schnellerem Zugangsweg klappen (D-31)
         },

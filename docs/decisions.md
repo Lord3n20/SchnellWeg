@@ -426,3 +426,17 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   die schnellste normal erreichbare. Alte Apps bekommen nur die zusätzlichen Abfahrten (Feld `knapp` fehlt).
   Neue App braucht einen Server mit D-31 (unbekannte Felder → 400).
 - Status: umgesetzt.
+
+## D-32 Autorouten (02.11.)
+- Betreiber 02.11.: die Routenberechnung fürs Auto fehlte noch. Neue Art `auto` in POST /v1/route: Valhalla-Kosten
+  `auto`, eine Verbindung von Tür zu Tür ohne ÖV, unabhängig vom Fahrplan (auch `anderer_betriebstag` entfällt).
+  Antwort: ein Abschnitt `mode: "drive"` mit Wegform. Alte Apps fragen `auto` nicht an und sehen nichts davon.
+- `kmh` (30–200, App: Profil „Auto“, Vorgabe 130) ist das Höchsttempo (`top_speed`), kein Reisetempo; deshalb kein
+  Messgang. Live Aachen Hbf → Köln Hbf: 130 km/h 52 min, 80 km/h 80 min, je ~78 km.
+- `search_cutoff` 2 km statt Valhallas 35 km: sonst endete die Route für Ziele außerhalb der Tiles still am Rand.
+  Kein Weg → 422 `kein_autoweg`, Valhalla nicht erreichbar → 503 `auto_aus`.
+- Grenzen: nur im Gebiet der Tiles (`config/region.geojson`: Aachen, Köln, Bonn, Düren, Nordeifel, Süd-Limburg,
+  Lüttich), nicht in ganz NRW wie der Fahrplan. Keine Verkehrslage und keine Parkplatzsuche in der Zeit.
+- Zeitbudget: Abweichung vom Ziel für erste/letzte Meile (< 100 ms): Aachen–Köln gemessen ~360 ms, die Anfrage hat
+  5 s statt 300 ms. Valhalla rechnet sie mit seinen vorhandenen Threads, keine Dauerlast.
+- Status: umgesetzt.

@@ -18,6 +18,8 @@ import (
 type routeLoc struct {
 	Lat float64 `json:"lat"`
 	Lon float64 `json:"lon"`
+	// SearchCutoff: Fangradius auf die Straße in m, 0 = Valhallas Standard (35 km)
+	SearchCutoff int `json:"search_cutoff,omitempty"`
 }
 
 type vhRouteReq struct {
@@ -50,18 +52,22 @@ type WalkRoute struct {
 func (v *Valhalla) Route(ctx context.Context, aLat, aLon, bLat, bLon float64, ks []Kosten) (r WalkRoute, err error) {
 	err = errMatrix
 	for _, k := range ks {
-		if r, err = v.route(ctx, aLat, aLon, bLat, bLon, k); err == nil {
+		if r, err = v.route(ctx, aLat, aLon, bLat, bLon, k, v.Timeout); err == nil {
 			return r, nil
 		}
 	}
 	return r, err
 }
 
-func (v *Valhalla) route(ctx context.Context, aLat, aLon, bLat, bLon float64, k Kosten) (WalkRoute, error) {
-	req := vhRouteReq{Locations: []routeLoc{{aLat, aLon}, {bLat, bLon}}, Costing: k.Costing, CostingOptions: k.Opts,
+func (v *Valhalla) route(ctx context.Context, aLat, aLon, bLat, bLon float64, k Kosten, zeit time.Duration) (WalkRoute, error) {
+	fang := 0
+	if k.Costing == "auto" {
+		fang = autoFangM
+	}
+	req := vhRouteReq{Locations: []routeLoc{{aLat, aLon, fang}, {bLat, bLon, fang}}, Costing: k.Costing, CostingOptions: k.Opts,
 		DirectionsType: "none"}
 	body, _ := json.Marshal(req)
-	ctx, cancel := context.WithTimeout(ctx, v.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, zeit)
 	defer cancel()
 	hr, err := http.NewRequestWithContext(ctx, http.MethodPost, v.URL+"/route", bytes.NewReader(body))
 	if err != nil {
