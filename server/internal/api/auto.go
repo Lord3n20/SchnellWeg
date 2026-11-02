@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"maps"
 	"net/http"
 	"time"
 )
@@ -24,8 +25,13 @@ func (s *Server) autoRoute(w http.ResponseWriter, r *http.Request, req routeReq,
 	if req.Meiden != nil {
 		req.Meiden.autoOpts(opts)
 	}
-	k := Kosten{Costing: "auto", Opts: map[string]any{"auto": opts}, Faktor: 1, FangM: autoFangM}
-	s.tuerZuTuer(w, r, req, t, []Kosten{k}, "drive", "kein_autoweg", "auto_aus")
+	ks := []Kosten{{Costing: "auto", Opts: map[string]any{"auto": opts}, Faktor: 1, FangM: autoFangM}}
+	if req.Meiden != nil && req.Meiden.Belag > 0 { // meiden, nicht verbieten: liegt das Ziel an einem Feldweg, trotzdem hin
+		ohne := maps.Clone(opts)
+		ohne["exclude_unpaved"] = true
+		ks = append([]Kosten{{Costing: "auto", Opts: map[string]any{"auto": ohne}, Faktor: 1, FangM: autoFangM}}, ks...)
+	}
+	s.tuerZuTuer(w, r, req, t, ks, "drive", "kein_autoweg", "auto_aus")
 }
 
 // tuerZuTuer antwortet mit dem Weg Start → Ziel als einziger Verbindung, ohne Fahrplan und ohne Längengrenze: mit der

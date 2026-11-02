@@ -534,3 +534,35 @@ func TestWegOhneFahrtNurEinmal(t *testing.T) {
 		t.Errorf("mit direktem Weg: %s", w.Body)
 	}
 }
+
+func TestRadTempoAusserhalbValhalla(t *testing.T) {
+	m := Meiden{Fusswege: true}
+	for _, c := range []struct{ kmh, vh, faktor float64 }{{4, 5, 1.25}, {20, 20, 1}, {120, 60, 0.5}} {
+		k := m.art().kosten(5, c.kmh, 1)[0]
+		if got := k.Opts["bicycle"].(map[string]any)["cycling_speed"]; got != c.vh || k.Faktor != c.faktor {
+			t.Errorf("%v km/h: cycling_speed %v, Faktor %v", c.kmh, got, k.Faktor)
+		}
+	}
+}
+
+func TestAutoBelagMeidetNurWennEsGeht(t *testing.T) {
+	var gefragt []map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var q vhRouteReq
+		json.NewDecoder(r.Body).Decode(&q)
+		o := q.CostingOptions["auto"].(map[string]any)
+		gefragt = append(gefragt, o)
+		if o["exclude_unpaved"] == true { // Ziel nur über Feldweg erreichbar
+			w.WriteHeader(400)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"trip": map[string]any{
+			"legs": []map[string]string{{"shape": "form"}}, "summary": map[string]float64{"time": 900, "length": 3}}})
+	}))
+	defer ts.Close()
+	s := &Server{Valhalla: &Valhalla{URL: ts.URL, Timeout: time.Second, Client: ts.Client()}}
+	body := `{"from":{"lat":50.77,"lon":6.09},"to":{"lat":50.94,"lon":6.96},"art":"auto","meiden":{"belag":1}}`
+	if w, _ := post(s, body); w.Code != 200 || len(gefragt) != 2 {
+		t.Errorf("Code %d, Anfragen %+v", w.Code, gefragt)
+	}
+}

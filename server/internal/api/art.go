@@ -36,6 +36,8 @@ var arten = map[string]Art{
 	"auto":     {Min: 30, Max: 200, Auto: true},
 }
 
+const radMinKMH, radMaxKMH = 5.0, 60.0 // Bereich von Valhallas cycling_speed
+
 // Kosten ist eine Valhalla-Kostenart samt Faktor, mit dem ihre Zeiten zur Zeit im gewählten Tempo werden.
 type Kosten struct {
 	Costing string
@@ -56,11 +58,13 @@ func (a Art) kosten(walkKMH, kmh, scale float64) []Kosten {
 	}
 	k := []Kosten{{Costing: "pedestrian", Opts: map[string]any{"pedestrian": fuss}, Faktor: scale}}
 	if a.RadTyp != "" {
-		rad := map[string]any{"bicycle_type": a.RadTyp, "cycling_speed": kmh, "use_roads": 0.6, "avoid_bad_surfaces": a.Belag}
+		// Außerhalb 5–60 km/h nähme Valhalla sein Standardtempo: dort den Randwert schicken und die Zeit skalieren
+		vh := min(radMaxKMH, max(radMinKMH, kmh))
+		rad := map[string]any{"bicycle_type": a.RadTyp, "cycling_speed": vh, "use_roads": 0.6, "avoid_bad_surfaces": a.Belag}
 		if m := a.Meiden; m != nil {
 			m.radOpts(rad)
 		}
-		k = append([]Kosten{{Costing: "bicycle", Opts: map[string]any{"bicycle": rad}, Faktor: 1}}, k...)
+		k = append([]Kosten{{Costing: "bicycle", Opts: map[string]any{"bicycle": rad}, Faktor: vh / kmh}}, k...)
 	}
 	return k
 }

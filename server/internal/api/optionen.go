@@ -12,11 +12,12 @@ import (
 // gefragt, bis optionenN Verbindungen da sind. Mit "knapp" kommt zusätzlich, was man mit Losgehen bis zu knappSek
 // vorher erwischt hätte, wenn es mit schnellerem Zugangsweg noch reicht und früher ankommt.
 const (
-	optionenN    = 4   // so viele ÖV-Verbindungen höchstens
-	optionenAbfr = 5   // so viele RAPTOR-Abfragen höchstens (je ~1–50 ms)
-	knappSek     = 150 // so viel früher hätte man höchstens losgehen müssen (Betreiber: „1–2 min“)
-	knappFaktor  = 2.0 // Zugangsweg höchstens so viel schneller als beim gewählten Tempo
-	laufenKMH    = 12  // zu Fuß höchstens so schnell (Laufen) – art.Max (8) ist die Grenze für die Einstellung
+	optionenN       = 4   // so viele ÖV-Verbindungen höchstens
+	optionenAbfr    = 5   // so viele RAPTOR-Abfragen höchstens (je ~1–50 ms)
+	knappSek        = 150 // so viel früher hätte man höchstens losgehen müssen (Betreiber: „1–2 min“)
+	knappFaktor     = 2.0 // Zugangsweg höchstens so viel schneller als beim gewählten Tempo
+	eilFaktorProfil = 1.5 // eigene Profile: knapp höchstens so viel schneller als ihr Tempo (D-34)
+	laufenKMH       = 12  // zu Fuß höchstens so schnell (Laufen) – art.Max (8) ist die Grenze für die Einstellung
 )
 
 // option ist eine Verbindung; eil > 0: nur mit diesem Tempo (km/h) auf dem Zugangsweg erreichbar.

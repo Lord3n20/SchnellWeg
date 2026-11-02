@@ -33,7 +33,9 @@ class _TempoSeiteState extends State<TempoSeite> {
   @override
   void initState() {
     super.initState();
-    Tempo.oeffnen().then((t) => setState(() => _t = t));
+    Tempo.oeffnen().then((t) {
+      if (mounted) setState(() => _t = t);
+    });
   }
 
   Future<void> _aendern(void Function(Tempo) f) async {
@@ -52,7 +54,7 @@ class _TempoSeiteState extends State<TempoSeite> {
 
   /// Bearbeiten oder (neu) anlegen; gespeichert wird erst beim Übernehmen.
   Future<void> _bearbeiten(TempoProfil p, {bool neu = false}) async {
-    final x = await Navigator.of(context).push<TempoProfil>(MaterialPageRoute(builder: (_) => ProfilSeite(p.kopie())));
+    final x = await Navigator.of(context).push<TempoProfil>(MaterialPageRoute(builder: (_) => ProfilSeite(p.kopie(), neu: neu)));
     if (x == null) return;
     await _aendern((t) {
       if (neu) {
@@ -125,9 +127,8 @@ class _TempoSeiteState extends State<TempoSeite> {
 /// Stufen, was die Route meiden soll: Schlüssel wie in /v1/route, Text, für welche Profile.
 const _stufen = [
   ('treppen', 'Treppen', {'fuss', 'eigen'}),
-  ('belag', 'Schlechter Belag (Schotter, Feldwege)', {'fuss', 'eigen', 'auto'}),
+  ('belag', 'Schlechter Belag (Schotter, Feldwege)', {'fuss', 'eigen'}),
   ('hauptstrassen', 'Hauptstraßen', {'eigen'}),
-  ('steigung', 'Steigungen', {'fuss', 'eigen'}),
   ('dunkel', 'Unbeleuchtete Wege', {'fuss', 'eigen'}),
   ('faehren', 'Fähren', {'fuss', 'eigen', 'auto'}),
   ('autobahn', 'Autobahn', {'auto'}),
@@ -137,7 +138,8 @@ const _stufen = [
 /// Ein Profil bearbeiten: liefert die geänderte Kopie beim Übernehmen.
 class ProfilSeite extends StatefulWidget {
   final TempoProfil p;
-  const ProfilSeite(this.p, {super.key});
+  final bool neu; // sonst steht der bisherige Name im Feld
+  const ProfilSeite(this.p, {super.key, this.neu = false});
 
   @override
   State<ProfilSeite> createState() => _ProfilSeiteState();
@@ -145,7 +147,7 @@ class ProfilSeite extends StatefulWidget {
 
 class _ProfilSeiteState extends State<ProfilSeite> {
   late final TempoProfil p = widget.p;
-  late final _name = TextEditingController(text: p.titel ?? (p.eigen ? '' : p.anzeige));
+  late final _name = TextEditingController(text: p.titel ?? (widget.neu ? '' : p.anzeige));
   late final _tempo = TextEditingController(text: p.kmh.toString().replaceAll('.', ','));
 
   @override
@@ -168,6 +170,7 @@ class _ProfilSeiteState extends State<ProfilSeite> {
       p.gemessen = null;
     }
     if (p.eigen) p.titel = _name.text.trim();
+    if (p.meiden['bus'] == true || p.meiden['oev'] == true) p.meiden.remove('bus_min'); // ausgeblendet, soll nicht mitgehen
     Navigator.pop(context, p);
   }
 
@@ -226,6 +229,13 @@ class _ProfilSeiteState extends State<ProfilSeite> {
                 ),
               ]),
             ),
+        if (auto)
+          SwitchListTile(
+            title: const Text('Schlechter Belag (Schotter, Feldwege)'),
+            subtitle: const Text('Nur, wenn es einen anderen Weg gibt'),
+            value: p.stufe('belag') > 0,
+            onChanged: (v) => setState(() => p.setzen('belag', v ? 1.0 : null)),
+          ),
         if (!auto) ...[
           const _Ueberschrift('Bus und Bahn'),
           _schalter('Bus und Bahn ganz meiden', 'oev', unter: 'Nur der direkte Weg, auch über lange Strecken'),

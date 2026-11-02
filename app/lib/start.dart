@@ -301,7 +301,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
         _verbindungen = [];
         _langFrage = e.art == 'fussweg_lang';
         _routeHinweis = switch (e.art) {
-          'fussweg_lang' => _langText(e.daten),
+          'fussweg_lang' => _langText(e.daten, zuFuss: _tempo.art == 'fuss'),
           'keine_haltestelle_in_reichweite' => switch (e.seite) {
               'start' => 'Start liegt außerhalb des Fahrplangebiets (bisher NRW)',
               'ziel' => 'Ziel liegt außerhalb des Fahrplangebiets (bisher NRW)',
@@ -372,18 +372,19 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
   }
 
   /// Grobe Schätzung des Servers (Luftlinie × 1,3) als Text, z. B. „Vom Start bis zum nächsten Halt ca. 6,5 km zu Fuß (~1 h 30 min).“
-  static String _langText(Map? d) {
+  static String _langText(Map? d, {required bool zuFuss}) {
+    final wie = zuFuss ? 'zu Fuß' : 'selbst unterwegs';
     String teil(String wer, Map? s) {
       if (s == null) return '';
       final km = (s['km'] as num).toDouble();
       final min = (s['min'] as num).toInt();
       final dauer = min >= 60 ? '${min ~/ 60} h ${min % 60} min' : '$min min';
-      return '$wer ca. ${km.toStringAsFixed(km % 1 == 0 ? 0 : 1).replaceAll('.', ',')} km zu Fuß (~$dauer).\n';
+      return '$wer ca. ${km.toStringAsFixed(km % 1 == 0 ? 0 : 1).replaceAll('.', ',')} km $wie (~$dauer).\n';
     }
 
     return '${teil('Vom Start bis zum nächsten Halt', d?['start'] as Map?)}'
         '${teil('Vom letzten Halt bis zum Ziel', d?['ziel'] as Map?)}'
-        'Das dauert zu Fuß lange (grobe Schätzung).';
+        'Das dauert $wie lange (grobe Schätzung).';
   }
 
   Future<void> _aktualisieren({bool standortNeu = false}) async {

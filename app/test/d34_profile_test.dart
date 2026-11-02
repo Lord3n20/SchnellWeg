@@ -1,5 +1,5 @@
 // Unabhängige Prüfung D-34: TempoSeite/ProfilSeite und Umstellung alter tempo.json, mit echter Datei im Temp-Ordner.
-// Tests im Abschnitt „FUND“ beschreiben das erwartete Verhalten und schlagen auf 6aa343b absichtlich fehl.
+// Der Abschnitt „FUND“ hält Fehler aus der Prüfung von 6aa343b fest, die seitdem behoben sind.
 import 'dart:convert';
 import 'dart:io';
 
@@ -292,12 +292,12 @@ void main() {
 
     testWidgets('Regler ganz rechts = 1,0; Zwischenwerte bleiben in 0–1', (t) async {
       await oeffnen(t);
-      await _ganzRechts(t, _regler('Steigungen'));
+      await _ganzRechts(t, _regler('Fähren'));
       await t.drag(_regler('Treppen'), const Offset(60, 0));
       await t.pumpAndSettle();
       await _speichernTippen(t);
       final m = _profil('p1')['meiden'] as Map;
-      expect(m['steigung'], 1.0);
+      expect(m['faehren'], 1.0);
       expect(m['treppen'], allOf(greaterThan(0), lessThanOrEqualTo(1)));
     });
 
@@ -369,7 +369,7 @@ void main() {
       _schreiben(_v2());
       await _seite(t);
       await _menue(t, 'Zu Fuß', 'Bearbeiten');
-      for (final x in ['Treppen', 'Steigungen', 'Unbeleuchtete Wege', 'Fähren']) {
+      for (final x in ['Treppen', 'Unbeleuchtete Wege', 'Fähren']) {
         expect(find.text(x), findsOneWidget, reason: x);
       }
       for (final x in ['Fußwege', 'Hauptstraßen', 'Autobahn', 'Mautstraßen', 'Fahrradticket nötig']) {

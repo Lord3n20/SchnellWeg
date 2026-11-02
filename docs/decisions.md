@@ -466,4 +466,9 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   Tempi, Messungen, Namen und bisherigen Regeln; Neuinstallationen haben nur „Zu Fuß“ und „Auto“. Fahrradtyp folgt
   aus `belag` (≥ 0,8 Road, 0 Mountain, sonst Hybrid), das Klapprad rechnet damit Hybrid statt City.
 - Neue App braucht einen Server mit D-34 (unbekanntes Feld → 400).
+- Nachträge nach Prüfung: Valhalla ignoriert `cycling_speed` außerhalb 5–60 km/h → Randwert schicken, Zeit skalieren.
+  Steigungen ohne Regler, weil die Tiles keine Höhendaten haben (`/height` liefert null); `steigung` bleibt im Server.
+  Beim Auto schließt `belag` Feldwege nur aus, wenn es einen anderen Weg gibt. Knapp bei eigenen Profilen höchstens
+  1,5 × Tempo, Weg ohne Fahrt nur einmal in der Liste. tempo.json wird atomar geschrieben, nicht lesbare Stände landen
+  als `tempo.json.kaputt`.
 - Status: umgesetzt.

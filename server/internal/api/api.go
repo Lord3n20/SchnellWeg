@@ -326,9 +326,13 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	} else {
 		grenze := 0.0
 		if req.Knapp {
-			grenze = art.Max
-			if frei := req.Art == "einrad" || req.Meiden != nil && kmh > arten["fuss"].Max; !art.Rad && !frei {
+			switch {
+			case req.Meiden != nil && kmh > arten["fuss"].Max:
+				grenze = kmh * eilFaktorProfil // kein festes Höchsttempo mehr: nur, was bei diesem Profil noch machbar ist
+			case req.Meiden != nil, !art.Rad && req.Art != "einrad":
 				grenze = laufenKMH
+			default:
+				grenze = art.Max
 			}
 		}
 		for i, o := range optionen(rt, int32(dep/time.Second), from, to, maxTrips, kmh, grenze) {

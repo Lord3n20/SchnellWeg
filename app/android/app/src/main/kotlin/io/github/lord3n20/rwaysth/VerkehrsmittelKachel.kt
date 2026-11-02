@@ -7,23 +7,27 @@ import android.service.quicksettings.TileService
 import org.json.JSONObject
 import java.io.File
 
-// Schnelleinstellung „Verkehrsmittel“: zeigt das aktive Tempo-Profil, Antippen öffnet die Auswahl Fuß/Custom/Räder/Auto.
+// Schnelleinstellung „Verkehrsmittel“: zeigt das aktive Profil, Antippen öffnet die Auswahl aller Profile.
 // Schreibt nur `aktiv` in tempo.json (dieselbe Datei wie lib/tempo.dart); die App liest sie beim Zurückkommen neu
 // und rechnet die aktuelle Verbindung damit neu.
 class VerkehrsmittelKachel : TileService() {
     private val datei get() = File(filesDir, "tempo.json")
 
-    private fun lesen(): JSONObject = try {
-        JSONObject(datei.readText())
+    // null: Datei da, aber nicht lesbar (dann nichts schreiben, die App legt sie beiseite)
+    private fun lesenOderNull(): JSONObject? = try {
+        if (datei.exists()) JSONObject(datei.readText()) else JSONObject()
     } catch (e: Exception) {
-        JSONObject() // noch nie gespeichert oder kaputt: die App nimmt dann ihre Vorgaben
+        null
     }
+
+    private fun lesen(): JSONObject = lesenOderNull() ?: JSONObject() // die App nimmt dann ihre Vorgaben
 
     private fun aktiv(): String = lesen().optString("aktiv", "entspannt")
 
     // Schlüssel → Anzeigename wie in lib/tempo.dart; ohne Datei gibt es nur die Vorgaben
     private fun profile(): List<Pair<String, String>> {
-        val p = lesen().optJSONObject("profile") ?: return listOf("entspannt" to "Zu Fuß", "Auto" to "Auto")
+        val p = lesen().optJSONObject("profile")
+        if (p == null || p.length() == 0) return listOf("entspannt" to "Zu Fuß", "Auto" to "Auto")
         return p.keys().asSequence().map { it to anzeige(it, p.optJSONObject(it)) }.toList()
     }
 
@@ -50,7 +54,8 @@ class VerkehrsmittelKachel : TileService() {
         t.icon = Icon.createWithResource(this, when (artVon(profil)) {
             "fuss" -> R.drawable.kachel_fuss
             "auto" -> R.drawable.kachel_auto
-            else -> R.drawable.kachel_rad
+            else -> if (lesen().optJSONObject("profile")?.optJSONObject(profil)?.optJSONObject("meiden")?.optBoolean("fusswege") == true)
+                R.drawable.kachel_rad else R.drawable.kachel_eigen
         })
         t.state = Tile.STATE_ACTIVE
         t.updateTile()
@@ -69,13 +74,15 @@ class VerkehrsmittelKachel : TileService() {
     }
 
     private fun waehlen(profil: String) {
-        val j = lesen()
+        val j = lesenOderNull() ?: return zeigen()
         j.put("aktiv", profil)
         if (!j.has("profile")) { // noch nie gespeichert: kein alter Stand, den die App umstellen müsste
             j.put("v", 2)
             j.put("profile", JSONObject())
         }
-        datei.writeText(j.toString())
+        val zw = File(filesDir, "tempo.json.kachel.neu") // rename ist atomar, wie in lib/tempo.dart
+        zw.writeText(j.toString())
+        zw.renameTo(datei)
         zeigen()
     }
 }

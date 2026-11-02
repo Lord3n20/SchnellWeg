@@ -76,7 +76,4 @@ func (m *Meiden) autoOpts(o map[string]any) {
 	setzen(o, "use_highways", 1, m.Autobahn)
 	setzen(o, "use_tolls", 0.5, m.Maut)
 	setzen(o, "use_ferry", 0.5, m.Faehren)
-	if m.Belag > 0 {
-		o["exclude_unpaved"] = true
-	}
 }
