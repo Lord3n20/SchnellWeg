@@ -62,6 +62,7 @@ type Server struct {
 	FarM      float64   // ohne Halt im Suchradius weitersuchen bis zu dieser Luftlinie (D-25), ≤ AccessM = aus
 	LangM     float64   // ab dieser Luftlinie zum nächsten Halt erst nachfragen ("lang"), 0 = nie
 	Valhalla  *Valhalla // echte Zugangswege; nil = Luftlinie
+	Verkehr   *Verkehr  // Staus und Baustellen bei Autorouten (D-38), nil = aus
 	MaxTrips  int
 	WaitLimit time.Duration  // so lange wartet eine Anfrage höchstens auf einen freien Router
 	Live      *rt.Live       // Echtzeit-Feed, nil = nur Fahrplan
@@ -190,14 +191,16 @@ type legOut struct {
 }
 
 type journeyOut struct {
-	Trips int        `json:"trips"`
-	Dep   time.Time  `json:"dep"`
-	Arr   time.Time  `json:"arr"`
-	ArrRT *time.Time `json:"arr_rt,omitempty"`  // erwartete Ankunft laut Echtzeit
-	RT    bool       `json:"rt,omitempty"`      // mindestens eine Fahrt mit Echtzeit
-	Risk  string     `json:"risk,omitempty"`    // "anschluss" (Umstieg gefährdet) | "ausfall" (Fahrt/Halt fällt aus)
-	Eil   float64    `json:"eil_kmh,omitempty"` // nur mit diesem Tempo zum ersten Halt erreichbar (D-31)
-	Legs  []legOut   `json:"legs"`
+	Trips     int          `json:"trips"`
+	Dep       time.Time    `json:"dep"`
+	Arr       time.Time    `json:"arr"`
+	ArrRT     *time.Time   `json:"arr_rt,omitempty"`     // erwartete Ankunft laut Echtzeit
+	RT        bool         `json:"rt,omitempty"`         // mindestens eine Fahrt mit Echtzeit
+	Risk      string       `json:"risk,omitempty"`       // "anschluss" (Umstieg gefährdet) | "ausfall" (Fahrt/Halt fällt aus)
+	Eil       float64      `json:"eil_kmh,omitempty"`    // nur mit diesem Tempo zum ersten Halt erreichbar (D-31)
+	Verkehr   []meldungOut `json:"verkehr,omitempty"`    // Auto: Meldungen auf der Route (D-38)
+	VerkehrOK bool         `json:"verkehr_ok,omitempty"` // Auto: Verkehrslage war verfügbar
+	Legs      []legOut     `json:"legs"`
 }
 
 type routeResp struct {

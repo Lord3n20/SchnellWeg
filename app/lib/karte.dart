@@ -79,6 +79,7 @@ class Karte extends StatefulWidget {
   final List<LatLng> halte;
   final List<Strecke> strecken;
   final LatLng? markiert; // angetippte Haltestelle
+  final List<Meldung> meldungen; // Stau, Sperrung, Baustelle auf der Route (D-38)
   final void Function(LatLng, double trefferMeter)? onAntippen; // trefferMeter: Umkreis für Haltestellen, 0 = keine
   const Karte({
     super.key,
@@ -87,6 +88,7 @@ class Karte extends StatefulWidget {
     this.halte = const [],
     this.strecken = const [],
     this.markiert,
+    this.meldungen = const [],
     this.onAntippen,
   });
 
@@ -258,6 +260,20 @@ class _KarteState extends State<Karte> {
               CircleMarker(point: widget.standort!, radius: 6, color: farbe.primary, borderColor: Colors.white, borderStrokeWidth: 2),
             ],
           ]),
+          if (widget.meldungen.isNotEmpty)
+            MarkerLayer(markers: [
+              for (final m in widget.meldungen)
+                Marker(
+                  point: LatLng(m.lat, m.lon),
+                  width: 26,
+                  height: 26,
+                  child: Icon(
+                    switch (m.art) { 'sperrung' => Icons.block, 'baustelle' => Icons.construction, _ => Icons.warning_rounded },
+                    size: 24,
+                    color: m.art == 'baustelle' ? Colors.orange.shade800 : farbe.error,
+                  ),
+                ),
+            ]),
           if (widget.ziel != null)
             MarkerLayer(markers: [
               Marker(

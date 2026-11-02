@@ -70,6 +70,7 @@ func main() {
 	directMax := flag.Duration("direct_max", time.Hour, "… und höchstens so lange beim gewählten Gehtempo")
 	rtURL := flag.String("rt", "https://realtime.gtfs.de/realtime-free.pb", "GTFS-RT-Feed (leer = nur Fahrplan); Abruf nur bei Anfragen, höchstens alle 30 s")
 	rtWait := flag.Duration("rt_wait", 6*time.Second, "so lange wartet eine Anfrage höchstens auf den Echtzeit-Abruf")
+	verkehr := flag.String("verkehr", "https://verkehr.autobahn.de/o/autobahn", "Autobahn-API für Staus und Baustellen bei Autorouten (leer = aus); Abruf nur bei Anfragen")
 	mapDir := flag.String("map", "", "Kartenstand des Jobs map (Ordner mit regionen.json) für /v1/map; Glob erlaubt, wird je Anfrage aufgelöst")
 	geo := flag.String("geocode", "", "Suchlisten (TSV, Jobs geocode und rwth) für /v1/search, durch Komma getrennt; Globs erlaubt, ohne Treffer keine Suche")
 	listen := flag.String("listen", ":8090", "Adresse der API")
@@ -169,6 +170,9 @@ func main() {
 		// Zeitbudget der Quelle 6 s je Versuch (CLAUDE.md), Stände älter als 5 min gelten nicht mehr
 		srv.Live = &rt.Live{URL: *rtURL, Client: &http.Client{Timeout: 6 * time.Second}, MinAge: 30 * time.Second,
 			MaxAge: 5 * time.Minute, UA: "SchnellWeg (+https://github.com/Lord3n20/SchnellWeg)"}
+	}
+	if *verkehr != "" {
+		srv.Verkehr = &api.Verkehr{URL: strings.TrimRight(*verkehr, "/"), Client: &http.Client{}, UA: "SchnellWeg (+https://github.com/Lord3n20/SchnellWeg)"}
 	}
 	if *valhalla != "" {
 		srv.Valhalla = &api.Valhalla{URL: strings.TrimRight(*valhalla, "/"), KMH: *kmh, MaxM: 2 * *access,

@@ -501,3 +501,16 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   /v1/stops neu zu laden, das hat die App nie umgesetzt.
 - Server liefert jetzt immer `[]`, damit sind auch vorhandene Apps (Natalia) ohne Update sicher; die App verträgt beides.
 - Status: umgesetzt.
+
+## D-38 Verkehrslage bei Autorouten aus der Autobahn-API (02.11.)
+- Betreiber 02.11.: Stau bei Autofahrten zeigen, Baustellen in der Zeit berücksichtigen; Quelle ausdrücklich die Autobahn-API
+  (verkehr.autobahn.de). Grenzfall: beim Betreiber keine Lizenz gefunden, Doku nur von Dritten (bund.dev), private Nutzung. Mobilithek
+  (offiziell, Registrierung) nicht gewählt. Bei einer Weitergabe der App neu prüfen.
+- Datenschutz: Abruf immer für alle Autobahnen der Region (`verkehrStrassen`, Box), nie zur einzelnen Route; der Abgleich läuft auf dem
+  Server. Kein Polling: nur bei Autorouten, Stand 3 min frisch, höchstens 30 min alt, nur im RAM. Eine Anfrage wartet höchstens 3 s,
+  danach gilt der vorige Stand; Budget des Abrufs 8 s, 4 Anfragen gleichzeitig.
+- Abgleich: mindestens die Hälfte einer Meldung liegt höchstens 60 m neben der Route und läuft in dieselbe Richtung (die Form der Meldung
+  verläuft in Fahrtrichtung, so zählt die Gegenfahrbahn nicht). Von überlappenden Staus bleibt der mit der größten Verzögerung.
+- Fahrzeit: Verzögerung der Staus kommt dazu; in Baustellen gilt `Max. N km/h` aus der Beschreibung, wenn es unter dem sonstigen Tempo liegt.
+- Grenzen: nur Autobahnen. Die Route weicht Staus und Sperrungen nicht aus, die App zeigt sie nur.
+- Status: umgesetzt.

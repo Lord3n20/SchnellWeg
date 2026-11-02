@@ -610,3 +610,114 @@ func TestAutoBelagMeidetNurWennEsGeht(t *testing.T) {
 		t.Errorf("Code %d, Anfragen %+v", w.Code, gefragt)
 	}
 }
+
+// polyline6 kodiert eine Form wie Valhalla.
+func polyline6(p []pt) string {
+	var b strings.Builder
+	var la, lo int
+	put := func(d int) {
+		u := d << 1
+		if d < 0 {
+			u = ^u
+		}
+		for u >= 0x20 {
+			b.WriteByte(byte((u&0x1f)|0x20) + 63)
+			u >>= 5
+		}
+		b.WriteByte(byte(u) + 63)
+	}
+	for _, x := range p {
+		a, o := int(x.lat*1e6+0.5), int(x.lon*1e6+0.5)
+		put(a - la)
+		put(o - lo)
+		la, lo = a, o
+	}
+	return b.String()
+}
+
+func TestAutoVerkehr(t *testing.T) {
+	// Route nach Osten, 7 km auf einer Breite
+	route := []pt{{50.8, 6.1}, {50.8, 6.15}, {50.8, 6.2}}
+	koord := func(p ...pt) []any {
+		var c []any
+		for _, x := range p {
+			c = append(c, []float64{x.lon, x.lat})
+		}
+		return c
+	}
+	eintrag := func(titel string, delay string, future bool, p ...pt) map[string]any {
+		return map[string]any{"title": titel, "subtitle": " West -> Ost", "delayTimeValue": delay, "averageSpeed": "20", "isBlocked": "false",
+			"future": future, "description": []string{"Länge: 3 km | Max. 60 km/h"}, "geometry": map[string]any{"coordinates": koord(p...)}}
+	}
+	ost := []pt{{50.8, 6.11}, {50.8, 6.13}, {50.8, 6.14}}
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		teil := strings.Split(r.URL.Path, "/")
+		l := []map[string]any{}
+		if teil[1] == "A4" {
+			switch teil[3] {
+			case "warning":
+				l = []map[string]any{
+					eintrag("A4 | Stau", "7", false, ost...),
+					eintrag("A4 | derselbe Stau kürzer gemeldet", "3", false, ost...),
+					eintrag("A4 | Gegenrichtung", "30", false, ost[2], ost[1], ost[0]),
+					eintrag("A4 | Abseits", "30", false, pt{50.9, 6.11}, pt{50.9, 6.14}),
+					eintrag("A4 | Später", "30", true, ost...),
+				}
+			case "roadworks":
+				l = []map[string]any{eintrag("A4 | Baustelle", "", false, pt{50.8, 6.15}, pt{50.8, 6.16}, pt{50.8, 6.17})}
+			}
+		}
+		json.NewEncoder(w).Encode(map[string]any{teil[3]: l})
+	}))
+	defer api.Close()
+	vh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/trace_attributes" {
+			json.NewEncoder(w).Encode(map[string]any{"shape": polyline6(route), "edges": []map[string]any{
+				{"length": 3.5, "speed": 100, "speed_limit": 100, "road_class": "motorway", "begin_shape_index": 0, "end_shape_index": 1},
+				{"length": 3.5, "speed": 100, "speed_limit": 100, "road_class": "motorway", "begin_shape_index": 1, "end_shape_index": 2},
+			}})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"trip": map[string]any{
+			"legs": []map[string]string{{"shape": polyline6(route)}}, "summary": map[string]float64{"time": 600, "length": 7}}})
+	}))
+	defer vh.Close()
+	s := &Server{Valhalla: &Valhalla{URL: vh.URL, Timeout: time.Second, Client: vh.Client()},
+		Verkehr: &Verkehr{URL: api.URL, Client: api.Client(), UA: "Test"}}
+	body := `{"from":{"lat":50.8,"lon":6.1},"to":{"lat":50.8,"lon":6.2},"art":"auto","kmh":120}`
+	w, r := post(s, body)
+	if w.Code != 200 {
+		t.Fatalf("Code %d, %s", w.Code, w.Body)
+	}
+	j := r.Journeys[0]
+	if !j.VerkehrOK || len(j.Verkehr) != 2 || j.Verkehr[0].Titel != "A4 Stau" || j.Verkehr[0].VerzMin != 7 || j.Verkehr[1].Art != "baustelle" {
+		t.Fatalf("Meldungen: %s", w.Body)
+	}
+	// 600 s + 7 min Stau; 3,5 km in der Baustelle mit 60 statt 100 km/h kosten 84 s mehr
+	if got, soll := j.Arr.Sub(j.Dep), time.Duration(600+420+84)*time.Second; got != soll {
+		t.Errorf("Dauer %v, erwartet %v", got, soll)
+	}
+}
+
+func TestAutoOhneVerkehrsdaten(t *testing.T) {
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(500) }))
+	defer api.Close()
+	s := &Server{Valhalla: fakeRoute(t), Verkehr: &Verkehr{URL: api.URL, Client: api.Client()}}
+	w, r := post(s, `{"from":{"lat":50.8,"lon":6.1},"to":{"lat":50.8,"lon":6.2},"art":"auto","kmh":120}`)
+	if w.Code != 200 || r.Journeys[0].VerkehrOK || r.Journeys[0].Arr.Sub(r.Journeys[0].Dep) != 10*time.Minute {
+		t.Errorf("Code %d, %s", w.Code, w.Body)
+	}
+}
+
+func fakeRoute(t *testing.T) *Valhalla {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/route" {
+			w.WriteHeader(400)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"trip": map[string]any{
+			"legs": []map[string]string{{"shape": "form"}}, "summary": map[string]float64{"time": 600, "length": 7}}})
+	}))
+	t.Cleanup(ts.Close)
+	return &Valhalla{URL: ts.URL, Timeout: time.Second, Client: ts.Client()}
+}

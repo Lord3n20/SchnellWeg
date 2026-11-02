@@ -20,7 +20,7 @@ Status: ✅ freigegeben · ⏳ in Prüfung · ❓ Rückfrage an den Betreiber ·
 | OSM-Extrakte (Geofabrik) | Geofabrik GmbH, kommerziell (Downloads frei) | ODbL | nein | IP, 1×/Tag | ⏳ |
 | Höhendaten (Copernicus DEM GLO-30 bzw. Tilezen/Skadi auf AWS Open Data) | ESA/EU bzw. Amazon als Hoster | Copernicus-Lizenz (frei, Attribution) / gemischt | nein | IP, einmalig | ⏳ |
 | Protomaps-Build (PMTiles) | Protomaps (Brandon Liu), Community/kommerziell | **ODbL Produced Work**, OSM-Namensnennung (docs.protomaps.com/basemaps/downloads, geprüft 27.10.; eigene Kopien statt Verlinken empfohlen) | nein | IP, HTTP-Range-Abrufe, wöchentlich | ✅ D-17 |
-| Autobahn-API (verkehr.autobahn.de) | Autobahn GmbH des Bundes | **beim Betreiber nichts gefunden**, nur bund.dev (Dritte) | nein | IP | ❓ Grenzfall (Phase 7) |
+| Autobahn-API (verkehr.autobahn.de) | Autobahn GmbH des Bundes | **beim Betreiber nichts gefunden**, nur bund.dev (Dritte) | nein | IP | ✅ Betreiber 02.11. freigegeben als Grenzfall, nur privat (D-38) |
 | Mobilithek / Straßen.NRW DATEX II | BMDV, öffentlich | je Angebot | **ja** | Account, IP | ❓ (Phase 7) |
 | RWTH Maps (maps.rwth-aachen.de), `getBuildings.asp` | RWTH, öffentlich, interne Schnittstelle | **keine Lizenz/Schnittstelle genannt**, Karte auf Google Maps API | nein | Server: IP, 1×/Tag; App: IP + Suchtext (kein Standort) | ⚠️ Abweichung D-18 (vom Betreiber gewollt) |
 | RWTH-Gebäude aus OSM | OSM | ODbL | nein | – (im OSM-Extrakt) | ✅ teilweise: 57 Objekte mit Uni-Bezug im Zentrum, 54 mit Name, keine Gebäudenummern |

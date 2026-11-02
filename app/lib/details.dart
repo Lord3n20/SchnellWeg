@@ -12,6 +12,7 @@ import 'halte_db.dart';
 import 'karte.dart';
 import 'namen.dart';
 import 'sperrbildschirm.dart';
+import 'verkehr.dart';
 
 String _uhr(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
@@ -54,11 +55,12 @@ class Details extends StatelessWidget {
       body: Column(children: [
         Expanded(
           flex: 4,
-          child: Karte(standort: standort, ziel: ziel, strecken: strecken),
+          child: Karte(standort: standort, ziel: ziel, strecken: strecken, meldungen: v.verkehr),
         ),
         Expanded(
           flex: 6,
           child: ListView(padding: const EdgeInsets.symmetric(vertical: 8), children: [
+            VerkehrListe(v),
             for (final (i, a) in v.abschnitte.indexed)
               if (a.fahrt)
                 _Fahrt(a, halte)

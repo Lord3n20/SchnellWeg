@@ -21,6 +21,7 @@ import 'losgehen.dart';
 import 'namen.dart';
 import 'standort.dart';
 import 'tempo.dart';
+import 'verkehr.dart';
 import 'zugang.dart';
 import 'ziel.dart';
 
@@ -662,6 +663,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
             ziel: _ziel == null ? null : LatLng(_ziel!.lat, _ziel!.lon),
             halte: _naheHalte,
             strecken: _strecken,
+            meldungen: _strecken.isEmpty || _gewaehlt >= (_verbindungen?.length ?? 0) ? const [] : _verbindungen![_gewaehlt].verkehr,
             markiert: halt == null ? null : LatLng(halt.ort.lat, halt.ort.lon),
             onAntippen: _karteAngetippt,
           ),
@@ -896,6 +898,11 @@ class _VerbindungZeile extends StatelessWidget {
           ]),
           const SizedBox(height: 4),
           Text.rich(TextSpan(children: teile)),
+          for (final z in verkehrKurz(v))
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(z, style: TextStyle(fontSize: 13, color: farbe.onSurfaceVariant)),
+            ),
           if (eil != null)
             Padding(
               padding: const EdgeInsets.only(top: 4),

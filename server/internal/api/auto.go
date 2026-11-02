@@ -59,8 +59,14 @@ func (s *Server) tuerZuTuer(w http.ResponseWriter, r *http.Request, req routeReq
 		fail(w, http.StatusServiceUnavailable, aus)
 		return
 	}
-	if mode == "drive" && req.KMH != nil {
-		weg.Sec -= s.Valhalla.freieAutobahn(r.Context(), weg.Shape, *req.KMH)
+	var lage []meldungOut
+	lageOK := false
+	if mode == "drive" {
+		kmh := 0.0
+		if req.KMH != nil {
+			kmh = *req.KMH
+		}
+		lage, lageOK = s.fahrzeitAnpassen(r.Context(), &weg, kmh)
 	}
 	dauer := time.Duration(weg.Sec+0.5) * time.Second
 	dep := t.Truncate(time.Second)
@@ -70,46 +76,88 @@ func (s *Server) tuerZuTuer(w http.ResponseWriter, r *http.Request, req routeReq
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
-	json.NewEncoder(w).Encode(routeResp{ShapeMs: since(t0), Journeys: []journeyOut{{Dep: dep, Arr: arr,
+	json.NewEncoder(w).Encode(routeResp{ShapeMs: since(t0), Journeys: []journeyOut{{Dep: dep, Arr: arr, Verkehr: lage, VerkehrOK: lageOK,
 		Legs: []legOut{{Mode: mode, Dep: dep, Arr: arr, Shape: weg.Shape}}}}})
 }
 
 type vhTraceResp struct {
+	Shape string `json:"shape"`
 	Edges []struct {
 		Length     float64 `json:"length"` // km
 		Speed      float64 `json:"speed"`  // km/h
 		SpeedLimit any     `json:"speed_limit"`
 		RoadClass  string  `json:"road_class"`
+		Von        int     `json:"begin_shape_index"`
+		Bis        int     `json:"end_shape_index"`
 	} `json:"edges"`
 }
 
-// freieAutobahn sagt, wie viele Sekunden kmh auf Autobahn ohne Tempolimit gegenüber Valhalla spart (D-35): Valhalla
-// rechnet dort pauschal 105 km/h, top_speed senkt nur. Geltende Limits zählen weiter. Bei Fehlern 0: die Fahrt ist dann
-// nur zu vorsichtig gerechnet, das ist kein Grund, sie zu verweigern.
-func (v *Valhalla) freieAutobahn(ctx context.Context, shape string, kmh float64) float64 {
+// kanten holt die Straßenabschnitte der Route; bei Fehlern leer.
+func (v *Valhalla) kanten(ctx context.Context, shape string) (t vhTraceResp) {
 	body, _ := json.Marshal(map[string]any{"encoded_polyline": shape, "shape_match": "edge_walk", "costing": "auto", "units": "km",
-		"filters": map[string]any{"action": "include", "attributes": []string{"edge.length", "edge.speed", "edge.speed_limit", "edge.road_class"}}})
+		"filters": map[string]any{"action": "include", "attributes": []string{"shape", "edge.length", "edge.speed", "edge.speed_limit",
+			"edge.road_class", "edge.begin_shape_index", "edge.end_shape_index"}}})
 	ctx, cancel := context.WithTimeout(ctx, autoZeit)
 	defer cancel()
 	hr, err := http.NewRequestWithContext(ctx, http.MethodPost, v.URL+"/trace_attributes", bytes.NewReader(body))
 	if err != nil {
-		return 0
+		return t
 	}
 	hr.Header.Set("Content-Type", "application/json")
 	res, err := v.Client.Do(hr)
 	if err != nil {
-		return 0
+		return t
 	}
 	defer res.Body.Close()
-	var t vhTraceResp
 	if res.StatusCode != http.StatusOK || json.NewDecoder(res.Body).Decode(&t) != nil {
-		return 0
+		return vhTraceResp{}
 	}
-	spart := 0.0
+	return t
+}
+
+// fahrzeitAnpassen rechnet Tempo und Verkehrslage in die Fahrzeit ein (D-35, D-38). Auf Autobahn ohne Limit gilt kmh, denn
+// Valhalla rechnet dort pauschal 105 km/h und top_speed senkt nur; Limits gelten weiter, in Baustellen auch deren Limit, dazu kommt
+// die gemeldete Verzögerung. Fehlen Kanten oder Meldungen, bleibt der jeweilige Teil weg: dann nur ungenauer, kein Fehler.
+func (s *Server) fahrzeitAnpassen(ctx context.Context, weg *WalkRoute, kmh float64) ([]meldungOut, bool) {
+	route := dekodieren(weg.Shape)
+	var auf []Meldung
+	ok := false
+	if s.Verkehr != nil {
+		var alle []Meldung
+		alle, ok = s.Verkehr.Holen(ctx)
+		auf = aufDerRoute(alle, route)
+	}
+	t := s.Valhalla.kanten(ctx, weg.Shape)
+	form := route
+	if t.Shape != "" {
+		form = dekodieren(t.Shape)
+	}
 	for _, e := range t.Edges {
-		if e.RoadClass == "motorway" && e.SpeedLimit == "unlimited" && e.Speed > 0 && kmh > e.Speed {
-			spart += e.Length * 3600 * (1/e.Speed - 1/kmh)
+		if e.Speed <= 0 {
+			continue
 		}
+		v := e.Speed
+		if e.RoadClass == "motorway" && e.SpeedLimit == "unlimited" && kmh > v {
+			v = kmh
+		}
+		if e.Von >= 0 && e.Bis > e.Von && e.Bis < len(form) {
+			mitte := form[(e.Von+e.Bis)/2]
+			rx, ry := richtung(form[e.Von], form[e.Bis])
+			for _, m := range auf {
+				if m.MaxKmh > 0 && float64(m.MaxKmh) < v {
+					if _, drin := amWeg(mitte, rx, ry, m.Form); drin {
+						v = float64(m.MaxKmh)
+					}
+				}
+			}
+		}
+		weg.Sec -= e.Length * 3600 * (1/e.Speed - 1/v)
 	}
-	return spart
+	var out []meldungOut
+	for _, m := range auf {
+		weg.Sec += float64(m.VerzMin) * 60
+		out = append(out, meldungOut{Art: m.Art, Titel: m.Titel, Richtung: m.Richtung, VerzMin: m.VerzMin, Kmh: m.Kmh, MaxKmh: m.MaxKmh,
+			Gesperrt: m.Gesperrt, Lat: m.Form[0].lat, Lon: m.Form[0].lon})
+	}
+	return out, ok
 }

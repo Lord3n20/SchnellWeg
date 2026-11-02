@@ -132,6 +132,23 @@ class Abschnitt {
   int? get versp => abRt == null ? null : (abRt!.difference(ab).inSeconds / 60).round();
 }
 
+/// Meldung auf einer Autoroute (D-38): art = stau | sperrung | baustelle.
+class Meldung {
+  final String art, titel, richtung;
+  final int verzMin, maxKmh;
+  final bool gesperrt;
+  final double lat, lon;
+  Meldung.json(Map<String, dynamic> j)
+      : art = j['art'] as String,
+        titel = j['titel'] as String,
+        richtung = (j['richtung'] as String?) ?? '',
+        verzMin = (j['verz_min'] as int?) ?? 0,
+        maxKmh = (j['max_kmh'] as int?) ?? 0,
+        gesperrt = j['gesperrt'] == true,
+        lat = (j['lat'] as num).toDouble(),
+        lon = (j['lon'] as num).toDouble();
+}
+
 class Verbindung {
   final int fahrten;
   final DateTime ab, an;
@@ -140,6 +157,8 @@ class Verbindung {
   final double? eilKmh; // nur mit diesem Tempo zum ersten Halt zu schaffen (D-31), null = normal erreichbar
   final String wegArt; // wie bei Abschnitt
   final List<Abschnitt> abschnitte;
+  final List<Meldung> verkehr;
+  final bool verkehrOk; // Verkehrslage war verfügbar
 
   Verbindung.json(Map<String, dynamic> j, {bool ticket = false, this.wegArt = 'fuss'})
       : fahrten = j['trips'] as int,
@@ -148,6 +167,8 @@ class Verbindung {
         anRt = _zeit(j['arr_rt']),
         risiko = (j['risk'] as String?) ?? '',
         eilKmh = (j['eil_kmh'] as num?)?.toDouble(),
+        verkehr = [for (final m in ((j['verkehr'] as List?) ?? const []).cast<Map<String, dynamic>>()) Meldung.json(m)],
+        verkehrOk = j['verkehr_ok'] == true,
         abschnitte = [for (final l in (j['legs'] as List).cast<Map<String, dynamic>>()) Abschnitt.json(l, ticket: ticket, wegArt: wegArt)];
 
   DateTime get ankunft => anRt ?? an;
