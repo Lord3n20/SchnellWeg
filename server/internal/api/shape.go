@@ -26,7 +26,7 @@ type vhRouteReq struct {
 	Locations      []routeLoc     `json:"locations"`
 	Costing        string         `json:"costing"`
 	CostingOptions map[string]any `json:"costing_options"`
-	DirectionsType string         `json:"directions_type"`
+	DirectionsType string         `json:"directions_type,omitempty"`
 	// DirectionsOptions: Abbiegehinweise auf Deutsch; nur für Wege von Tür zu Tür
 	DirectionsOptions map[string]any `json:"directions_options,omitempty"`
 	ExcludePolygons   [][][2]float64 `json:"exclude_polygons,omitempty"` // Bereiche, die die Route meidet ([lon, lat])
@@ -79,6 +79,7 @@ func (v *Valhalla) route(ctx context.Context, aLat, aLon, bLat, bLon float64, k 
 	req := vhRouteReq{Locations: []routeLoc{{aLat, aLon, k.FangM}, {bLat, bLon, k.FangM}}, Costing: k.Costing, CostingOptions: k.Opts,
 		DirectionsType: "none", ExcludePolygons: k.Polygone}
 	if k.Schritte {
+		req.DirectionsType = "" // „none“ auf oberster Ebene schaltet auch die Optionen ab
 		req.DirectionsOptions = map[string]any{"directions_type": "instructions", "language": "de-DE", "units": "km"}
 	}
 	body, _ := json.Marshal(req)

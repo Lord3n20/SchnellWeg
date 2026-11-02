@@ -758,9 +758,11 @@ func TestUmfahrung(t *testing.T) {
 			bereiche = len(q.ExcludePolygons)
 			form, sec = umweg, umwegSec
 		}
-		json.NewEncoder(w).Encode(map[string]any{"trip": map[string]any{"summary": map[string]float64{"time": sec, "length": 7},
-			"legs": []map[string]any{{"shape": polyline6(form), "maneuvers": []map[string]any{
-				{"instruction": "Rechts abbiegen.", "length": 1.5, "begin_shape_index": 1}, {"instruction": "", "length": 0, "begin_shape_index": 2}}}}}})
+		leg := map[string]any{"shape": polyline6(form)}
+		if q.DirectionsType != "none" { // wie Valhalla: „none“ auf oberster Ebene gewinnt
+			leg["maneuvers"] = []map[string]any{{"instruction": "Rechts abbiegen.", "length": 1.5, "begin_shape_index": 1}, {"instruction": "", "length": 0, "begin_shape_index": 2}}
+		}
+		json.NewEncoder(w).Encode(map[string]any{"trip": map[string]any{"summary": map[string]float64{"time": sec, "length": 7}, "legs": []map[string]any{leg}}})
 	}))
 	defer vh.Close()
 	frage := func() (*httptest.ResponseRecorder, routeResp) {
