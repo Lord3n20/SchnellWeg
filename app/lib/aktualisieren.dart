@@ -137,7 +137,7 @@ class AktualisierenSeite extends StatelessWidget {
               Text(u.sucht ? 'Suche nach Updates …' : 'Kein neueres Update auf dem Server.')
             else
               Text('Neu: ${neu.version} (${groesse(neu.bytes)}). Deine Daten bleiben erhalten. '
-                  'Die App schließt sich bei der Installation, öffne sie danach neu.'),
+                  'Die App startet bei der Installation neu.'),
             if (u.laedt) ...[
               const SizedBox(height: 16),
               LinearProgressIndicator(value: u.anteil),
@@ -149,7 +149,7 @@ class AktualisierenSeite extends StatelessWidget {
             ],
             if (u.bestaetigen) ...[
               const SizedBox(height: 16),
-              const Text('Bestätige die Installation im Dialog von Android.'),
+              const Text('Bestätige die Installation im Dialog von Android. Abgebrochen? Dann tippe nochmal auf „Installieren“.'),
             ],
             if (u.fehler != null) ...[
               const SizedBox(height: 16),
