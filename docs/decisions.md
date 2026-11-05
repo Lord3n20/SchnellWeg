@@ -561,7 +561,7 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - Status: umgesetzt.
 
 ## D-42 Selbstupdate der App über den eigenen Server (05.11.)
-- Betreiber wünscht Updates ohne Kabel. Die App fragt beim Start `GET /v1/app`, bei höherem `code` nur ein Hinweis; geladen wird erst auf Knopfdruck, Installation über den PackageInstaller von Android mit dessen Bestätigung.
+- Betreiber wünscht Updates ohne Kabel. Die App fragt beim Start `GET /v1/app`, bei höherem `code` steht das nur in den Einstellungen unter „App-Update“ (kein Banner, Betreiberwunsch 05.11.); geladen wird erst auf Knopfdruck, Installation über den PackageInstaller von Android mit dessen Bestätigung.
 - Eigener Server statt öffentlicher GitHub-Releases: nur mit Client-Zertifikat erreichbar, keine Anfrage an Dritte, die App verrät niemandem außer dem eigenen Server, dass sie läuft.
 - Sicherheit: Android lässt nur dieselbe Signatur und (mit Code-Vergleich in der App) keine ältere Fassung zu, SHA-256 aus `version.json` prüft die Übertragung. Daten bleiben, nichts wird deinstalliert.
 - Neue Berechtigung `REQUEST_INSTALL_PACKAGES`; Android fragt einmal „Apps installieren erlauben“. Kaltstart: Abfrage läuft nebenher, kein Warten. Kein Polling, eine Abfrage je App-Start.

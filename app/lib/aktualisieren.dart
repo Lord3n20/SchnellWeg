@@ -1,5 +1,5 @@
-// Selbstupdate (D-42): fragt beim Start den eigenen Server nach einer neueren Fassung und zeigt nur einen Hinweis.
-// Geladen wird erst auf Knopfdruck, die Installation bestätigt der Nutzer im Dialog von Android. Die App-Daten bleiben.
+// Selbstupdate (D-42): fragt beim Start den eigenen Server nach einer neueren Fassung und zeigt sie nur in den
+// Einstellungen an. Geladen wird erst auf Knopfdruck, die Installation bestätigt der Nutzer im Dialog von Android. Die App-Daten bleiben.
 import 'dart:io';
 
 import 'package:flutter/material.dart';
