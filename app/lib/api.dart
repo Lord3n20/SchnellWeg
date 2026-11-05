@@ -86,6 +86,17 @@ class KartenRegion {
   bool enthaelt(double lat, double lon) => lat >= sued && lat <= nord && lon >= west && lon <= ost;
 }
 
+/// Fassung der App auf dem Server (D-42).
+class AppStand {
+  final String version, sha256;
+  final int code, bytes;
+
+  AppStand(this.version, this.code, this.sha256, this.bytes);
+
+  factory AppStand.json(Map<String, dynamic> j) =>
+      AppStand(j['version'] as String, (j['code'] as num).toInt(), j['sha256'] as String, (j['bytes'] as num).toInt());
+}
+
 class HaltRef {
   final String id, name;
   HaltRef.json(Map<String, dynamic> j)
@@ -350,12 +361,30 @@ class Api {
   /// Lädt die Kartendatei [id] nach [ziel], wenn sie neuer ist als [stand]. Geschrieben wird in eine .part-Datei,
   /// die bei Abbruch liegen bleibt und beim nächsten Versuch per Range fortgesetzt wird (If-Range: nur wenn der
   /// Serverstand gleich geblieben ist); erst die fertige Datei wird umbenannt. true = neue Datei.
-  Future<bool> karte(String id, File ziel, DateTime? stand, {void Function(int geladen, int gesamt)? fortschritt}) async {
+  Future<bool> karte(String id, File ziel, DateTime? stand, {void Function(int geladen, int gesamt)? fortschritt}) =>
+      _datei('/v1/map/${Uri.encodeComponent(id)}', ziel, stand, fortschritt);
+
+  /// Aktuelle App-Fassung auf dem Server; null, wenn er keine anbietet (auch ältere Server).
+  Future<AppStand?> appStand() async {
+    try {
+      final (_, _, daten) = await _anfrage('GET', '/v1/app');
+      return AppStand.json(jsonDecode(utf8.decode(daten)) as Map<String, dynamic>);
+    } on ApiFehler catch (e) {
+      if (e.art == 'app_fehlt' || e.art == 'http_404') return null;
+      rethrow;
+    }
+  }
+
+  /// Lädt die APK nach [ziel], fortsetzbar wie eine Karte.
+  Future<void> apk(File ziel, {void Function(int geladen, int gesamt)? fortschritt}) =>
+      _datei('/v1/app/apk', ziel, null, fortschritt);
+
+  Future<bool> _datei(String pfad, File ziel, DateTime? stand, void Function(int geladen, int gesamt)? fortschritt) async {
     final teil = File('${ziel.path}.part');
     final teilStand = File('${ziel.path}.part.stand'); // Last-Modified des angefangenen Downloads
     try {
       var schon = await teil.exists() && await teilStand.exists() ? await teil.length() : 0;
-      final req = await _http.getUrl(zugang.basis.resolve('/v1/map/${Uri.encodeComponent(id)}'));
+      final req = await _http.getUrl(zugang.basis.resolve(pfad));
       if (stand != null) req.headers.ifModifiedSince = stand;
       if (schon > 0) {
         req.headers.set('Range', 'bytes=$schon-');
@@ -386,7 +415,7 @@ class Api {
       } finally {
         await aus.close();
       }
-      if (gesamt >= 0 && n != gesamt) throw ApiFehler('karte_unvollstaendig');
+      if (gesamt >= 0 && n != gesamt) throw ApiFehler('download_unvollstaendig');
       await teil.setLastModified(HttpDate.parse(lm));
       await teil.rename(ziel.path);
       await teilStand.delete();

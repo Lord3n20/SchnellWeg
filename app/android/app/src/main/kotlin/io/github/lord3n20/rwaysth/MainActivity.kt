@@ -19,7 +19,8 @@ import io.flutter.plugin.common.MethodChannel
 // Eine einzelne Position auf Anfrage; laufende GPS-Positionen nur, solange der Messgang offen ist
 // (Bildschirm bleibt dann an, kein Hintergrund). Kanal schnellweg/karte steuert den KartenDienst (Download im Hintergrund),
 // schnellweg/aussteigen den AusstiegDienst (Ausstiegs-Erinnerung), schnellweg/sperrbildschirm, ob die Activity über dem
-// Sperrbildschirm erscheinen darf (nur solange die Detailansicht offen ist), schnellweg/losgehen den Losgeh-Wecker.
+// Sperrbildschirm erscheinen darf (nur solange die Detailansicht offen ist), schnellweg/losgehen den Losgeh-Wecker,
+// schnellweg/update das Selbstupdate.
 class MainActivity : FlutterActivity() {
     private val wartend = mutableListOf<MethodChannel.Result>()
     private var laufend: LocationListener? = null
@@ -101,6 +102,9 @@ class MainActivity : FlutterActivity() {
                 }
                 else -> LosgehWecker.kanal(this, call, result)
             }
+        }
+        MethodChannel(engine.dartExecutor.binaryMessenger, "schnellweg/update").setMethodCallHandler { call, result ->
+            Selbstupdate.kanal(this, call, result)
         }
         MethodChannel(engine.dartExecutor.binaryMessenger, "schnellweg/standort").setMethodCallHandler { call, result ->
             if (call.method != "holen") return@setMethodCallHandler result.notImplemented()

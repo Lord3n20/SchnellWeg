@@ -12,6 +12,8 @@
     <uses-permission android:name="android.permission.VIBRATE"/>
     <uses-permission android:name="android.permission.READ_CALENDAR"/>
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <!-- Selbstupdate (Selbstupdate.kt): Android fragt vor jeder Installation nach -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <application
         android:label="SchnellWeg"
         android:name="${applicationName}"
@@ -39,6 +41,7 @@
             </intent-filter>
         </activity>
         <receiver android:name=".LosgehWecker$Melder" android:exported="false"/>
+        <receiver android:name=".Selbstupdate$Rueckmeldung" android:exported="false"/>
         <receiver android:name=".LosgehWecker$Nachrechner" android:exported="false"/>
         <service
             android:name=".KartenDienst"

@@ -1,7 +1,8 @@
 // Einstellungen als Menü mit Unterpunkten: Tempo-Profile, Offline-Karten (laden/löschen, belegter Platz), Darstellung,
-// Losgeh-Wecker, Favoriten, Zugang.
+// Losgeh-Wecker, Favoriten, Zugang, App-Update.
 import 'package:flutter/material.dart';
 
+import 'aktualisieren.dart';
 import 'api.dart';
 import 'darstellung.dart';
 import 'einstellungen.dart';
@@ -102,6 +103,15 @@ class _EinstellungenSeiteState extends State<EinstellungenSeite> with _LagerBeob
           titel: 'Zugang',
           unter: _zugang?.basis.host ?? 'nicht eingerichtet',
           onTap: _zugangAendern,
+        ),
+        ListenableBuilder(
+          listenable: Aktualisieren.instanz,
+          builder: (context, _) => _Punkt(
+            icon: Icons.system_update,
+            titel: 'App-Update',
+            unter: Aktualisieren.instanz.text,
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AktualisierenSeite())),
+          ),
         ),
       ]),
     );

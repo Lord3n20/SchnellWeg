@@ -9,6 +9,7 @@ import 'package:latlong2/latlong.dart';
 
 import 'abfahrten.dart';
 import 'abweichung.dart';
+import 'aktualisieren.dart';
 import 'api.dart';
 import 'details.dart';
 import 'einstellungen.dart';
@@ -191,6 +192,23 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
       });
     });
     KartenLager.instanz.start(_api!);
+    _updatePruefen(_api!);
+  }
+
+  // Nur ein Hinweis, nie von selbst laden oder installieren.
+  Future<void> _updatePruefen(Api api) async {
+    final u = Aktualisieren.instanz;
+    await u.start(api);
+    final neu = u.neu;
+    if (neu == null || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('Update auf ${neu.version} verfügbar'),
+      duration: const Duration(seconds: 8),
+      action: SnackBarAction(
+        label: 'Ansehen',
+        onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AktualisierenSeite())),
+      ),
+    ));
   }
 
   Future<void> _zugangEinrichten() async {
