@@ -229,6 +229,10 @@ class _ProfilSeiteState extends State<ProfilSeite> {
                 ),
               ]),
             ),
+        if (!auto && !rad) ...[
+          const _Ueberschrift('Wege'),
+          _schalter('Anlieger-Zufahrten mitnehmen', 'anlieger', unter: 'Auch durch Zufahrten nur für Anlieger, wenn der Weg dadurch kürzer wird'),
+        ],
         if (auto)
           SwitchListTile(
             title: const Text('Schlechter Belag (Schotter, Feldwege)'),
