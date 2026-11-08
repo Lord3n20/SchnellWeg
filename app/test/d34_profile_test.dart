@@ -301,6 +301,15 @@ void main() {
       expect(m['treppen'], allOf(greaterThan(0), lessThanOrEqualTo(1)));
     });
 
+    testWidgets('Anlieger-Zufahrten: Schalter landet in meiden', (t) async {
+      await oeffnen(t);
+      await t.scrollUntilVisible(find.text('Anlieger-Zufahrten mitnehmen'), 100, scrollable: find.byType(Scrollable).last);
+      await t.tap(find.text('Anlieger-Zufahrten mitnehmen'));
+      await t.pumpAndSettle();
+      await _speichernTippen(t);
+      expect(_profil('p1')['meiden'], {'anlieger': true});
+    });
+
     testWidgets('Fußwege blendet Hauptstraßen ein und Unbeleuchtet aus; Schalter aus fällt raus', (t) async {
       await oeffnen(t);
       expect(find.text('Hauptstraßen'), findsNothing);

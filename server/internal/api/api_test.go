@@ -471,6 +471,10 @@ func TestMeidenKosten(t *testing.T) {
 	if o := k[0].Opts["pedestrian"].(map[string]any); len(k) != 1 || len(o) != 1 || (&Meiden{}).art().Rad {
 		t.Errorf("leer: %+v", k)
 	}
+	o := (&Meiden{Anlieger: true}).art().kosten(5, 5, 1)[0].Opts["pedestrian"].(map[string]any)
+	if o["destination_only_penalty"] != anliegerSek {
+		t.Errorf("Anlieger: %+v", o)
+	}
 	if a := (&Meiden{BusMin: 5, NurBahn: true}).art(); !a.Rad || !a.NurBahn || a.BusMalus != 5*time.Minute {
 		t.Errorf("Bus: %+v", a)
 	}

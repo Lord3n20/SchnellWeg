@@ -567,3 +567,11 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - Neue Berechtigung `REQUEST_INSTALL_PACKAGES`; Android fragt einmal „Apps installieren erlauben“. Kaltstart: Abfrage läuft nebenher, kein Warten. Kein Polling, eine Abfrage je App-Start.
 - Veröffentlichen: `scripts/app-release.sh`, Ablage im Add-on-Ordner außerhalb des Images. Ältere Apps merken nichts, ältere Server antworten 404 und die App schweigt.
 - Status: umgesetzt.
+
+## D-43 Zufahrten nur für Anlieger zu Fuß als Profil-Schalter (08.11.)
+- Fund des Betreibers: Ein kürzerer Weg durch einen Park in Aachen wurde nicht gewählt. Ursache: 28 m Zufahrt, die in den Tiles als destination_only gilt; Valhalla schlägt dafür
+  auch bei Fußgängern 600 s auf. Gemessen auf der Strecke: 873 m/12,2 min statt 633 m/8,9 min.
+- Entscheidung: Schalter `anlieger` im Profil (Standard aus, also wie bisher), setzt `destination_only_penalty` auf 60 s; 30 und 60 s ergeben den kürzeren Weg, 120 s nicht.
+  Ganz ohne Strafe bliebe nichts, was solche Stücke bei gleichem Weg nachrangig macht. Ob eine Zufahrt tatsächlich begehbar ist, weiß nur der Nutzer.
+- Gegenprobe mit 60 s auf 10 neutralen Strecken in der Innenstadt: alle unverändert. Die vorab gerechneten Umstiegswege (Job `footpaths`) bleiben wie sie sind.
+- Status: umgesetzt.

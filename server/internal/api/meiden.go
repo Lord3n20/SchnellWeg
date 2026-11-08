@@ -21,10 +21,14 @@ type Meiden struct {
 	BusMin        int     `json:"bus_min"`  // Verbindungen mit Bus nur, wenn sie so viele Minuten vor dem direkten Weg ankommen
 	OEV           bool    `json:"oev"`      // kein Bus und keine Bahn: nur der direkte Weg, ohne Längengrenze
 	Umstiege      *int    `json:"umstiege"` // höchstens so viele Umstiege
+	Anlieger      bool    `json:"anlieger"` // zu Fuß auch durch Zufahrten nur für Anlieger, wenn es kürzer ist (D-43)
 }
 
 // stufenMaxSek: step_penalty bei Treppen = 1 (Rennrad bisher, D-30).
 const stufenMaxSek = 600
+
+// anliegerSek: destination_only_penalty für Fußwege bei „anlieger“ statt Valhallas 600 s (D-43).
+const anliegerSek = 60
 
 func (m *Meiden) gueltig() bool {
 	for _, x := range []float64{m.Treppen, m.Belag, m.Hauptstrassen, m.Steigung, m.Faehren, m.Dunkel, m.Autobahn, m.Maut} {
@@ -63,6 +67,9 @@ func (m *Meiden) fussOpts(o map[string]any) {
 	setzen(o, "use_tracks", 0.5, m.Belag)
 	if m.Dunkel > 0 {
 		o["use_lit"] = m.Dunkel
+	}
+	if m.Anlieger {
+		o["destination_only_penalty"] = anliegerSek
 	}
 }
 
