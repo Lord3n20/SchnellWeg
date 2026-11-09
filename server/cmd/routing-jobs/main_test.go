@@ -64,17 +64,27 @@ func TestHgtKacheln(t *testing.T) {
 	}
 }
 
-func TestPflasterWeg(t *testing.T) {
-	ja := []osm.Tags{{{Key: "highway", Value: "pedestrian"}, {Key: "surface", Value: "sett"}}, {{Key: "highway", Value: "path"}, {Key: "smoothness", Value: "bad"}}}
-	nein := []osm.Tags{{{Key: "highway", Value: "footway"}, {Key: "surface", Value: "paving_stones"}}, {{Key: "surface", Value: "sett"}}, {{Key: "highway", Value: "residential"}, {Key: "surface", Value: "asphalt"}, {Key: "smoothness", Value: "good"}}}
-	for _, x := range ja {
-		if !pflasterWeg(x) {
-			t.Errorf("%v soll Pflaster sein", x)
+func TestBelagKlasse(t *testing.T) {
+	tags := func(s, g string) osm.Tags {
+		o := osm.Tags{{Key: "highway", Value: "footway"}}
+		if s != "" {
+			o = append(o, osm.Tag{Key: "surface", Value: s})
+		}
+		if g != "" {
+			o = append(o, osm.Tag{Key: "smoothness", Value: g})
+		}
+		return o
+	}
+	for _, c := range []struct {
+		s, g string
+		k    uint8
+	}{{"ground", "", 1}, {"gravel", "", 2}, {"cobblestone", "", 3}, {"sett", "", 4}, {"sett", "bad", 3}, {"paving_stones", "", 5},
+		{"asphalt", "", 0}, {"asphalt", "bad", 3}, {"asphalt", "very_bad", 1}, {"", "", 0}, {"sett", "good", 4}} {
+		if k := belagKlasse(tags(c.s, c.g)); k != c.k {
+			t.Errorf("%s/%s: %d, erwartet %d", c.s, c.g, k, c.k)
 		}
 	}
-	for _, x := range nein {
-		if pflasterWeg(x) {
-			t.Errorf("%v soll kein Pflaster sein", x)
-		}
+	if belagKlasse(osm.Tags{{Key: "surface", Value: "sett"}}) != 0 {
+		t.Error("ohne highway kein Weg")
 	}
 }

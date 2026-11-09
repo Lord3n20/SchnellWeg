@@ -73,7 +73,7 @@ var (
 const osmFormat = "renumber"
 
 // valhallaFormat ändert sich, wenn der valhalla-Job anders baut; dann wird trotz gleichem OSM-Stand neu gebaut.
-const valhallaFormat = "hoehe+pflaster"
+const valhallaFormat = "hoehe+belag"
 
 // errSkip meldet: Eingang unverändert, nichts zu tun.
 var errSkip = errors.New("unverändert")
@@ -393,9 +393,9 @@ func jobValhalla(ctx context.Context, w *jobs.Watch) (string, error) {
 		return "", fmt.Errorf("Prüfung: %w", err)
 	}
 	// Way-IDs passen nur zu diesem Tile-Stand, deshalb liegt die Liste daneben (D-44).
-	pflaster, err := pflasterSchreiben(ctx, pbf, filepath.Join(r.Dir, "pflaster.ids"))
+	belag, err := belagSchreiben(ctx, pbf, filepath.Join(r.Dir, "belag.ids"))
 	if err != nil {
-		return "", fmt.Errorf("Pflaster: %w", err)
+		return "", fmt.Errorf("Belag: %w", err)
 	}
 	jobs.WriteStamp(r.Dir, "osm", osmID)
 	jobs.WriteStamp(r.Dir, "format", valhallaFormat)
@@ -403,7 +403,7 @@ func jobValhalla(ctx context.Context, w *jobs.Watch) (string, error) {
 		return "", err
 	}
 	ok = true
-	return fmt.Sprintf("Stand %s aus OSM %s, tiles.tar %d MB, %d Pflaster-Wege (%s)", r.ID, osmID, st.Size()>>20, pflaster, strings.Join(times, ", ")), nil
+	return fmt.Sprintf("Stand %s aus OSM %s, tiles.tar %d MB, %d Belag-Wege (%s)", r.ID, osmID, st.Size()>>20, belag, strings.Join(times, ", ")), nil
 }
 
 // Testrouten zwischen neutralen Orten: Fußweg in Aachen, Auto bis Köln und nach Maastricht (deckt den Rand ab).

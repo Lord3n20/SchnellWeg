@@ -13,9 +13,10 @@ import (
 	"github.com/Lord3n20/SchnellWeg/server/internal/raptor"
 )
 
-// Pflaster und Hang (D-44). Valhalla kennt zu Fuß keine Kosten für den Belag befestigter Wege und führt deshalb durchs
-// Kopfsteinpflaster. Der Job valhalla legt die betroffenen Wege neben die Tiles; der Server fragt die Route, sperrt die
-// Stücke, die sie davon benutzt, und fragt neu. So bleiben es wenige kleine Sperrflächen statt aller Pflasterwege der Region.
+// Belag und Hang (D-44). Valhalla kennt zu Fuß keine Kosten für den Belag befestigter Wege und führt deshalb durchs
+// Kopfsteinpflaster. Der Job valhalla legt die Wege samt Belagklasse neben die Tiles; der Server fragt die Route, sperrt die
+// Stücke, die sie davon benutzt, und fragt neu. So bleiben es wenige kleine Sperrflächen statt aller solchen Wege der Region.
+// Klasse k (1 = am schlechtesten) wird ab Stufe k × belagSchritt umgangen.
 const (
 	pflasterRunden   = 8       // so oft wird höchstens neu gefragt
 	pflasterMaxBoxen = 200     // Valhalla erlaubt 10 km Umfang, eine Box hat ~20 m
@@ -25,52 +26,69 @@ const (
 	pflasterUmweg    = 1.5 // so viel länger darf der Weg werden …
 	pflasterExtraM   = 500 // … oder so viele Meter, was mehr erlaubt
 	pflasterPruefen  = time.Minute
+	belagSchritt     = 0.2
 
 	hangVoll    = 6.0 // % Steigung, ab der das volle Tempo bergauf/bergab gilt
 	hangMaxKMH  = 200.0
 	hangMaxVoll = 30.0
 )
 
-// Pflasterliste liest die sortierten Way-IDs aus der Datei des Jobs und bemerkt neue Stände.
-type Pflasterliste struct {
+// Belagdaten: sortierte Way-IDs und je Weg die Klasse.
+type Belagdaten struct {
+	ids     []uint32
+	klassen []uint8
+}
+
+// umgehen sagt, ob der Weg bei dieser Stufe zu meiden ist.
+func (d Belagdaten) umgehen(way uint64, stufe float64) bool {
+	if way > math.MaxUint32 {
+		return false
+	}
+	i, drin := slices.BinarySearch(d.ids, uint32(way))
+	return drin && float64(d.klassen[i])*belagSchritt <= stufe+1e-9
+}
+
+// Belagliste liest die Datei des Jobs (n IDs als uint32, dann n Klassen als uint8) und bemerkt neue Stände.
+type Belagliste struct {
 	Muster string // Pfad, Glob erlaubt
 
 	mu       sync.Mutex
-	ids      []uint32
+	daten    Belagdaten
 	pfad     string
 	stand    time.Time
 	geprueft time.Time
 }
 
-// Aktuell liefert die IDs; bei Lesefehlern bleibt der letzte Stand.
-func (l *Pflasterliste) Aktuell() []uint32 {
+// Aktuell liefert die Daten; bei Lesefehlern bleibt der letzte Stand.
+func (l *Belagliste) Aktuell() Belagdaten {
 	if l == nil {
-		return nil
+		return Belagdaten{}
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if time.Since(l.geprueft) < pflasterPruefen {
-		return l.ids
+		return l.daten
 	}
 	l.geprueft = time.Now()
 	treffer, _ := filepath.Glob(l.Muster)
 	if len(treffer) == 0 {
-		return l.ids
+		return l.daten
 	}
 	st, err := os.Stat(treffer[0]) // folgt dem Symlink current
 	if err != nil || treffer[0] == l.pfad && st.ModTime().Equal(l.stand) {
-		return l.ids
+		return l.daten
 	}
 	b, err := os.ReadFile(treffer[0])
-	if err != nil || len(b)%4 != 0 {
-		return l.ids
+	if err != nil || len(b)%5 != 0 {
+		return l.daten
 	}
-	ids := make([]uint32, len(b)/4)
+	n := len(b) / 5
+	ids := make([]uint32, n)
 	for i := range ids {
 		ids[i] = binary.LittleEndian.Uint32(b[4*i:])
 	}
-	l.ids, l.pfad, l.stand = ids, treffer[0], st.ModTime()
-	return l.ids
+	l.daten, l.pfad, l.stand = Belagdaten{ids, slices.Clone(b[4*n:])}, treffer[0], st.ModTime()
+	return l.daten
 }
 
 // Hang rechnet das Tempo je nach Steigung: Eben bei 0 %, linear bis Auf bzw. Ab bei hangVoll, darüber gleich.
@@ -119,13 +137,10 @@ func hangZeit(weg *WalkRoute, t vhTraceResp, h Hang) {
 }
 
 // pflasterStellen liefert kleine Sperrflächen auf den Pflasterstücken der Route und deren Länge in m.
-func pflasterStellen(t vhTraceResp, ids []uint32, a, b pt) (boxen [][][2]float64, m float64) {
+func pflasterStellen(t vhTraceResp, d Belagdaten, stufe float64, a, b pt) (boxen [][][2]float64, m float64) {
 	form := dekodieren(t.Shape)
 	for _, e := range t.Edges {
-		if e.WayID > math.MaxUint32 {
-			continue
-		}
-		if _, drin := slices.BinarySearch(ids, uint32(e.WayID)); !drin {
+		if !d.umgehen(e.WayID, stufe) {
 			continue
 		}
 		m += e.Length * 1000
@@ -146,15 +161,15 @@ func pflasterStellen(t vhTraceResp, ids []uint32, a, b pt) (boxen [][][2]float64
 // bleibt der beste bisherige Weg: lieber übers Pflaster als gar kein Weg.
 func (v *Valhalla) wegAnpassen(ctx context.Context, aLat, aLon, bLat, bLon float64, k Kosten, zeit time.Duration) (WalkRoute, error) {
 	weg, err := v.route(ctx, aLat, aLon, bLat, bLon, k, zeit)
-	if err != nil || !k.Pflaster && k.Hang == nil {
+	if err != nil || k.BelagMeiden < belagSchritt && k.Hang == nil {
 		return weg, err
 	}
 	t := v.kanten(ctx, weg.Shape, k.Costing)
-	if ids := v.Pflaster.Aktuell(); k.Pflaster && len(ids) > 0 {
+	if d := v.Belag.Aktuell(); k.BelagMeiden >= belagSchritt && len(d.ids) > 0 {
 		grenze := max(weg.M*pflasterUmweg, weg.M+pflasterExtraM)
 		beste, besteT, besteM := weg, t, math.Inf(1)
 		for runde := 0; len(t.Edges) > 0; runde++ {
-			boxen, m := pflasterStellen(t, ids, pt{aLat, aLon}, pt{bLat, bLon})
+			boxen, m := pflasterStellen(t, d, k.BelagMeiden, pt{aLat, aLon}, pt{bLat, bLon})
 			if m < besteM && weg.M <= grenze {
 				beste, besteT, besteM = weg, t, m
 			}

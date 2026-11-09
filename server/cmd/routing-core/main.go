@@ -65,7 +65,7 @@ func main() {
 	lang := flag.Float64("lang", 5000, "ab dieser Luftlinie zum nächsten Halt erst nachfragen (App: \"lang\": true), 0 = nie")
 	far := flag.Float64("far", 15000, "ohne Halt im Suchradius bis zu dieser Luftlinie in m weitersuchen (0 = aus)")
 	valhalla := flag.String("valhalla", "", "Valhalla-URL für echte Zugangswege (leer = Luftlinie)")
-	pflaster := flag.String("pflaster", "/addon_configs/*_routing_jobs/valhalla/current/pflaster.ids", "Wege mit Kopfsteinpflaster aus dem Job valhalla (Glob erlaubt, ohne Treffer keine Umgehung)")
+	belag := flag.String("belag", "/addon_configs/*_routing_jobs/valhalla/current/belag.ids", "Wege mit schlechtem Belag aus dem Job valhalla (Glob erlaubt, ohne Treffer keine Umgehung)")
 	hoehe := flag.String("hoehe", "/addon_configs/*_routing_jobs/hoehe", "Höhenkacheln für den Messgang der App (Glob erlaubt)")
 	kmh := flag.Float64("kmh", 4.3, "Gehtempo für Zugangswege in km/h")
 	direct := flag.Float64("direct", 3000, "reiner Fußweg Start → Ziel als Vergleich bis zu dieser Luftlinie in m (0 = aus)")
@@ -180,7 +180,7 @@ func main() {
 	if *valhalla != "" {
 		srv.Valhalla = &api.Valhalla{URL: strings.TrimRight(*valhalla, "/"), KMH: *kmh, MaxM: 2 * *access,
 			Timeout: 300 * time.Millisecond, Client: &http.Client{Transport: &http.Transport{DisableKeepAlives: true}},
-			Pflaster: &api.Pflasterliste{Muster: *pflaster}}
+			Belag: &api.Belagliste{Muster: *belag}}
 	}
 	today := func() time.Time {
 		y, m, d := time.Now().In(api.Berlin).Date()

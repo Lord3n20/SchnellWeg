@@ -134,6 +134,16 @@ class _TempoSeiteState extends State<TempoSeite> {
   }
 }
 
+/// Welche Beläge die Route bei dieser Stufe umgeht (D-44), jede Stufe nimmt die vorigen mit.
+String _belagText(double v) => switch ((v * 5 + 1e-9).floor()) {
+      0 => 'egal',
+      1 => 'Erde, Gras, Sand',
+      2 => '+ Schotter',
+      3 => '+ grobes Pflaster',
+      4 => '+ Kopfsteinpflaster',
+      _ => '+ Gehwegplatten',
+    };
+
 String _messText(TempoProfil p, HangErgebnis? e) {
   if (e == null) return 'Tempo gespeichert. Die Steigung ließ sich nicht auswerten, die Hang-Regler bleiben.';
   if (e.auf == null && e.ab == null && e.zuFussAb == null) return 'Tempo gespeichert. Für die Hang-Regler war zu wenig Steigung dabei.';
@@ -144,7 +154,7 @@ String _messText(TempoProfil p, HangErgebnis? e) {
 /// Stufen, was die Route meiden soll: Schlüssel wie in /v1/route, Text, für welche Profile.
 const _stufen = [
   ('treppen', 'Treppen', {'fuss', 'eigen'}),
-  ('belag', 'Schlechter Belag (Schotter, Feldwege)', {'fuss', 'eigen'}),
+  ('belag', 'Schlechter Belag', {'fuss', 'eigen'}),
   ('hauptstrassen', 'Hauptstraßen', {'eigen'}),
   ('dunkel', 'Unbeleuchtete Wege', {'fuss', 'eigen'}),
   ('faehren', 'Fähren', {'fuss', 'eigen', 'auto'}),
@@ -276,19 +286,17 @@ class _ProfilSeiteState extends State<ProfilSeite> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(children: [
-                Expanded(flex: 2, child: Text(text)),
+                Expanded(flex: 2, child: Text(k == 'belag' ? '$text: ${_belagText(p.stufe(k))}' : text)),
                 Expanded(
                   flex: 3,
                   child: Slider(
                     value: p.stufe(k).clamp(0.0, 1.0),
-                    divisions: 10,
+                    divisions: k == 'belag' ? 5 : 10,
                     onChanged: (v) => setState(() => p.setzen(k, v)),
                   ),
                 ),
               ]),
             ),
-        if (!auto)
-          _schalter('Kopfsteinpflaster', 'pflaster', unter: 'Pflaster und holprige Abschnitte umgehen, wenn es einen vertretbaren anderen Weg gibt'),
         if (!auto && !rad) ...[
           const _Ueberschrift('Wege'),
           _schalter('Anlieger-Zufahrten mitnehmen', 'anlieger', unter: 'Auch durch Zufahrten nur für Anlieger, wenn der Weg dadurch kürzer wird'),

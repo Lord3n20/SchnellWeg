@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"compress/gzip"
 	"context"
 	"encoding/binary"
@@ -166,24 +167,39 @@ func hoeheOK(ctx context.Context) error {
 	return nil
 }
 
-// pflasterWeg: Kopfsteinpflaster jeder Art und alles, was in OSM als holprig eingetragen ist (D-44).
-func pflasterWeg(t osm.Tags) bool {
+// belagKlasse: 0 = unauffällig, sonst 1 (am schlechtesten) bis 5; sie entscheidet, ab welcher Reglerstufe ein Weg umgangen wird (D-44).
+func belagKlasse(t osm.Tags) uint8 {
 	if t.Find("highway") == "" {
-		return false
+		return 0
 	}
+	var k uint8
 	switch t.Find("surface") {
-	case "sett", "cobblestone", "unhewn_cobblestone":
-		return true
+	case "ground", "dirt", "earth", "grass", "mud", "sand", "unpaved", "woodchips":
+		k = 1
+	case "gravel", "fine_gravel", "pebblestone", "compacted":
+		k = 2
+	case "cobblestone", "unhewn_cobblestone":
+		k = 3
+	case "sett":
+		k = 4
+	case "paving_stones", "concrete:plates", "concrete:lanes", "grass_paver", "bricks", "brick":
+		k = 5
 	}
+	var g uint8
 	switch t.Find("smoothness") {
-	case "bad", "very_bad", "horrible", "very_horrible", "impassable":
-		return true
+	case "very_bad", "horrible", "very_horrible", "impassable":
+		g = 1
+	case "bad":
+		g = 3
 	}
-	return false
+	if k == 0 || g != 0 && g < k {
+		k = g
+	}
+	return k
 }
 
-// pflasterSchreiben legt die sortierten Way-IDs als uint32 (little endian) ab und liefert ihre Zahl.
-func pflasterSchreiben(ctx context.Context, pbf, ziel string) (int, error) {
+// belagSchreiben legt n sortierte Way-IDs (uint32, little endian) und danach n Klassen (uint8) ab und liefert n.
+func belagSchreiben(ctx context.Context, pbf, ziel string) (int, error) {
 	f, err := os.Open(pbf)
 	if err != nil {
 		return 0, err
@@ -192,25 +208,35 @@ func pflasterSchreiben(ctx context.Context, pbf, ziel string) (int, error) {
 	sc := osmpbf.New(ctx, f, 2)
 	defer sc.Close()
 	sc.SkipNodes, sc.SkipRelations = true, true
-	var ids []uint32
+	type weg struct {
+		id uint32
+		k  uint8
+	}
+	var wege []weg
 	for sc.Scan() {
-		if w, ok := sc.Object().(*osm.Way); ok && pflasterWeg(w.Tags) {
+		w, ok := sc.Object().(*osm.Way)
+		if !ok {
+			continue
+		}
+		if k := belagKlasse(w.Tags); k != 0 {
 			if w.ID > math.MaxUint32 {
 				return 0, fmt.Errorf("Way-ID %d zu groß (renumber fehlt?)", w.ID)
 			}
-			ids = append(ids, uint32(w.ID))
+			wege = append(wege, weg{uint32(w.ID), k})
 		}
 	}
 	if err := sc.Err(); err != nil {
 		return 0, err
 	}
-	if len(ids) < 100 {
-		return 0, fmt.Errorf("Prüfung: nur %d Pflaster-Wege", len(ids))
+	if len(wege) < 100 {
+		return 0, fmt.Errorf("Prüfung: nur %d Belag-Wege", len(wege))
 	}
-	slices.Sort(ids)
-	b := make([]byte, 4*len(ids))
-	for i, x := range ids {
-		binary.LittleEndian.PutUint32(b[4*i:], x)
+	slices.SortFunc(wege, func(a, b weg) int { return cmp.Compare(a.id, b.id) })
+	n := len(wege)
+	b := make([]byte, 5*n)
+	for i, x := range wege {
+		binary.LittleEndian.PutUint32(b[4*i:], x.id)
+		b[4*n+i] = x.k
 	}
-	return len(ids), os.WriteFile(ziel, b, 0o644)
+	return n, os.WriteFile(ziel, b, 0o644)
 }
