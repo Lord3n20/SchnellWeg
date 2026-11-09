@@ -8,25 +8,26 @@ import (
 // Meiden beschreibt ein Profil aus der App (D-34): Name und Tempo bleiben auf dem Handy, der Server erfährt nur, was
 // die Route meiden soll. Stufen 0–1: 0 = egal (Valhallas Standard), 1 = so weit wie möglich meiden.
 type Meiden struct {
-	Treppen       float64 `json:"treppen"`
-	Belag         float64 `json:"belag"` // je höher, desto mehr Beläge werden umgangen (D-44, belagSchritt)
-	Hauptstrassen float64 `json:"hauptstrassen"`
-	Steigung      float64 `json:"steigung"`
-	Faehren       float64 `json:"faehren"`
-	Dunkel        float64 `json:"dunkel"`      // unbeleuchtete Wege (nur Fußgänger-Kosten)
-	Autobahn      float64 `json:"autobahn"`    // nur Auto
-	Maut          float64 `json:"maut"`        // nur Auto
-	Fusswege      bool    `json:"fusswege"`    // Straßen und Radwege statt Fußwege (Fahrradkosten)
-	NurBahn       bool    `json:"bus"`         // Busse nie: nur Schiene
-	BusMin        int     `json:"bus_min"`     // Verbindungen mit Bus nur, wenn sie so viele Minuten vor dem direkten Weg ankommen
-	OEV           bool    `json:"oev"`         // kein Bus und keine Bahn: nur der direkte Weg, ohne Längengrenze
-	Umstiege      *int    `json:"umstiege"`    // höchstens so viele Umstiege
-	Anlieger      bool    `json:"anlieger"`    // zu Fuß auch durch Zufahrten nur für Anlieger, wenn es kürzer ist (D-43)
-	Pflaster      bool    `json:"pflaster"`    // App 0.2.4–0.2.6: wie belag 0,8
-	BelagUmweg    int     `json:"belag_umweg"` // so viel % länger darf der Weg werden, um Belag zu umgehen, 0 = nicht ausweichen (D-44)
-	KmhAuf        float64 `json:"kmh_auf"`     // Tempo bergauf ab 6 % Steigung, 0 = wie in der Ebene (D-44)
-	KmhAb         float64 `json:"kmh_ab"`      // Tempo bergab ab 6 % Gefälle, 0 = wie in der Ebene (D-44)
-	HangVoll      float64 `json:"hang_voll"`   // Steigung in %, ab der kmh_auf voll gilt, 0 = 6 % (D-44)
+	Treppen       float64   `json:"treppen"`
+	Belag         float64   `json:"belag"` // Feldwege und Radtyp
+	Hauptstrassen float64   `json:"hauptstrassen"`
+	Steigung      float64   `json:"steigung"`
+	Faehren       float64   `json:"faehren"`
+	Dunkel        float64   `json:"dunkel"`      // unbeleuchtete Wege (nur Fußgänger-Kosten)
+	Autobahn      float64   `json:"autobahn"`    // nur Auto
+	Maut          float64   `json:"maut"`        // nur Auto
+	Fusswege      bool      `json:"fusswege"`    // Straßen und Radwege statt Fußwege (Fahrradkosten)
+	NurBahn       bool      `json:"bus"`         // Busse nie: nur Schiene
+	BusMin        int       `json:"bus_min"`     // Verbindungen mit Bus nur, wenn sie so viele Minuten vor dem direkten Weg ankommen
+	OEV           bool      `json:"oev"`         // kein Bus und keine Bahn: nur der direkte Weg, ohne Längengrenze
+	Umstiege      *int      `json:"umstiege"`    // höchstens so viele Umstiege
+	Anlieger      bool      `json:"anlieger"`    // zu Fuß auch durch Zufahrten nur für Anlieger, wenn es kürzer ist (D-43)
+	Pflaster      bool      `json:"pflaster"`    // App 0.2.4–0.2.6, ohne Wirkung
+	BelagUmweg    int       `json:"belag_umweg"` // App 0.2.7–0.2.8, ohne Wirkung
+	BelagKmh      []float64 `json:"belag_kmh"`   // Tempo je Belagklasse 1–5, 0 = wie normal (D-44)
+	KmhAuf        float64   `json:"kmh_auf"`     // Tempo bergauf ab 6 % Steigung, 0 = wie in der Ebene (D-44)
+	KmhAb         float64   `json:"kmh_ab"`      // Tempo bergab ab 6 % Gefälle, 0 = wie in der Ebene (D-44)
+	HangVoll      float64   `json:"hang_voll"`   // Steigung in %, ab der kmh_auf voll gilt, 0 = 6 % (D-44)
 }
 
 // stufenMaxSek: step_penalty bei Treppen = 1 (Rennrad bisher, D-30).
@@ -46,8 +47,13 @@ func (m *Meiden) gueltig() bool {
 			return false
 		}
 	}
-	if m.BelagUmweg < 0 || m.BelagUmweg > belagUmwegMax {
+	if len(m.BelagKmh) != 0 && len(m.BelagKmh) != belagKlassen {
 		return false
+	}
+	for _, x := range m.BelagKmh {
+		if !(x >= 0 && x <= hangMaxKMH) {
+			return false
+		}
 	}
 	if !(m.HangVoll >= 0 && m.HangVoll <= hangMaxVoll) {
 		return false
@@ -75,22 +81,6 @@ func setzen(o map[string]any, name string, standard, stufe float64) {
 	if stufe > 0 {
 		o[name] = standard * (1 - stufe)
 	}
-}
-
-// belagStufe ist die Stufe, bis zu der die Route Beläge umgeht.
-func (m *Meiden) belagStufe() float64 {
-	if m.Pflaster {
-		return max(m.Belag, 0.8)
-	}
-	return m.Belag
-}
-
-// belagUmweg: erlaubter Umweg in %; 0 = nicht ausweichen. Nur der Schalter alter Apps bringt einen eigenen Wert mit.
-func (m *Meiden) belagUmweg() int {
-	if m.Pflaster && m.BelagUmweg == 0 {
-		return belagUmwegAlt
-	}
-	return m.BelagUmweg
 }
 
 func (m *Meiden) fussOpts(o map[string]any) {

@@ -583,18 +583,19 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   (Köln-Regbez: 4.793 `sett`, 1.131 `cobblestone`).
 - Der Job `valhalla` schreibt `belag.ids` neben die Tiles: sortierte Way-IDs (nach renumber, passen also nur zu diesem Stand) mit einer Klasse von 1 (am schlechtesten) bis 5:
   Erde/Gras/Sand und `smoothness` ab very_bad, Schotter, grobes Pflaster (cobblestone, unhewn_cobblestone, `smoothness=bad`), `sett`, Gehwegplatten.
-- Der Regler `belag` (früher nur Feldwege) umgeht Klasse k ab Stufe k × 0,2; ein eigener Schalter wäre doppelt (Betreiber 09.11.). `pflaster` aus App 0.2.4–0.2.6 gilt als 0,8.
-  Ablauf: Route holen, per `/trace_attributes` die Pflasterstücke finden, je Stück eine ~2-m-Box (`exclude_polygons`) und neu fragen, höchstens
-  8 Runden. Gesperrt wird nur, was die Route benutzt, damit die Valhalla-Grenze (10 km Umfang) reicht. Nicht umgangen wird in 60 m um Start und Ziel und wenn der Weg
-  länger würde als der Regler „Wie sehr“ (`belag_umweg` in %, je % mindestens 10 m; fehlt er, weicht der Server nicht aus, Betreiber 09.11.; nur der Schalter alter Apps gilt als 50); dann geht es Stufe für Stufe abwärts, bis der Weg in die Grenze passt (die schlimmsten Beläge zuerst umgehen), sonst bleibt der beste erlaubte Weg, im Zweifel über Pflaster statt gar keiner.
-  Valhallas Grenze von 100 Ecken je Anfrage reicht dafür nicht (eine Altstadt-Route braucht schon in Runde 1 39 Boxen), im Dienst steht sie deshalb auf 1000.
+- Betreiber 09.11.: statt Ausweichen mit Umweg-Grenze gilt ein Tempo je Belag. In der App je Klasse „wie normal“, Prozent langsamer oder das Tempo eines anderen Profils (z. B. „Zu Fuß“ auf Schotter);
+  an den Server geht nur `belag_kmh` (5 Werte, 0 = wie normal). Der Server rechnet jede Route je Kante (`min(Hang-Tempo, Belag-Tempo)`) und vergleicht die normale Route mit Varianten, die die
+  langsamen Klassen umgehen, die langsamste zuerst: Route holen, per `/trace_attributes` die Stücke finden, je Stück eine ~2-m-Box (`exclude_polygons`), neu fragen, höchstens 20 Runden und 200 Boxen,
+  60 m um Start und Ziel frei. Die schnellste Variante gewinnt. Valhallas Grenze von 100 Ecken je Anfrage reicht dafür nicht, im Dienst steht sie auf 1000. Ohne `belag_kmh` ändert der Belag nichts.
+  `pflaster` und `belag_umweg` aus App 0.2.4–0.2.8 werden angenommen, wirken aber nicht mehr. Der Regler `belag` entfällt in der App für Fuß und eigene Profile; sein gespeicherter Wert wirkt weiter auf Feldwege und den Radtyp.
 - Höhendaten (Skadi, 1°-Kacheln der Region, einmalig nach `hoehe/`) gehen in die Tiles; Fahrrad-Kosten und `use_hills` sehen damit Steigungen.
 - Profil-Felder `kmh_auf`/`kmh_ab`: linear von `kmh` (0 %) bis zum Wert (±6 %), darüber gleich; fehlt einer, gilt die Ebene. Die Zeit ist dann die Summe je Kante.
   Die App stellt das als Regler in Prozent vom Tempo ein (bergauf −90…0 %, bergab −50…+200 %) und rechnet erst beim Senden in km/h um, damit es dem gemessenen Tempo folgt.
   Eigene Profile haben zusätzlich „Zu Fuß ab x % Steigung“ (Betreiber 09.11., Longboard): bergauf linear von `kmh` bis Gehtempo bei x %, darüber Gehtempo (`kmh_auf` + `hang_voll`).
-  Der Messgang setzt die Regler selbst (Betreiber 09.11.). GPS-Höhe ist dafür zu ungenau, also lädt die App einmal die Höhenkachel (`GET /v1/hoehe/{kachel}`, gzip, 1°) und rechnet
-  Abschnitte ≥ 50 m auf dem Handy aus; die Spur verlässt das Gerät nicht. Das gemessene Ebenen-Tempo ersetzt `kmh`, wenn ≥ 150 m eben dabei waren. Für einen Regler braucht es ≥ 100 m passende
-  Steigung, sonst bleibt er. Bei eigenen Profilen ab 7 km/h gilt „zu Fuß ab“: die kleinste Steigung, ab der es im Mittel höchstens 5,6 km/h waren.
+  Der Messgang setzt die Einstellungen selbst (Betreiber 09.11.; er hat ausdrücklich erlaubt, dass der Server dabei Strecke und Tempo erhält). Am Ende schickt die App die Punkte mit Metern und Sekunden an `POST /v1/messung`,
+  der Server gleicht sie per `trace_attributes` (map_snap) mit der Karte ab und antwortet je Steigung und Belagklasse mit Metern und Sekunden; er speichert und protokolliert nichts. Hang und Ebene zählen nur auf unauffälligem Belag.
+  Das Ebenen-Tempo ersetzt `kmh` ab 150 m Ebene, ein Hang-Regler braucht ≥ 100 m Steigung, ein Belag ≥ 100 m fast ebene Strecke: dort wird in 10-%-Schritten gerundet, oder bei eigenen Profilen ab 7 km/h das Fuß-Profil gesetzt, wenn im Mittel höchstens 5,6 km/h waren.
+  Bei eigenen Profilen ab 7 km/h gilt „zu Fuß ab“: die kleinste Steigung, ab der es im Mittel höchstens 5,6 km/h waren.
 - Grenzen: Zu- und Abgangswege zu Haltestellen kommen aus der Matrix, ihre Zeit bleibt eben und ohne Pflaster-Umweg; nur ihre Form umgeht Pflaster. Der Hang ändert die Zeit, nicht
   die Wahl des Wegs (die macht weiter Valhalla, höchstens über `use_hills`).
 - Status: umgesetzt.

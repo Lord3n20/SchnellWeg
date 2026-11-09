@@ -33,7 +33,7 @@ void main() {
       'meiden': {'pflaster': true, 'kmh_auf': 7, 'kmh_ab': 18}
     });
     expect((p.auf, p.ab), (-30, 80));
-    expect(p.meiden, {'belag': 0.8, 'belag_umweg': 50});
+    expect(p.meiden, isEmpty);
     expect(p.toJson()['auf'], -30);
     final q = TempoProfil.json('x', p.toJson());
     expect((q.auf, q.ab), (-30, 80));
@@ -48,19 +48,32 @@ void main() {
     expect(q.zuFussAb, 4);
   });
 
-  test('Schalter aus 0.2.4 bis 0.2.6 wird zur Belag-Stufe', () {
+  test('Alte Belag-Schalter verschwinden aus meiden', () {
     final p = TempoProfil.json('x', {
       'art': 'eigen',
       'kmh': 10,
-      'meiden': {'pflaster': true}
+      'meiden': {'pflaster': true, 'belag_umweg': 30, 'belag': 0.5}
     });
-    expect(p.meiden, {'belag': 0.8, 'belag_umweg': 50});
-    final q = TempoProfil.json('x', {
-      'art': 'eigen',
-      'kmh': 10,
-      'meiden': {'pflaster': true, 'belag': 1.0}
+    expect(p.meiden, {'belag': 0.5});
+  });
+
+  test('Belag: Prozent und anderes Profil werden zu km/h', () {
+    final t = Tempo.ausJson({
+      'v': 2,
+      'aktiv': 'lb',
+      'profile': {
+        'entspannt': {'art': 'fuss', 'kmh': 5},
+        'lb': {
+          'art': 'eigen',
+          'kmh': 12,
+          'belag_regeln': {'2': 'entspannt', '4': -60, '5': 'weg'}
+        },
+      }
     });
-    expect(q.meiden, {'belag': 1.0, 'belag_umweg': 50});
+    final p = t.aktuell;
+    expect(p.serverMeiden!['belag_kmh'], [0.0, 5.0, 0.0, closeTo(4.8, 1e-9), 0.0]);
+    final q = TempoProfil.json('lb', p.toJson());
+    expect(q.belagRegeln, {2: 'entspannt', 4: -60, 5: 'weg'});
   });
 
   test('Auto schickt keinen Hang', () {

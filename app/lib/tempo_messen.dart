@@ -1,6 +1,6 @@
 // Tempo-Profile verwalten und per Messgang kalibrieren: ein paar Minuten im Profiltempo gehen oder fahren, die App
-// mittelt das GPS-Tempo über die Zeit in Bewegung (Stehen an Ampeln zählt nicht). Positionen bleiben im Speicher
-// der Seite und verschwinden mit ihr; gespeichert wird nur das Ergebnis.
+// mittelt das GPS-Tempo über die Zeit in Bewegung (Stehen an Ampeln zählt nicht). Die Strecke liegt nur im Speicher der Seite;
+// am Ende geht sie einmal zum eigenen Server, der Steigung und Belag zuordnet und nichts davon aufhebt (D-44).
 import 'dart:async';
 import 'dart:math';
 
@@ -17,7 +17,7 @@ const _bewegung = {
   'fuss': (0.6, 3.0),
   'eigen': (1.0, 14.0),
 };
-const _spurMax = 20000;
+const _spurMax = 15000;
 const _lueckeMax = 5000.0; // ms; größere Lücken im GPS werden nicht überbrückt
 const _zeitMin = Duration(minutes: 2), _streckeMin = 150.0;
 
@@ -46,7 +46,7 @@ class _TempoSeiteState extends State<TempoSeite> {
   }
 
   Future<void> _messen(TempoProfil p) async {
-    final r = await Navigator.of(context).push<(double, HangErgebnis?)>(MaterialPageRoute(builder: (_) => MessSeite(profil: p)));
+    final r = await Navigator.of(context).push<(double, HangErgebnis?)>(MaterialPageRoute(builder: (_) => MessSeite(profil: p, fuss: _t!.profile.where((x) => x.art == 'fuss').firstOrNull?.name)));
     if (r == null) return;
     final (kmh, e) = r;
     await _aendern((_) {
@@ -56,6 +56,7 @@ class _TempoSeiteState extends State<TempoSeite> {
         p.auf = e.auf ?? p.auf;
         p.ab = e.ab ?? p.ab;
         p.zuFussAb = e.zuFussAb ?? p.zuFussAb;
+        e.belag.forEach((k, v) => v == null ? p.belagRegeln.remove(k) : p.belagRegeln[k] = v);
       }
     });
     if (!mounted) return;
@@ -64,7 +65,7 @@ class _TempoSeiteState extends State<TempoSeite> {
 
   /// Bearbeiten oder (neu) anlegen; gespeichert wird erst beim Übernehmen.
   Future<void> _bearbeiten(TempoProfil p, {bool neu = false}) async {
-    final x = await Navigator.of(context).push<TempoProfil>(MaterialPageRoute(builder: (_) => ProfilSeite(p.kopie(), neu: neu)));
+    final x = await Navigator.of(context).push<TempoProfil>(MaterialPageRoute(builder: (_) => ProfilSeite(p.kopie(), neu: neu, andere: [for (final x in _t!.profile) if (x.name != p.name && x.messbar) (x.name, x.anzeige)])));
     if (x == null) return;
     await _aendern((t) {
       if (neu) {
@@ -134,27 +135,19 @@ class _TempoSeiteState extends State<TempoSeite> {
   }
 }
 
-/// Welche Beläge die Route bei dieser Stufe umgeht (D-44), jede Stufe nimmt die vorigen mit.
-String _belagText(double v) => switch ((v * 5 + 1e-9).floor()) {
-      0 => 'egal',
-      1 => 'Erde, Gras, Sand',
-      2 => '+ Schotter',
-      3 => '+ grobes Pflaster',
-      4 => '+ Kopfsteinpflaster',
-      _ => '+ Gehwegplatten',
-    };
+const _belagArten = [(1, 'Erde, Gras, Sand'), (2, 'Schotter'), (3, 'Grobes Pflaster'), (4, 'Kopfsteinpflaster'), (5, 'Gehwegplatten')];
 
 String _messText(TempoProfil p, HangErgebnis? e) {
-  if (e == null) return 'Tempo gespeichert. Die Steigung ließ sich nicht auswerten, die Hang-Regler bleiben.';
-  if (e.auf == null && e.ab == null && e.zuFussAb == null) return 'Tempo gespeichert. Für die Hang-Regler war zu wenig Steigung dabei.';
+  if (e == null) return 'Tempo gespeichert. Hang und Belag ließen sich nicht auswerten, die Einstellungen bleiben.';
+  if (e.auf == null && e.ab == null && e.zuFussAb == null && e.belag.isEmpty) return 'Tempo gespeichert. Für Hang und Belag war zu wenig dabei.';
   return 'Gemessen: eben ${tempoText(p.kmh)}, '
-      '${p.zuFussAb > 0 ? 'zu Fuß ab ${p.zuFussAb} %' : 'bergauf ${p.auf} %'}, bergab ${p.ab > 0 ? '+' : ''}${p.ab} %';
+      '${p.zuFussAb > 0 ? 'zu Fuß ab ${p.zuFussAb} %' : 'bergauf ${p.auf} %'}, bergab ${p.ab > 0 ? '+' : ''}${p.ab} %'
+      '${e.belag.isEmpty ? '' : ', ${e.belag.length} Beläge'}';
 }
 
 /// Stufen, was die Route meiden soll: Schlüssel wie in /v1/route, Text, für welche Profile.
 const _stufen = [
   ('treppen', 'Treppen', {'fuss', 'eigen'}),
-  ('belag', 'Schlechter Belag', {'fuss', 'eigen'}),
   ('hauptstrassen', 'Hauptstraßen', {'eigen'}),
   ('dunkel', 'Unbeleuchtete Wege', {'fuss', 'eigen'}),
   ('faehren', 'Fähren', {'fuss', 'eigen', 'auto'}),
@@ -166,7 +159,8 @@ const _stufen = [
 class ProfilSeite extends StatefulWidget {
   final TempoProfil p;
   final bool neu; // sonst steht der bisherige Name im Feld
-  const ProfilSeite(this.p, {super.key, this.neu = false});
+  final List<(String, String)> andere; // Schlüssel und Anzeigename der übrigen Profile, für den Belag
+  const ProfilSeite(this.p, {super.key, this.neu = false, this.andere = const []});
 
   @override
   State<ProfilSeite> createState() => _ProfilSeiteState();
@@ -201,38 +195,33 @@ class _ProfilSeiteState extends State<ProfilSeite> {
     Navigator.pop(context, p);
   }
 
-  Widget _belagUmwegRegler() {
-    final w = (p.meiden['belag_umweg'] as num?)?.toInt() ?? 0;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(children: [
-        Expanded(flex: 2, child: Text(w == 0 ? 'Wie sehr: nicht ausweichen' : 'Wie sehr: bis $w % Umweg')),
-        Expanded(
-          flex: 3,
-          child: Slider(
-            value: w.clamp(0, 200).toDouble(),
-            max: 200,
-            divisions: 20,
-            onChanged: (v) => setState(() => p.setzen('belag_umweg', v.round())),
-          ),
-        ),
-      ]),
+  Widget _belagZeile(int k, String text) {
+    final wert = p.belagRegeln[k];
+    final auswahl = <DropdownMenuItem<Object?>>[
+      const DropdownMenuItem(value: null, child: Text('wie normal')),
+      for (var x = 10; x <= 90; x += 10) DropdownMenuItem(value: -x, child: Text('$x % langsamer')),
+      for (final (name, titel) in widget.andere) DropdownMenuItem(value: name, child: Text('wie „$titel“')),
+    ];
+    return ListTile(
+      dense: true,
+      title: Text(text),
+      trailing: DropdownButton<Object?>(
+        value: auswahl.any((a) => a.value == wert) ? wert : null,
+        items: auswahl,
+        onChanged: (v) => setState(() => v == null ? p.belagRegeln.remove(k) : p.belagRegeln[k] = v),
+      ),
     );
   }
 
   void _belagHilfe() => showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Schlechter Belag'),
-          content: const Text('Der Regler legt fest, was die Route umgeht. Jede Stufe nimmt die vorigen mit:\n\n'
-              '1  Erde, Gras, Sand, sehr holprige Wege\n'
-              '2  + Schotter\n'
-              '3  + grobes Pflaster und holprige Abschnitte\n'
-              '4  + Kopfsteinpflaster\n'
-              '5  + Gehwegplatten\n\n'
-              '„Wie sehr“ sagt, wie viel länger der Weg dafür werden darf. Steht es auf „nicht ausweichen“, ändert der Belag die Route nicht. '
-              'Reicht der Umweg nicht für alles, werden zuerst die schlimmsten Beläge umgangen.\n\n'
-              'Das Ziel und der Start selbst lassen sich nicht umgehen, und bekannt ist nur, was in OpenStreetMap eingetragen ist.'),
+          title: const Text('Belag'),
+          content: const Text('Stell je Belag ein, wie schnell du dort bist: wie normal, ein Prozent langsamer oder so schnell wie in einem anderen Profil, '
+              'zum Beispiel „Zu Fuß“ auf Schotter.\n\n'
+              'Die Route vergleicht dann den normalen Weg mit Wegen, die diese Beläge umgehen, und nimmt den schnellsten. Lohnt sich der Umweg nicht, bleibt es beim direkten Weg.\n\n'
+              'Erde, Gras, Sand umfasst auch sehr holprige Wege, grobes Pflaster auch holprige Abschnitte. '
+              'Bekannt ist nur, was in OpenStreetMap eingetragen ist.'),
           actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
         ),
       );
@@ -319,25 +308,27 @@ class _ProfilSeiteState extends State<ProfilSeite> {
           _schalter('Fußwege', 'fusswege', unter: 'Route über Straßen und Radwege; Fußwege nur, wenn es sonst keinen Weg gibt'),
         for (final (k, text, fuer) in _stufen)
           if (fuer.contains(p.art) && !(k == 'hauptstrassen' && !rad) && !(k == 'dunkel' && rad))
-            ...[
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(children: [
-                Expanded(flex: 2, child: Text(k == 'belag' ? '$text: ${_belagText(p.stufe(k))}' : text)),
-                if (k == 'belag')
-                  IconButton(icon: const Icon(Icons.help_outline), tooltip: 'Was die Stufen bedeuten', onPressed: _belagHilfe),
+                Expanded(flex: 2, child: Text(text)),
                 Expanded(
                   flex: 3,
                   child: Slider(
                     value: p.stufe(k).clamp(0.0, 1.0),
-                    divisions: k == 'belag' ? 5 : 10,
+                    divisions: 10,
                     onChanged: (v) => setState(() => p.setzen(k, v)),
                   ),
                 ),
               ]),
             ),
-            if (k == 'belag' && p.stufe(k) >= 0.2) _belagUmwegRegler(),
-            ],
+        if (!auto) ...[
+          Row(children: [
+            const Expanded(child: _Ueberschrift('Belag', 'Wie schnell du dort bist. Die Route nimmt den schnellsten Weg')),
+            IconButton(icon: const Icon(Icons.help_outline), tooltip: 'Was das bedeutet', onPressed: _belagHilfe),
+          ]),
+          for (final (k, text) in _belagArten) _belagZeile(k, text),
+        ],
         if (!auto && !rad) ...[
           const _Ueberschrift('Wege'),
           _schalter('Anlieger-Zufahrten mitnehmen', 'anlieger', unter: 'Auch durch Zufahrten nur für Anlieger, wenn der Weg dadurch kürzer wird'),
@@ -427,7 +418,8 @@ class _Ueberschrift extends StatelessWidget {
 /// Der Messgang selbst; liefert beim Übernehmen das gemessene Tempo in km/h.
 class MessSeite extends StatefulWidget {
   final TempoProfil profil;
-  const MessSeite({super.key, required this.profil});
+  final String? fuss; // Schlüssel des Fuß-Profils: dort, wo gelaufen wird, gilt dessen Tempo
+  const MessSeite({super.key, required this.profil, this.fuss});
 
   @override
   State<MessSeite> createState() => _MessSeiteState();
@@ -502,7 +494,7 @@ class _MessSeiteState extends State<MessSeite> {
       return;
     }
     setState(() => _wertet = true);
-    final e = await hangMessen(_spur, kmh, eigen: p.eigen);
+    final e = await hangMessen(_spur, kmh, eigen: p.eigen, fuss: widget.fuss);
     if (mounted) Navigator.of(context).pop((kmh, e));
   }
 
@@ -520,7 +512,8 @@ class _MessSeiteState extends State<MessSeite> {
         Text('${fuss ? 'Geh' : 'Fahr'} so, wie du „$name“ ${fuss ? 'gehst' : 'fährst'} – am besten draußen mit freiem Himmel. '
             'Lass die App offen, der Bildschirm bleibt an${fuss ? '' : ' (Handy sicher verstauen oder in die Halterung)'}. '
             'Stehen an Ampeln zählt nicht mit. '
-            'Nimm auch ein Stück bergauf und bergab mit, dann stellt die Messung die Hang-Regler selbst ein.'),
+            'Nimm auch ein Stück bergauf und bergab und verschiedene Beläge mit, dann stellt die Messung das Tempo dafür selbst ein. '
+            'Am Ende geht die Strecke einmal an deinen Server, er speichert sie nicht.'),
         const SizedBox(height: 24),
         if (_fehler != null)
           Text(_fehler!, style: TextStyle(color: t.colorScheme.error))
@@ -548,7 +541,7 @@ class _MessSeiteState extends State<MessSeite> {
         const SizedBox(height: 24),
         FilledButton(
           onPressed: _reicht && !_wertet ? _fertig : null,
-          child: Text(_wertet ? 'Steigung wird ausgewertet …' : _reicht ? '${tempoText(_kmh)} für „$name“ übernehmen' : 'Fertig'),
+          child: Text(_wertet ? 'Strecke wird ausgewertet …' : _reicht ? '${tempoText(_kmh)} für „$name“ übernehmen' : 'Fertig'),
         ),
       ]),
     );
