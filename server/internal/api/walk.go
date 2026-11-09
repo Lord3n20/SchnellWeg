@@ -24,6 +24,8 @@ type Valhalla struct {
 	// Client ohne Keep-Alive: Valhallas HTTP-Server wird auf wiederverwendeten Verbindungen mit jeder Anfrage
 	// langsamer (gemessen 15 → 27 ms nach 10 Anfragen); ein neuer Verbindungsaufbau kostet < 1 ms.
 	Client *http.Client
+	// Pflaster: Wege mit Kopfsteinpflaster aus dem Tile-Stand (D-44), nil = keine Umgehung
+	Pflaster *Pflasterliste
 }
 
 type loc struct {

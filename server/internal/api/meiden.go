@@ -22,6 +22,9 @@ type Meiden struct {
 	OEV           bool    `json:"oev"`      // kein Bus und keine Bahn: nur der direkte Weg, ohne Längengrenze
 	Umstiege      *int    `json:"umstiege"` // höchstens so viele Umstiege
 	Anlieger      bool    `json:"anlieger"` // zu Fuß auch durch Zufahrten nur für Anlieger, wenn es kürzer ist (D-43)
+	Pflaster      bool    `json:"pflaster"` // Kopfsteinpflaster und holprige Abschnitte umgehen, wo es einen anderen Weg gibt (D-44)
+	KmhAuf        float64 `json:"kmh_auf"`  // Tempo bergauf ab 6 % Steigung, 0 = wie in der Ebene (D-44)
+	KmhAb         float64 `json:"kmh_ab"`   // Tempo bergab ab 6 % Gefälle, 0 = wie in der Ebene (D-44)
 }
 
 // stufenMaxSek: step_penalty bei Treppen = 1 (Rennrad bisher, D-30).
@@ -33,6 +36,11 @@ const anliegerSek = 60
 func (m *Meiden) gueltig() bool {
 	for _, x := range []float64{m.Treppen, m.Belag, m.Hauptstrassen, m.Steigung, m.Faehren, m.Dunkel, m.Autobahn, m.Maut} {
 		if !(x >= 0 && x <= 1) {
+			return false
+		}
+	}
+	for _, x := range []float64{m.KmhAuf, m.KmhAb} {
+		if !(x >= 0 && x <= hangMaxKMH) {
 			return false
 		}
 	}

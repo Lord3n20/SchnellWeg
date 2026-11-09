@@ -72,6 +72,9 @@ var (
 // osmFormat ändert sich, wenn der osm-Job anders baut; dann wird trotz gleicher Quellen neu gebaut.
 const osmFormat = "renumber"
 
+// valhallaFormat ändert sich, wenn der valhalla-Job anders baut; dann wird trotz gleichem OSM-Stand neu gebaut.
+const valhallaFormat = "hoehe+pflaster"
+
 // errSkip meldet: Eingang unverändert, nichts zu tun.
 var errSkip = errors.New("unverändert")
 
@@ -330,7 +333,7 @@ func jobValhalla(ctx context.Context, w *jobs.Watch) (string, error) {
 	}
 	osmID := filepath.Base(osm)
 	cur := jobs.Current(*dir, "valhalla")
-	if !*force && cur != "" && jobs.ReadStamp(cur, "osm") == osmID {
+	if !*force && cur != "" && jobs.ReadStamp(cur, "osm") == osmID && jobs.ReadStamp(cur, "format") == valhallaFormat {
 		return "OSM-Stand " + osmID + " schon gebaut", errSkip
 	}
 	r, err := jobs.NewRelease(*dir, "valhalla", time.Now())
@@ -344,12 +347,17 @@ func jobValhalla(ctx context.Context, w *jobs.Watch) (string, error) {
 		}
 	}()
 	logf := filepath.Join(r.Dir, "bau.log")
+	hoehe, err := hoeheLaden(ctx, filepath.Join(*dir, "hoehe"), *region)
+	if err != nil {
+		return "", fmt.Errorf("Höhendaten: %w", err)
+	}
 	tiles := filepath.Join(r.Dir, "tiles")
 	conf := filepath.Join(r.Dir, "valhalla.json")
 	out, err := exec.CommandContext(ctx, "valhalla_build_config",
 		"--mjolnir-tile-dir", tiles, "--mjolnir-tile-extract", filepath.Join(r.Dir, "tiles.tar"),
 		"--mjolnir-admin", filepath.Join(r.Dir, "admin.sqlite"), "--mjolnir-timezone", filepath.Join(r.Dir, "tz.sqlite"),
 		"--mjolnir-concurrency", strconv.Itoa(*concurrency), "--mjolnir-max-cache-size", "64000000",
+		"--additional-data-elevation", hoehe+"/",
 		"--httpd-service-listen", "tcp://127.0.0.1:8012").Output()
 	if err != nil {
 		return "", fmt.Errorf("valhalla_build_config: %w", err)
@@ -384,12 +392,18 @@ func jobValhalla(ctx context.Context, w *jobs.Watch) (string, error) {
 	if err := checkValhalla(ctx, conf, logf); err != nil {
 		return "", fmt.Errorf("Prüfung: %w", err)
 	}
+	// Way-IDs passen nur zu diesem Tile-Stand, deshalb liegt die Liste daneben (D-44).
+	pflaster, err := pflasterSchreiben(ctx, pbf, filepath.Join(r.Dir, "pflaster.ids"))
+	if err != nil {
+		return "", fmt.Errorf("Pflaster: %w", err)
+	}
 	jobs.WriteStamp(r.Dir, "osm", osmID)
+	jobs.WriteStamp(r.Dir, "format", valhallaFormat)
 	if err := r.Commit(); err != nil {
 		return "", err
 	}
 	ok = true
-	return fmt.Sprintf("Stand %s aus OSM %s, tiles.tar %d MB (%s)", r.ID, osmID, st.Size()>>20, strings.Join(times, ", ")), nil
+	return fmt.Sprintf("Stand %s aus OSM %s, tiles.tar %d MB, %d Pflaster-Wege (%s)", r.ID, osmID, st.Size()>>20, pflaster, strings.Join(times, ", ")), nil
 }
 
 // Testrouten zwischen neutralen Orten: Fußweg in Aachen, Auto bis Köln und nach Maastricht (deckt den Rand ab).
@@ -443,7 +457,7 @@ func checkValhalla(ctx context.Context, conf, logf string) error {
 			return fmt.Errorf("%s: %w", ch.costing, last)
 		}
 	}
-	return nil
+	return hoeheOK(ctx)
 }
 
 func routeOK(ctx context.Context, body string) error {
