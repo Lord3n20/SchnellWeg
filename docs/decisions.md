@@ -599,3 +599,12 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - Grenzen: Zu- und Abgangswege zu Haltestellen kommen aus der Matrix, ihre Zeit bleibt eben und ohne Pflaster-Umweg; nur ihre Form umgeht Pflaster. Der Hang ändert die Zeit, nicht
   die Wahl des Wegs (die macht weiter Valhalla, höchstens über `use_hills`).
 - Status: umgesetzt.
+
+## D-45 Messgang im Hintergrund (09.11.)
+- Betreiber 09.11.: Beim Kalibrieren ging der Bildschirm aus und die Messung war weg. Bisher hing das GPS an der offenen Seite, die Strecke lag nur in deren Speicher.
+- `MessDienst` (Vordergrunddienst `location`) nimmt auf und schreibt jede Position sofort in `messung.txt` im App-Ordner, die Seite liest die Datei einmal je Sekunde mit (nur solange sie offen ist).
+  Damit läuft die Messung bei Bildschirm aus und geschlossener App weiter, und nach einem Absturz ist das Bisherige noch da. Gelöscht wird die Datei erst, wenn das Ergebnis gespeichert ist oder die Messung verworfen wird.
+- Android verlangt für den Dienst eine dauerhafte Benachrichtigung; sie ist leise und hat Pause und Anhalten.
+- Bus und Bahn gehören nicht in eine Kalibrierung. Am Tempo sind sie von einem rollenden Profil nicht zu trennen, deshalb gibt es vorerst Pause; die Erkennung per Fahrplan kommt mit dem Lernen aus Routen.
+- Lässt sich die Strecke nicht auswerten (kein Netz), bleibt sie erhalten: noch einmal auswerten oder nur das Tempo übernehmen.
+- Status: umgesetzt.

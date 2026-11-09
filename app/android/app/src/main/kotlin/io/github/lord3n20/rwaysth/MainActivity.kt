@@ -16,8 +16,8 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 
 // Standort über den LocationManager des Systems (keine Play-Dienste, siehe lib/standort.dart).
-// Eine einzelne Position auf Anfrage; laufende GPS-Positionen nur, solange der Messgang offen ist
-// (Bildschirm bleibt dann an, kein Hintergrund). Kanal schnellweg/karte steuert den KartenDienst (Download im Hintergrund),
+// Eine einzelne Position auf Anfrage; laufende GPS-Positionen, solange eine Route offen ist. Kanal schnellweg/messung
+// steuert den MessDienst (Messgang im Hintergrund, D-45), schnellweg/karte den KartenDienst (Download im Hintergrund),
 // schnellweg/aussteigen den AusstiegDienst (Ausstiegs-Erinnerung), schnellweg/sperrbildschirm, ob die Activity über dem
 // Sperrbildschirm erscheinen darf (nur solange die Detailansicht offen ist), schnellweg/losgehen den Losgeh-Wecker,
 // schnellweg/update das Selbstupdate.
@@ -51,6 +51,26 @@ class MainActivity : FlutterActivity() {
 
                 override fun onCancel(args: Any?) = laufendBeenden()
             })
+        MethodChannel(engine.dartExecutor.binaryMessenger, "schnellweg/messung").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "starten" -> {
+                    if (!erlaubt()) return@setMethodCallHandler result.error("erlaubnis", null, null)
+                    if (!runCatching { getSystemService(LocationManager::class.java).isProviderEnabled(LocationManager.GPS_PROVIDER) }.getOrDefault(false)) {
+                        return@setMethodCallHandler result.error("aus", null, null)
+                    }
+                    meldungenErbitten()
+                    MessDienst.starten(this, call.argument<String>("profil")!!, call.argument<String>("titel")!!)
+                    result.success(null)
+                }
+                "pause" -> {
+                    MessDienst.pausieren(this, call.arguments as Boolean)
+                    result.success(null)
+                }
+                "beenden" -> result.success(MessDienst.beenden(this))
+                "laeuft" -> result.success(MessDienst.laeuft)
+                else -> result.notImplemented()
+            }
+        }
         MethodChannel(engine.dartExecutor.binaryMessenger, "schnellweg/karte").setMethodCallHandler { call, result ->
             when (call.method) {
                 "melden" -> {
