@@ -18,7 +18,7 @@ import (
 // Stücke, die sie davon benutzt, und fragt neu. So bleiben es wenige kleine Sperrflächen statt aller solchen Wege der Region.
 // Klasse k (1 = am schlechtesten) wird ab Stufe k × belagSchritt umgangen.
 const (
-	pflasterRunden     = 8       // so oft wird höchstens neu gefragt
+	belagRundenGesamt  = 20      // so oft wird je Weg höchstens neu gefragt, über alle Stufen
 	pflasterMaxBoxen   = 200     // Valhalla erlaubt 10 km Umfang, eine Box hat ~20 m
 	pflasterBoxLat     = 0.00002 // ~2 m: trifft die Kante, aber kaum Nachbarwege
 	pflasterBoxLon     = 0.00003
@@ -172,26 +172,53 @@ func (v *Valhalla) wegAnpassen(ctx context.Context, aLat, aLon, bLat, bLon float
 			p = belagUmwegStandard
 		}
 		grenze := max(weg.M*(1+p/100), weg.M+p*belagExtraM)
-		beste, besteT, besteM := weg, t, math.Inf(1)
-		for runde := 0; len(t.Edges) > 0; runde++ {
-			boxen, m := pflasterStellen(t, d, k.BelagMeiden, pt{aLat, aLon}, pt{bLat, bLon})
-			if m < besteM && weg.M <= grenze {
-				beste, besteT, besteM = weg, t, m
+		// Reicht der Umweg nicht für alle gewählten Beläge, wenigstens den schlimmsten ausweichen.
+		start := belagVersuch{weg, t, false}
+		ergebnis, runden := start, 0
+		for stufe, erste := k.BelagMeiden, true; stufe+1e-9 >= belagSchritt; stufe, erste = stufe-belagSchritt, false {
+			e := v.belagPass(ctx, aLat, aLon, bLat, bLon, k, zeit, d, stufe, grenze, start, &runden)
+			if erste || e.sauber {
+				ergebnis = e
 			}
-			if len(boxen) == 0 || weg.M > grenze || runde == pflasterRunden || len(k.Polygone)+len(boxen) > pflasterMaxBoxen {
+			if e.sauber {
 				break
 			}
-			k.Polygone = slices.Concat(k.Polygone, boxen)
-			neu, err := v.route(ctx, aLat, aLon, bLat, bLon, k, zeit)
-			if err != nil || neu.Shape == weg.Shape {
-				break
-			}
-			weg, t = neu, v.kanten(ctx, neu.Shape, k.Costing)
 		}
-		weg, t = beste, besteT
+		weg, t = ergebnis.weg, ergebnis.t
 	}
 	if k.Hang != nil {
 		hangZeit(&weg, t, *k.Hang)
 	}
 	return weg, nil
+}
+
+// belagVersuch ist ein Weg samt Kanten; sauber: auf ihm liegt bei der Stufe nichts mehr, was sich umgehen ließe.
+type belagVersuch struct {
+	weg    WalkRoute
+	t      vhTraceResp
+	sauber bool
+}
+
+// belagPass sucht ab start den Weg mit dem wenigsten Belag der Stufe innerhalb der Grenze. runden zählt über alle Stufen.
+func (v *Valhalla) belagPass(ctx context.Context, aLat, aLon, bLat, bLon float64, k Kosten, zeit time.Duration, d Belagdaten, stufe, grenze float64, start belagVersuch, runden *int) belagVersuch {
+	weg, t := start.weg, start.t
+	beste, besteM := start, math.Inf(1)
+	for len(t.Edges) > 0 {
+		boxen, m := pflasterStellen(t, d, stufe, pt{aLat, aLon}, pt{bLat, bLon})
+		innen := weg.M <= grenze
+		if innen && (m < besteM || len(boxen) == 0) {
+			beste, besteM = belagVersuch{weg, t, len(boxen) == 0}, m
+		}
+		if len(boxen) == 0 || !innen || *runden >= belagRundenGesamt || len(k.Polygone)+len(boxen) > pflasterMaxBoxen {
+			break
+		}
+		*runden++
+		k.Polygone = slices.Concat(k.Polygone, boxen)
+		neu, err := v.route(ctx, aLat, aLon, bLat, bLon, k, zeit)
+		if err != nil || neu.Shape == weg.Shape {
+			break
+		}
+		weg, t = neu, v.kanten(ctx, neu.Shape, k.Costing)
+	}
+	return beste
 }
