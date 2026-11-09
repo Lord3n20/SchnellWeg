@@ -300,6 +300,12 @@ class Api {
     return ((jsonDecode(utf8.decode(daten)) as Map)['stuecke'] as List? ?? const []).cast<Map<String, dynamic>>();
   }
 
+  /// Sucht Fahrten des Fahrplans in einer aufgezeichneten Route (D-46); Punkte: Breite, Länge, Unix-Sekunden, m/s.
+  Future<List<Map<String, dynamic>>> fahrten(List<List<double>> punkte) async {
+    final (_, _, daten) = await _anfrage('POST', '/v1/fahrten', body: {'punkte': punkte}, zeit: const Duration(seconds: 30));
+    return ((jsonDecode(utf8.decode(daten)) as Map)['fahrten'] as List? ?? const []).cast<Map<String, dynamic>>();
+  }
+
   /// Alle Halte; null, wenn sich seit [etag] nichts geändert hat.
   Future<(String?, List<Halt>)?> halte(String? etag) async {
     final (code, neu, daten) = await _anfrage('GET', '/v1/stops',

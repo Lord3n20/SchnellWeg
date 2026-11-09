@@ -605,6 +605,20 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - `MessDienst` (Vordergrunddienst `location`) nimmt auf und schreibt jede Position sofort in `messung.txt` im App-Ordner, die Seite liest die Datei einmal je Sekunde mit (nur solange sie offen ist).
   Damit läuft die Messung bei Bildschirm aus und geschlossener App weiter, und nach einem Absturz ist das Bisherige noch da. Gelöscht wird die Datei erst, wenn das Ergebnis gespeichert ist oder die Messung verworfen wird.
 - Android verlangt für den Dienst eine dauerhafte Benachrichtigung; sie ist leise und hat Pause und Anhalten.
-- Bus und Bahn gehören nicht in eine Kalibrierung. Am Tempo sind sie von einem rollenden Profil nicht zu trennen, deshalb gibt es vorerst Pause; die Erkennung per Fahrplan kommt mit dem Lernen aus Routen.
+- Bus und Bahn gehören nicht in eine Kalibrierung. Eine Erkennung gibt es beim Kalibrieren bewusst nicht (Betreiber 09.11.), es läuft nur von Hand; zum Ausnehmen gibt es Pause.
 - Lässt sich die Strecke nicht auswerten (kein Netz), bleibt sie erhalten: noch einmal auswerten oder nur das Tempo übernehmen.
+- Status: umgesetzt.
+
+## D-46 Das Profil lernt aus aufgezeichneten Routen (09.11.)
+- Betreiber 09.11.: Kalibrieren nur von Hand und ohne Bus-Erkennung. Auf einer gewählten Route per Hand „Start“: die Fahrt verbessert das Profil, auch wie Bus und Bahn genutzt werden. Ist die App unsicher, ändert sie lieber nichts.
+  Der eigene Server darf Position und Tempo dafür verarbeiten, ein Hinweis in der App ist nicht nötig.
+- Beenden geht auch über die Benachrichtigung: der Dienst startet eine Flutter-Engine ohne Oberfläche, die auswertet, das Profil speichert und das Ergebnis meldet. An der Zielnähe endet eine Route von selbst.
+- `POST /v1/fahrten`: Spur (alle ~4 s: Breite, Länge, Unix-Sekunden, m/s) gegen den Fahrplan des Tages. Am Tempo allein ist ein Bus nicht von einem Longboard zu trennen, deshalb zählen Halte in Fahrplan-Reihenfolge
+  (60 m, ±300 s), ein gleichbleibender Versatz zum Fahrplan und ob an Zwischenhalten gestanden wurde. Sicher: ≥ 3 Halte, ≥ 75 % der Halte der Fahrt, Versatz schwankt ≤ 60 s, an mindestens der Hälfte der Zwischenhalte gehalten; oder im Schnitt ≥ 14 m/s.
+  Unsicher: nur Teile davon, aber Warten am Einstieg oder Halten unterwegs. Sonst keine Fahrt. Die Spur wird weder gespeichert noch protokolliert.
+- Eine unsichere Fahrt: das Profil bleibt für die ganze Aufzeichnung unverändert. Geplante Fahrt erkannt: wird gelernt. Sichere, nicht geplante Fahrt: Rückfrage beim nächsten Öffnen, gelernt erst bei Ja.
+- Gelernt wird: (1) Tempo, Hang, Belag aus den eigenen Stücken (Summen je Steigung/Belag im Profil, höchstens 30 km, neue verdrängen alte; daraus rechnet wieder `hangAuswerten`; Kalibrieren setzt den Ausgangspunkt neu).
+  Rollende Profile zählen hier erst ab 1,6 m/s, Gehen zur Haltestelle verfälscht sonst das Rolltempo. (2) `bus_min` ab 3 Beobachtungen: die Schwelle, die genutzte und ausgelassene Busse am besten trennt.
+  (3) Wartezeit: ab 5 Beobachtungen werden Verbindungen mit längerem Umsteigen ausgeblendet. (4) Strecken je Halt-Paar: ab 3× ausgelassen ausgeblendet, ab 3× genutzt vorgezogen, wenn sie höchstens 3 min später ankommt.
+  (3) und (4) wirken in der App auf die gelieferten Verbindungen, es bleibt immer mindestens eine. Von Hand gemiedene Busse ändert das Lernen nicht. In der Profilseite steht das Gelernte und lässt sich zurücksetzen.
 - Status: umgesetzt.

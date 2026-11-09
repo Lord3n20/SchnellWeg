@@ -84,6 +84,8 @@ class TempoProfil {
   /// Belagklasse 1–5 → negative % oder Name eines anderen Profils, dessen Tempo dort gilt (D-44).
   final belagRegeln = <int, Object>{};
   final belagProfilKmh = <int, double>{}; // aufgelöste Profile, nicht gespeichert
+  List<List<num>> lern = []; // aus Fahrten gesammelt: [Steigung, Belag, Meter, Sekunden] (D-46)
+  Map<String, dynamic> busLern = {}; // was das Profil über Bus und Bahn gelernt hat (lernen.dart)
 
   TempoProfil(this.name, this.art, this.kmh, [this.gemessen]) : meiden = {}, ticket = false, fern = false;
 
@@ -110,6 +112,10 @@ class TempoProfil {
       });
     }
     zuFussAb = (j['zu_fuss_ab'] is num ? (j['zu_fuss_ab'] as num).round() : 0).clamp(0, zuFussMax);
+    if (j['lern'] is List) {
+      lern = [for (final x in j['lern'] as List) if (x is List && x.length == 4 && x.every((y) => y is num)) x.cast<num>()];
+    }
+    if (j['bus_lern'] is Map<String, dynamic>) busLern = Map.of(j['bus_lern'] as Map<String, dynamic>);
   }
 
   /// Gespeicherte Abweichung; 0.2.4 hat stattdessen km/h unter `meiden` abgelegt.
@@ -183,6 +189,8 @@ class TempoProfil {
         if (ab != 0) 'ab': ab,
         if (zuFussAb != 0) 'zu_fuss_ab': zuFussAb,
         if (belagRegeln.isNotEmpty) 'belag_regeln': {for (final e in belagRegeln.entries) '${e.key}': e.value},
+        if (lern.isNotEmpty) 'lern': lern,
+        if (busLern.isNotEmpty) 'bus_lern': busLern,
       };
 }
 

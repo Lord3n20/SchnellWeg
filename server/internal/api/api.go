@@ -98,6 +98,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/app", s.appIndex)
 	mux.HandleFunc("GET /v1/app/apk", s.appFile)
 	mux.HandleFunc("POST /v1/messung", s.messung)
+	mux.HandleFunc("POST /v1/fahrten", s.fahrten)
 	return mux
 }
 

@@ -10,7 +10,9 @@ void main() {
     expect([f.lat, f.lon, f.genau, f.zeit, f.tempo], [50.77, 6.08, 4.5, 123456700.0, 3.25]);
     expect((messZeile('p') as MessPause).an, isTrue);
     expect((messZeile('w') as MessPause).an, isFalse);
-    expect(messZeile('k,longboard'), isNull);
+    expect((messZeile('k,longboard') as MessKopf).wert, 'longboard');
+    expect((messZeile('r,{"a":1,"b":2}') as MessKopf).wert, '{"a":1,"b":2}');
+    expect((messZeile('t,1000,5.5') as MessUhr).zeit, 5.5);
     expect(messZeile('f,50.77,abc,4.5,1,1'), isNull);
     expect(messZeile('f,50.77'), isNull);
   });
@@ -22,7 +24,7 @@ void main() {
     final l = MessLeser(d);
     expect(await l.neue(), isEmpty);
     await d.writeAsString('k,x\nw\nf,1,2,3,4,5\nf,1,2');
-    expect((await l.neue()).length, 2);
+    expect((await l.neue()).length, 3);
     expect(await l.neue(), isEmpty);
     await d.writeAsString(',3,9,5\np\n', mode: FileMode.append);
     final neu = await l.neue();

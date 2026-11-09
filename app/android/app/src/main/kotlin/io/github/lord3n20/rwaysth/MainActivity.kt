@@ -59,7 +59,8 @@ class MainActivity : FlutterActivity() {
                         return@setMethodCallHandler result.error("aus", null, null)
                     }
                     meldungenErbitten()
-                    MessDienst.starten(this, call.argument<String>("profil")!!, call.argument<String>("titel")!!)
+                    MessDienst.starten(this, call.argument<String>("profil")!!, call.argument<String>("titel")!!,
+                        call.argument<String>("route"), call.argument<Double>("lat"), call.argument<Double>("lon"))
                     result.success(null)
                 }
                 "pause" -> {
@@ -67,6 +68,10 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
                 "beenden" -> result.success(MessDienst.beenden(this))
+                "abschliessen" -> {
+                    MessDienst.abschliessen(this)
+                    result.success(null)
+                }
                 "laeuft" -> result.success(MessDienst.laeuft)
                 else -> result.notImplemented()
             }
