@@ -49,7 +49,7 @@ func (s *Server) tuerZuTuer(w http.ResponseWriter, r *http.Request, req routeReq
 	err := errMatrix
 	for _, k := range ks {
 		k.Schritte = true
-		if weg, err = s.Valhalla.route(r.Context(), *req.From.Lat, *req.From.Lon, *req.To.Lat, *req.To.Lon, k, autoZeit); err == nil {
+		if weg, err = s.Valhalla.wegAnpassen(r.Context(), *req.From.Lat, *req.From.Lon, *req.To.Lat, *req.To.Lon, k, autoZeit); err == nil {
 			break
 		}
 	}
@@ -158,14 +158,16 @@ type vhTraceResp struct {
 		RoadClass  string  `json:"road_class"`
 		Von        int     `json:"begin_shape_index"`
 		Bis        int     `json:"end_shape_index"`
+		WayID      uint64  `json:"way_id"`
+		Steigung   float64 `json:"weighted_grade"` // % in Fahrtrichtung, ohne Höhendaten 0
 	} `json:"edges"`
 }
 
 // kanten holt die Straßenabschnitte der Route; bei Fehlern leer.
-func (v *Valhalla) kanten(ctx context.Context, shape string) (t vhTraceResp) {
-	body, _ := json.Marshal(map[string]any{"encoded_polyline": shape, "shape_match": "edge_walk", "costing": "auto", "units": "km",
+func (v *Valhalla) kanten(ctx context.Context, shape, costing string) (t vhTraceResp) {
+	body, _ := json.Marshal(map[string]any{"encoded_polyline": shape, "shape_match": "edge_walk", "costing": costing, "units": "km",
 		"filters": map[string]any{"action": "include", "attributes": []string{"shape", "edge.length", "edge.speed", "edge.speed_limit",
-			"edge.road_class", "edge.begin_shape_index", "edge.end_shape_index"}}})
+			"edge.road_class", "edge.begin_shape_index", "edge.end_shape_index", "edge.way_id", "edge.weighted_grade"}}})
 	ctx, cancel := context.WithTimeout(ctx, autoZeit)
 	defer cancel()
 	hr, err := http.NewRequestWithContext(ctx, http.MethodPost, v.URL+"/trace_attributes", bytes.NewReader(body))
@@ -203,7 +205,7 @@ func (s *Server) fahrzeitAnpassen(ctx context.Context, weg *WalkRoute, kmh float
 		alle, l.ok = s.Verkehr.Holen(ctx)
 		l.auf = aufDerRoute(alle, route)
 	}
-	t := s.Valhalla.kanten(ctx, weg.Shape)
+	t := s.Valhalla.kanten(ctx, weg.Shape, "auto")
 	form := route
 	if t.Shape != "" {
 		form = dekodieren(t.Shape)

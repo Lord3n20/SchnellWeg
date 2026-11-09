@@ -46,6 +46,8 @@ type Kosten struct {
 	FangM    int            // Fangradius auf die Straße in m, 0 = Valhallas Standard (35 km)
 	Schritte bool           // Abbiegehinweise mitliefern (Wege von Tür zu Tür)
 	Polygone [][][2]float64 // Bereiche, die die Route meidet (Umfahrung, D-39)
+	Pflaster bool           // Kopfsteinpflaster umgehen (D-44)
+	Hang     *Hang          // Tempo je nach Steigung (D-44), nil = Valhallas Zeit
 }
 
 // kosten liefert die Valhalla-Kostenarten für Art a in der Reihenfolge, in der sie versucht werden.
@@ -67,6 +69,11 @@ func (a Art) kosten(walkKMH, kmh, scale float64) []Kosten {
 			m.radOpts(rad)
 		}
 		k = append([]Kosten{{Costing: "bicycle", Opts: map[string]any{"bicycle": rad}, Faktor: vh / kmh}}, k...)
+	}
+	if m := a.Meiden; m != nil {
+		for i := range k {
+			k[i].Pflaster, k[i].Hang = m.Pflaster, m.hang(kmh)
+		}
 	}
 	return k
 }

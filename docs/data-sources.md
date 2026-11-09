@@ -18,7 +18,7 @@ Status: ✅ freigegeben · ⏳ in Prüfung · ❓ Rückfrage an den Betreiber ·
 | SNCB/NMBS GTFS(-RT) (BE) | SNCB, öffentlich | eigene Lizenz, Antragsformular | **wohl ja** | prüfen | ⏳ |
 | TEC GTFS (BE, Wallonien) | OTW, öffentlich | prüfen | prüfen | IP | ⏳ |
 | OSM-Extrakte (Geofabrik) | Geofabrik GmbH, kommerziell (Downloads frei) | ODbL | nein | IP, 1×/Tag | ⏳ |
-| Höhendaten (Copernicus DEM GLO-30 bzw. Tilezen/Skadi auf AWS Open Data) | ESA/EU bzw. Amazon als Hoster | Copernicus-Lizenz (frei, Attribution) / gemischt | nein | IP, einmalig | ⏳ |
+| Höhendaten: Tilezen/Skadi auf AWS Open Data (`elevation-tiles-prod`, Kacheln der Region) | Mapzen/Tilezen, AWS als Hoster | gemischt offen, Namensnennung nach `tilezen/joerd/docs/attribution.md` (Europa: „produced using Copernicus data and information funded by the European Union - EU-DEM layers“; SRTM/GMTED: USGS) | nein | IP, einmalig | ✅ Betreiber 09.11. (D-44) |
 | Protomaps-Build (PMTiles) | Protomaps (Brandon Liu), Community/kommerziell | **ODbL Produced Work**, OSM-Namensnennung (docs.protomaps.com/basemaps/downloads, geprüft 27.10.; eigene Kopien statt Verlinken empfohlen) | nein | IP, HTTP-Range-Abrufe, wöchentlich | ✅ D-17 |
 | Autobahn-API (verkehr.autobahn.de) | Autobahn GmbH des Bundes | **beim Betreiber nichts gefunden**, nur bund.dev (Dritte) | nein | IP | ✅ Betreiber 02.11. freigegeben als Grenzfall, nur privat (D-38) |
 | Mobilithek / Straßen.NRW DATEX II | BMDV, öffentlich | je Angebot | **ja** | Account, IP | ❓ (Phase 7) |

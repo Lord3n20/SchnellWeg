@@ -575,3 +575,19 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   Ganz ohne Strafe bliebe nichts, was solche Stücke bei gleichem Weg nachrangig macht. Ob eine Zufahrt tatsächlich begehbar ist, weiß nur der Nutzer.
 - Gegenprobe mit 60 s auf 10 neutralen Strecken in der Innenstadt: alle unverändert. Die vorab gerechneten Umstiegswege (Job `footpaths`) bleiben wie sie sind.
 - Status: umgesetzt.
+
+## D-44 Kopfsteinpflaster umgehen, Tempo je nach Steigung (09.11.)
+- Betreiber 09.11.: Longboard durch die Altstadt geschickt. Fußwege sind kein Problem, der Belag ist es; bergab soll schneller gerechnet werden als bergauf.
+  RAM darf etwas steigen, solange der Rest nutzbar bleibt und Luft übrig ist.
+- Valhalla wertet zu Fuß den Belag befestigter Wege nicht, `sett` landet außerdem im selben Topf wie Gehwegplatten. In OSM steht es aber richtig
+  (Köln-Regbez: 4.793 `sett`, 1.131 `cobblestone`).
+- Der Job `valhalla` schreibt `pflaster.ids` neben die Tiles: sortierte Way-IDs (nach renumber, passen also nur zu diesem Stand) mit `surface` =
+  sett/cobblestone/unhewn_cobblestone oder `smoothness` ab bad. Im Betrieb ein paar 10 kB statt eines eigenen Graphen.
+- Profil-Schalter `pflaster`: Route holen, per `/trace_attributes` die Pflasterstücke finden, je Stück eine ~2-m-Box (`exclude_polygons`) und neu fragen, höchstens
+  8 Runden. Gesperrt wird nur, was die Route benutzt, damit die Valhalla-Grenze (10 km Umfang) reicht. Nicht umgangen wird in 60 m um Start und Ziel und wenn der Weg
+  länger würde als max(1,5 ×, +500 m); dann bleibt der beste erlaubte Weg, im Zweifel über Pflaster statt gar keiner.
+- Höhendaten (Skadi, 1°-Kacheln der Region, einmalig nach `hoehe/`) gehen in die Tiles; Fahrrad-Kosten und `use_hills` sehen damit Steigungen.
+- Profil-Felder `kmh_auf`/`kmh_ab`: linear von `kmh` (0 %) bis zum Wert (±6 %), darüber gleich; fehlt einer, gilt die Ebene. Die Zeit ist dann die Summe je Kante.
+- Grenzen: Zu- und Abgangswege zu Haltestellen kommen aus der Matrix, ihre Zeit bleibt eben und ohne Pflaster-Umweg; nur ihre Form umgeht Pflaster. Der Hang ändert die Zeit, nicht
+  die Wahl des Wegs (die macht weiter Valhalla, höchstens über `use_hills`).
+- Status: umgesetzt.

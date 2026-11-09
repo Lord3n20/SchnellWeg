@@ -70,7 +70,7 @@ type schrittOut struct {
 func (v *Valhalla) Route(ctx context.Context, aLat, aLon, bLat, bLon float64, ks []Kosten) (r WalkRoute, err error) {
 	err = errMatrix
 	for _, k := range ks {
-		if r, err = v.route(ctx, aLat, aLon, bLat, bLon, k, v.Timeout); err == nil {
+		if r, err = v.wegAnpassen(ctx, aLat, aLon, bLat, bLon, k, v.Timeout); err == nil {
 			return r, nil
 		}
 	}
