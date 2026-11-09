@@ -52,6 +52,10 @@
             android:exported="false"
             android:foregroundServiceType="location"/>
         <service
+            android:name=".MessDienst"
+            android:exported="false"
+            android:foregroundServiceType="location"/>
+        <service
             android:name=".VerkehrsmittelKachel"
             android:exported="true"
             android:icon="@drawable/kachel_fuss"

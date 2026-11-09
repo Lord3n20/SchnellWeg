@@ -1,7 +1,6 @@
 // Standort über Androids eigenen LocationManager (MainActivity.kt) statt geolocator & Co.,
 // die die Play-Dienste einbinden. Kein Dauer-Tracking: eine Position, wenn die App danach fragt;
-// laufend nur während des Tempo-Messgangs und solange die Startseite eine Route zeigt (Seite offen, Bildschirm an,
-// D-36), nichts wird gespeichert.
+// laufend nur, solange eine Route offen ist (D-36), nichts wird gespeichert. Der Messgang nimmt selbst auf (messung.dart).
 import 'package:flutter/services.dart';
 
 class Position {
