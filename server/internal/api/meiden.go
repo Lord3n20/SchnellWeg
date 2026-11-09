@@ -9,7 +9,7 @@ import (
 // die Route meiden soll. Stufen 0–1: 0 = egal (Valhallas Standard), 1 = so weit wie möglich meiden.
 type Meiden struct {
 	Treppen       float64 `json:"treppen"`
-	Belag         float64 `json:"belag"` // Schotter, Feldwege
+	Belag         float64 `json:"belag"` // je höher, desto mehr Beläge werden umgangen (D-44, belagSchritt)
 	Hauptstrassen float64 `json:"hauptstrassen"`
 	Steigung      float64 `json:"steigung"`
 	Faehren       float64 `json:"faehren"`
@@ -22,7 +22,7 @@ type Meiden struct {
 	OEV           bool    `json:"oev"`       // kein Bus und keine Bahn: nur der direkte Weg, ohne Längengrenze
 	Umstiege      *int    `json:"umstiege"`  // höchstens so viele Umstiege
 	Anlieger      bool    `json:"anlieger"`  // zu Fuß auch durch Zufahrten nur für Anlieger, wenn es kürzer ist (D-43)
-	Pflaster      bool    `json:"pflaster"`  // Kopfsteinpflaster und holprige Abschnitte umgehen, wo es einen anderen Weg gibt (D-44)
+	Pflaster      bool    `json:"pflaster"`  // App 0.2.4–0.2.6: wie belag 0,8
 	KmhAuf        float64 `json:"kmh_auf"`   // Tempo bergauf ab 6 % Steigung, 0 = wie in der Ebene (D-44)
 	KmhAb         float64 `json:"kmh_ab"`    // Tempo bergab ab 6 % Gefälle, 0 = wie in der Ebene (D-44)
 	HangVoll      float64 `json:"hang_voll"` // Steigung in %, ab der kmh_auf voll gilt, 0 = 6 % (D-44)
@@ -71,6 +71,14 @@ func setzen(o map[string]any, name string, standard, stufe float64) {
 	if stufe > 0 {
 		o[name] = standard * (1 - stufe)
 	}
+}
+
+// belagStufe ist die Stufe, bis zu der die Route Beläge umgeht.
+func (m *Meiden) belagStufe() float64 {
+	if m.Pflaster {
+		return max(m.Belag, 0.8)
+	}
+	return m.Belag
 }
 
 func (m *Meiden) fussOpts(o map[string]any) {

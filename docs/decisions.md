@@ -581,9 +581,10 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   RAM darf etwas steigen, solange der Rest nutzbar bleibt und Luft übrig ist.
 - Valhalla wertet zu Fuß den Belag befestigter Wege nicht, `sett` landet außerdem im selben Topf wie Gehwegplatten. In OSM steht es aber richtig
   (Köln-Regbez: 4.793 `sett`, 1.131 `cobblestone`).
-- Der Job `valhalla` schreibt `pflaster.ids` neben die Tiles: sortierte Way-IDs (nach renumber, passen also nur zu diesem Stand) mit `surface` =
-  sett/cobblestone/unhewn_cobblestone oder `smoothness` ab bad. Im Betrieb ein paar 10 kB statt eines eigenen Graphen.
-- Profil-Schalter `pflaster`: Route holen, per `/trace_attributes` die Pflasterstücke finden, je Stück eine ~2-m-Box (`exclude_polygons`) und neu fragen, höchstens
+- Der Job `valhalla` schreibt `belag.ids` neben die Tiles: sortierte Way-IDs (nach renumber, passen also nur zu diesem Stand) mit einer Klasse von 1 (am schlechtesten) bis 5:
+  Erde/Gras/Sand und `smoothness` ab very_bad, Schotter, grobes Pflaster (cobblestone, unhewn_cobblestone, `smoothness=bad`), `sett`, Gehwegplatten.
+- Der Regler `belag` (früher nur Feldwege) umgeht Klasse k ab Stufe k × 0,2; ein eigener Schalter wäre doppelt (Betreiber 09.11.). `pflaster` aus App 0.2.4–0.2.6 gilt als 0,8.
+  Ablauf: Route holen, per `/trace_attributes` die Pflasterstücke finden, je Stück eine ~2-m-Box (`exclude_polygons`) und neu fragen, höchstens
   8 Runden. Gesperrt wird nur, was die Route benutzt, damit die Valhalla-Grenze (10 km Umfang) reicht. Nicht umgangen wird in 60 m um Start und Ziel und wenn der Weg
   länger würde als max(1,5 ×, +500 m); dann bleibt der beste erlaubte Weg, im Zweifel über Pflaster statt gar keiner.
   Valhallas Grenze von 100 Ecken je Anfrage reicht dafür nicht (eine Altstadt-Route braucht schon in Runde 1 39 Boxen), im Dienst steht sie deshalb auf 1000.

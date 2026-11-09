@@ -39,13 +39,14 @@ func TestHangTempo(t *testing.T) {
 	}
 }
 
-func pflasterDatei(t *testing.T, ids ...uint32) string {
+func pflasterDatei(t *testing.T, klasse byte, ids ...uint32) string {
 	t.Helper()
-	b := make([]byte, 4*len(ids))
+	b := make([]byte, 5*len(ids))
 	for i, x := range ids {
 		binary.LittleEndian.PutUint32(b[4*i:], x)
+		b[4*len(ids)+i] = klasse
 	}
-	p := filepath.Join(t.TempDir(), "pflaster.ids")
+	p := filepath.Join(t.TempDir(), "belag.ids")
 	if err := os.WriteFile(p, b, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -81,12 +82,12 @@ func pflasterValhalla(t *testing.T, langM float64) (*Valhalla, *int) {
 			"summary": map[string]any{"time": 100, "length": m}}})
 	}))
 	t.Cleanup(ts.Close)
-	return &Valhalla{URL: ts.URL, Timeout: time.Second, Client: ts.Client(), Pflaster: &Pflasterliste{Muster: pflasterDatei(t, 3, 7, 9)}}, &routen
+	return &Valhalla{URL: ts.URL, Timeout: time.Second, Client: ts.Client(), Belag: &Belagliste{Muster: pflasterDatei(t, 4, 3, 7, 9)}}, &routen
 }
 
 func TestPflasterUmgehen(t *testing.T) {
 	v, routen := pflasterValhalla(t, 1.2)
-	k := Kosten{Costing: "pedestrian", Faktor: 1, Pflaster: true, Hang: &Hang{Eben: 12, Auf: 6, Ab: 24}}
+	k := Kosten{Costing: "pedestrian", Faktor: 1, BelagMeiden: 0.8, Hang: &Hang{Eben: 12, Auf: 6, Ab: 24}}
 	w, err := v.wegAnpassen(context.Background(), 40, 40, 41, 41, k, time.Second)
 	if err != nil || w.M != 1200 || *routen != 2 {
 		t.Fatalf("Umweg erwartet: %+v, %v, %d Routen", w, err, *routen)
@@ -98,7 +99,7 @@ func TestPflasterUmgehen(t *testing.T) {
 
 func TestPflasterZuWeiterUmweg(t *testing.T) {
 	v, _ := pflasterValhalla(t, 2.0)
-	k := Kosten{Costing: "pedestrian", Faktor: 1, Pflaster: true}
+	k := Kosten{Costing: "pedestrian", Faktor: 1, BelagMeiden: 0.8}
 	w, err := v.wegAnpassen(context.Background(), 40, 40, 41, 41, k, time.Second)
 	if err != nil || w.M != 1000 {
 		t.Fatalf("doppelter Weg ist zu viel, Pflaster bleibt: %+v, %v", w, err)
@@ -129,5 +130,34 @@ func TestHoehenKachel(t *testing.T) {
 		if w.Code != c.code {
 			t.Errorf("%s: %d", c.k, w.Code)
 		}
+	}
+}
+
+func TestBelagStufen(t *testing.T) {
+	d := Belagdaten{[]uint32{1, 2, 3, 4, 5}, []uint8{1, 2, 3, 4, 5}}
+	for _, c := range []struct {
+		stufe float64
+		n     int
+	}{{0, 0}, {0.2, 1}, {0.5, 2}, {0.6, 3}, {0.8, 4}, {1, 5}} {
+		n := 0
+		for w := uint64(1); w <= 6; w++ {
+			if d.umgehen(w, c.stufe) {
+				n++
+			}
+		}
+		if n != c.n {
+			t.Errorf("Stufe %v: %d Klassen, erwartet %d", c.stufe, n, c.n)
+		}
+	}
+	if (&Meiden{Pflaster: true, Belag: 0.2}).belagStufe() != 0.8 || (&Meiden{Belag: 1, Pflaster: true}).belagStufe() != 1 {
+		t.Error("alte Apps: pflaster gilt als 0,8")
+	}
+}
+
+func TestBelagKeinSchritt(t *testing.T) {
+	v, routen := pflasterValhalla(t, 1.2)
+	w, err := v.wegAnpassen(context.Background(), 40, 40, 41, 41, Kosten{Costing: "pedestrian", Faktor: 1, BelagMeiden: 0.6}, time.Second)
+	if err != nil || w.M != 1000 || *routen != 1 {
+		t.Fatalf("Klasse 4 wird bei Stufe 0,6 nicht umgangen: %+v, %v, %d", w, err, *routen)
 	}
 }

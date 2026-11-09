@@ -33,7 +33,7 @@ void main() {
       'meiden': {'pflaster': true, 'kmh_auf': 7, 'kmh_ab': 18}
     });
     expect((p.auf, p.ab), (-30, 80));
-    expect(p.meiden, {'pflaster': true});
+    expect(p.meiden, {'belag': 0.8});
     expect(p.toJson()['auf'], -30);
     final q = TempoProfil.json('x', p.toJson());
     expect((q.auf, q.ab), (-30, 80));
@@ -46,6 +46,21 @@ void main() {
     expect(p.serverMeiden, {'kmh_auf': standardKmh, 'hang_voll': 4});
     final q = TempoProfil.json('x', p.toJson());
     expect(q.zuFussAb, 4);
+  });
+
+  test('Schalter aus 0.2.4 bis 0.2.6 wird zur Belag-Stufe', () {
+    final p = TempoProfil.json('x', {
+      'art': 'eigen',
+      'kmh': 10,
+      'meiden': {'pflaster': true}
+    });
+    expect(p.meiden, {'belag': 0.8});
+    final q = TempoProfil.json('x', {
+      'art': 'eigen',
+      'kmh': 10,
+      'meiden': {'pflaster': true, 'belag': 1.0}
+    });
+    expect(q.meiden, {'belag': 1.0});
   });
 
   test('Auto schickt keinen Hang', () {
