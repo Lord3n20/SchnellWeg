@@ -106,6 +106,18 @@ func TestPflasterZuWeiterUmweg(t *testing.T) {
 	}
 }
 
+func TestBelagUmwegRegler(t *testing.T) {
+	v, _ := pflasterValhalla(t, 2.0)
+	k := Kosten{Costing: "pedestrian", Faktor: 1, BelagMeiden: 0.8, BelagUmweg: 150}
+	w, err := v.wegAnpassen(context.Background(), 40, 40, 41, 41, k, time.Second)
+	if err != nil || w.M != 2000 {
+		t.Fatalf("150 %% erlaubt den doppelten Weg: %+v, %v", w, err)
+	}
+	if (&Meiden{BelagUmweg: 301}).gueltig() || (&Meiden{BelagUmweg: -1}).gueltig() {
+		t.Error("Grenzen belag_umweg")
+	}
+}
+
 func TestPflasterAus(t *testing.T) {
 	v, routen := pflasterValhalla(t, 1.2)
 	w, err := v.wegAnpassen(context.Background(), 40, 40, 41, 41, Kosten{Costing: "pedestrian", Faktor: 1}, time.Second)

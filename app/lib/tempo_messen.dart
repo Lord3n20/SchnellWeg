@@ -17,6 +17,7 @@ const _bewegung = {
   'fuss': (0.6, 3.0),
   'eigen': (1.0, 14.0),
 };
+const _belagUmwegVorgabe = 50; // % wie der Server ohne Angabe
 const _spurMax = 20000;
 const _lueckeMax = 5000.0; // ms; größere Lücken im GPS werden nicht überbrückt
 const _zeitMin = Duration(minutes: 2), _streckeMin = 150.0;
@@ -201,6 +202,42 @@ class _ProfilSeiteState extends State<ProfilSeite> {
     Navigator.pop(context, p);
   }
 
+  Widget _belagUmwegRegler() {
+    final w = (p.meiden['belag_umweg'] as num?)?.toInt() ?? _belagUmwegVorgabe;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(children: [
+        Expanded(flex: 2, child: Text('Wie sehr: bis $w % Umweg')),
+        Expanded(
+          flex: 3,
+          child: Slider(
+            value: w.clamp(10, 200).toDouble(),
+            min: 10,
+            max: 200,
+            divisions: 19,
+            onChanged: (v) => setState(() => p.meiden['belag_umweg'] = v.round()),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  void _belagHilfe() => showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Schlechter Belag'),
+          content: const Text('Der Regler legt fest, was die Route umgeht. Jede Stufe nimmt die vorigen mit:\n\n'
+              '1  Erde, Gras, Sand, sehr holprige Wege\n'
+              '2  + Schotter\n'
+              '3  + grobes Pflaster und holprige Abschnitte\n'
+              '4  + Kopfsteinpflaster\n'
+              '5  + Gehwegplatten\n\n'
+              '„Wie sehr“ sagt, wie viel länger der Weg dafür werden darf. Wird er länger, bleibt es beim besten Weg innerhalb der Grenze.\n\n'
+              'Das Ziel und der Start selbst lassen sich nicht umgehen, und bekannt ist nur, was in OpenStreetMap eingetragen ist.'),
+          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
+        ),
+      );
+
   Widget _hangRegler(String titel, int wert, (int, int) b, void Function(int) setzen) => Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Row(children: [
@@ -283,10 +320,13 @@ class _ProfilSeiteState extends State<ProfilSeite> {
           _schalter('Fußwege', 'fusswege', unter: 'Route über Straßen und Radwege; Fußwege nur, wenn es sonst keinen Weg gibt'),
         for (final (k, text, fuer) in _stufen)
           if (fuer.contains(p.art) && !(k == 'hauptstrassen' && !rad) && !(k == 'dunkel' && rad))
+            ...[
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(children: [
                 Expanded(flex: 2, child: Text(k == 'belag' ? '$text: ${_belagText(p.stufe(k))}' : text)),
+                if (k == 'belag')
+                  IconButton(icon: const Icon(Icons.help_outline), tooltip: 'Was die Stufen bedeuten', onPressed: _belagHilfe),
                 Expanded(
                   flex: 3,
                   child: Slider(
@@ -297,6 +337,8 @@ class _ProfilSeiteState extends State<ProfilSeite> {
                 ),
               ]),
             ),
+            if (k == 'belag' && p.stufe(k) >= 0.2) _belagUmwegRegler(),
+            ],
         if (!auto && !rad) ...[
           const _Ueberschrift('Wege'),
           _schalter('Anlieger-Zufahrten mitnehmen', 'anlieger', unter: 'Auch durch Zufahrten nur für Anlieger, wenn der Weg dadurch kürzer wird'),
