@@ -96,7 +96,10 @@ class TempoProfil {
     if (!erlaubt(kmh)) throw const FormatException('kmh');
     auf = _prozent(j['auf'], meiden.remove('kmh_auf'), aufBereich);
     ab = _prozent(j['ab'], meiden.remove('kmh_ab'), abBereich);
-    if (meiden.remove('pflaster') == true && stufe('belag') < 0.8) meiden['belag'] = 0.8; // Schalter aus 0.2.4–0.2.6
+    if (meiden.remove('pflaster') == true) {
+      if (stufe('belag') < 0.8) meiden['belag'] = 0.8; // Schalter aus 0.2.4–0.2.6: war gewollt, also mit Umweg
+      meiden['belag_umweg'] ??= 50;
+    }
     zuFussAb = (j['zu_fuss_ab'] is num ? (j['zu_fuss_ab'] as num).round() : 0).clamp(0, zuFussMax);
   }
 

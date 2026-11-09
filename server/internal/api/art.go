@@ -73,7 +73,7 @@ func (a Art) kosten(walkKMH, kmh, scale float64) []Kosten {
 	}
 	if m := a.Meiden; m != nil {
 		for i := range k {
-			k[i].BelagMeiden, k[i].BelagUmweg, k[i].Hang = m.belagStufe(), m.BelagUmweg, m.hang(kmh)
+			k[i].BelagMeiden, k[i].BelagUmweg, k[i].Hang = m.belagStufe(), m.belagUmweg(), m.hang(kmh)
 		}
 	}
 	return k

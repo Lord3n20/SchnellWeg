@@ -23,7 +23,7 @@ type Meiden struct {
 	Umstiege      *int    `json:"umstiege"`    // höchstens so viele Umstiege
 	Anlieger      bool    `json:"anlieger"`    // zu Fuß auch durch Zufahrten nur für Anlieger, wenn es kürzer ist (D-43)
 	Pflaster      bool    `json:"pflaster"`    // App 0.2.4–0.2.6: wie belag 0,8
-	BelagUmweg    int     `json:"belag_umweg"` // so viel % länger darf der Weg werden, um Belag zu umgehen, 0 = Standard (D-44)
+	BelagUmweg    int     `json:"belag_umweg"` // so viel % länger darf der Weg werden, um Belag zu umgehen, 0 = nicht ausweichen (D-44)
 	KmhAuf        float64 `json:"kmh_auf"`     // Tempo bergauf ab 6 % Steigung, 0 = wie in der Ebene (D-44)
 	KmhAb         float64 `json:"kmh_ab"`      // Tempo bergab ab 6 % Gefälle, 0 = wie in der Ebene (D-44)
 	HangVoll      float64 `json:"hang_voll"`   // Steigung in %, ab der kmh_auf voll gilt, 0 = 6 % (D-44)
@@ -83,6 +83,14 @@ func (m *Meiden) belagStufe() float64 {
 		return max(m.Belag, 0.8)
 	}
 	return m.Belag
+}
+
+// belagUmweg: erlaubter Umweg in %; 0 = nicht ausweichen. Nur der Schalter alter Apps bringt einen eigenen Wert mit.
+func (m *Meiden) belagUmweg() int {
+	if m.Pflaster && m.BelagUmweg == 0 {
+		return belagUmwegAlt
+	}
+	return m.BelagUmweg
 }
 
 func (m *Meiden) fussOpts(o map[string]any) {

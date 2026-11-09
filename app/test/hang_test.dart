@@ -33,7 +33,7 @@ void main() {
       'meiden': {'pflaster': true, 'kmh_auf': 7, 'kmh_ab': 18}
     });
     expect((p.auf, p.ab), (-30, 80));
-    expect(p.meiden, {'belag': 0.8});
+    expect(p.meiden, {'belag': 0.8, 'belag_umweg': 50});
     expect(p.toJson()['auf'], -30);
     final q = TempoProfil.json('x', p.toJson());
     expect((q.auf, q.ab), (-30, 80));
@@ -54,13 +54,13 @@ void main() {
       'kmh': 10,
       'meiden': {'pflaster': true}
     });
-    expect(p.meiden, {'belag': 0.8});
+    expect(p.meiden, {'belag': 0.8, 'belag_umweg': 50});
     final q = TempoProfil.json('x', {
       'art': 'eigen',
       'kmh': 10,
       'meiden': {'pflaster': true, 'belag': 1.0}
     });
-    expect(q.meiden, {'belag': 1.0});
+    expect(q.meiden, {'belag': 1.0, 'belag_umweg': 50});
   });
 
   test('Auto schickt keinen Hang', () {
