@@ -16,5 +16,7 @@ m["lru_mem_cache_hard_control"] = True
 c["logging"] = {"type": "file", "file_name": "/dev/null", "color": False}
 for k in ("loki", "thor", "odin", "meili", "mjolnir"):
     c[k].setdefault("logging", {}).update({"type": "file", "file_name": "/dev/null", "color": False, "long_request": 1e12})
+# Pflaster-Umgehung (D-44): bis zu 200 kleine Sperrflächen je Anfrage, Standard wären 20
+c["service_limits"]["max_exclude_polygons_vertices"] = 1000
 c["httpd"]["service"]["listen"] = "tcp://*:8002"
 json.dump(c, sys.stdout, indent=1)
