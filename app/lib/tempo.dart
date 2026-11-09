@@ -56,6 +56,9 @@ const tempoPuffer = 0.2;
 /// Abweichung vom Tempo am Hang in % (D-44), Schritte wie der Regler.
 const aufBereich = (-90, 0), abBereich = (-50, 200), hangSchritt = 5;
 
+/// Ab dieser Steigung in % geht man zu Fuß (D-44), 0 = aus.
+const zuFussMax = 12;
+
 enum GehStufe { entspannter, normal, schneller }
 
 /// Wie man zum ersten Halt gehen muss: Zugangsweg `weg` (beim Gehtempo `kmh` gerechnet), `frei` bis zur Abfahrt.
@@ -77,6 +80,7 @@ class TempoProfil {
   bool ticket; // Fahrradticket nötig: nur Anzeige in der App
   bool fern; // Fernverkehr zulassen
   int auf = 0, ab = 0; // bergauf/bergab: Abweichung vom Tempo in % (D-44)
+  int zuFussAb = 0; // bergauf: ab dieser Steigung in % zu Fuß, 0 = aus (ersetzt `auf`)
 
   TempoProfil(this.name, this.art, this.kmh, [this.gemessen]) : meiden = {}, ticket = false, fern = false;
 
@@ -92,6 +96,7 @@ class TempoProfil {
     if (!erlaubt(kmh)) throw const FormatException('kmh');
     auf = _prozent(j['auf'], meiden.remove('kmh_auf'), aufBereich);
     ab = _prozent(j['ab'], meiden.remove('kmh_ab'), abBereich);
+    zuFussAb = (j['zu_fuss_ab'] is num ? (j['zu_fuss_ab'] as num).round() : 0).clamp(0, zuFussMax);
   }
 
   /// Gespeicherte Abweichung; 0.2.4 hat stattdessen km/h unter `meiden` abgelegt.
@@ -129,11 +134,12 @@ class TempoProfil {
       ? null
       : {
           ...meiden,
-          if (art != 'auto' && auf != 0) 'kmh_auf': _hangKmh(auf),
+          if (art != 'auto' && zuFussAb > 0) ...{'kmh_auf': kmh < standardKmh ? kmh : standardKmh, 'hang_voll': zuFussAb}
+          else if (art != 'auto' && auf != 0) 'kmh_auf': _hangKmh(auf),
           if (art != 'auto' && ab != 0) 'kmh_ab': _hangKmh(ab),
         };
 
-  bool get _ohneRegeln => meiden.isEmpty && (art == 'auto' || auf == 0 && ab == 0);
+  bool get _ohneRegeln => meiden.isEmpty && (art == 'auto' || auf == 0 && ab == 0 && zuFussAb == 0);
 
   /// Der Server nimmt km/h bis 200 an; so folgt der Hang dem gemessenen Tempo.
   double _hangKmh(int prozent) => (kmh * (1 + prozent / 100)).clamp(0.01, 200.0).toDouble();
@@ -155,6 +161,7 @@ class TempoProfil {
         if (fern) 'fern': true,
         if (auf != 0) 'auf': auf,
         if (ab != 0) 'ab': ab,
+        if (zuFussAb != 0) 'zu_fuss_ab': zuFussAb,
       };
 }
 

@@ -13,18 +13,19 @@ type Meiden struct {
 	Hauptstrassen float64 `json:"hauptstrassen"`
 	Steigung      float64 `json:"steigung"`
 	Faehren       float64 `json:"faehren"`
-	Dunkel        float64 `json:"dunkel"`   // unbeleuchtete Wege (nur Fußgänger-Kosten)
-	Autobahn      float64 `json:"autobahn"` // nur Auto
-	Maut          float64 `json:"maut"`     // nur Auto
-	Fusswege      bool    `json:"fusswege"` // Straßen und Radwege statt Fußwege (Fahrradkosten)
-	NurBahn       bool    `json:"bus"`      // Busse nie: nur Schiene
-	BusMin        int     `json:"bus_min"`  // Verbindungen mit Bus nur, wenn sie so viele Minuten vor dem direkten Weg ankommen
-	OEV           bool    `json:"oev"`      // kein Bus und keine Bahn: nur der direkte Weg, ohne Längengrenze
-	Umstiege      *int    `json:"umstiege"` // höchstens so viele Umstiege
-	Anlieger      bool    `json:"anlieger"` // zu Fuß auch durch Zufahrten nur für Anlieger, wenn es kürzer ist (D-43)
-	Pflaster      bool    `json:"pflaster"` // Kopfsteinpflaster und holprige Abschnitte umgehen, wo es einen anderen Weg gibt (D-44)
-	KmhAuf        float64 `json:"kmh_auf"`  // Tempo bergauf ab 6 % Steigung, 0 = wie in der Ebene (D-44)
-	KmhAb         float64 `json:"kmh_ab"`   // Tempo bergab ab 6 % Gefälle, 0 = wie in der Ebene (D-44)
+	Dunkel        float64 `json:"dunkel"`    // unbeleuchtete Wege (nur Fußgänger-Kosten)
+	Autobahn      float64 `json:"autobahn"`  // nur Auto
+	Maut          float64 `json:"maut"`      // nur Auto
+	Fusswege      bool    `json:"fusswege"`  // Straßen und Radwege statt Fußwege (Fahrradkosten)
+	NurBahn       bool    `json:"bus"`       // Busse nie: nur Schiene
+	BusMin        int     `json:"bus_min"`   // Verbindungen mit Bus nur, wenn sie so viele Minuten vor dem direkten Weg ankommen
+	OEV           bool    `json:"oev"`       // kein Bus und keine Bahn: nur der direkte Weg, ohne Längengrenze
+	Umstiege      *int    `json:"umstiege"`  // höchstens so viele Umstiege
+	Anlieger      bool    `json:"anlieger"`  // zu Fuß auch durch Zufahrten nur für Anlieger, wenn es kürzer ist (D-43)
+	Pflaster      bool    `json:"pflaster"`  // Kopfsteinpflaster und holprige Abschnitte umgehen, wo es einen anderen Weg gibt (D-44)
+	KmhAuf        float64 `json:"kmh_auf"`   // Tempo bergauf ab 6 % Steigung, 0 = wie in der Ebene (D-44)
+	KmhAb         float64 `json:"kmh_ab"`    // Tempo bergab ab 6 % Gefälle, 0 = wie in der Ebene (D-44)
+	HangVoll      float64 `json:"hang_voll"` // Steigung in %, ab der kmh_auf voll gilt, 0 = 6 % (D-44)
 }
 
 // stufenMaxSek: step_penalty bei Treppen = 1 (Rennrad bisher, D-30).
@@ -43,6 +44,9 @@ func (m *Meiden) gueltig() bool {
 		if !(x >= 0 && x <= hangMaxKMH) {
 			return false
 		}
+	}
+	if !(m.HangVoll >= 0 && m.HangVoll <= hangMaxVoll) {
+		return false
 	}
 	return m.BusMin >= 0 && (m.Umstiege == nil || *m.Umstiege >= 0)
 }

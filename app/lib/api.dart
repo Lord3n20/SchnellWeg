@@ -294,6 +294,17 @@ class Api {
     }
   }
 
+  /// Höhenkachel für den Messgang (D-44); null, wenn der Server sie nicht hat.
+  Future<Uint8List?> hoehenKachel(String name) async {
+    try {
+      final (_, _, daten) = await _anfrage('GET', '/v1/hoehe/$name', zeit: const Duration(seconds: 90));
+      return daten;
+    } on ApiFehler catch (e) {
+      if (e.art == 'hoehe_unbekannt') return null;
+      rethrow;
+    }
+  }
+
   /// Alle Halte; null, wenn sich seit [etag] nichts geändert hat.
   Future<(String?, List<Halt>)?> halte(String? etag) async {
     final (code, neu, daten) = await _anfrage('GET', '/v1/stops',

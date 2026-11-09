@@ -590,7 +590,10 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - Höhendaten (Skadi, 1°-Kacheln der Region, einmalig nach `hoehe/`) gehen in die Tiles; Fahrrad-Kosten und `use_hills` sehen damit Steigungen.
 - Profil-Felder `kmh_auf`/`kmh_ab`: linear von `kmh` (0 %) bis zum Wert (±6 %), darüber gleich; fehlt einer, gilt die Ebene. Die Zeit ist dann die Summe je Kante.
   Die App stellt das als Regler in Prozent vom Tempo ein (bergauf −90…0 %, bergab −50…+200 %) und rechnet erst beim Senden in km/h um, damit es dem gemessenen Tempo folgt.
-  Im Messgang mitmessen wurde verworfen: GPS-Höhe ist zu ungenau, und die Spur soll auf dem Handy bleiben.
+  Eigene Profile haben zusätzlich „Zu Fuß ab x % Steigung“ (Betreiber 09.11., Longboard): bergauf linear von `kmh` bis Gehtempo bei x %, darüber Gehtempo (`kmh_auf` + `hang_voll`).
+  Der Messgang setzt die Regler selbst (Betreiber 09.11.). GPS-Höhe ist dafür zu ungenau, also lädt die App einmal die Höhenkachel (`GET /v1/hoehe/{kachel}`, gzip, 1°) und rechnet
+  Abschnitte ≥ 50 m auf dem Handy aus; die Spur verlässt das Gerät nicht. Das gemessene Ebenen-Tempo ersetzt `kmh`, wenn ≥ 150 m eben dabei waren. Für einen Regler braucht es ≥ 100 m passende
+  Steigung, sonst bleibt er. Bei eigenen Profilen ab 7 km/h gilt „zu Fuß ab“: die kleinste Steigung, ab der es im Mittel höchstens 5,6 km/h waren.
 - Grenzen: Zu- und Abgangswege zu Haltestellen kommen aus der Matrix, ihre Zeit bleibt eben und ohne Pflaster-Umweg; nur ihre Form umgeht Pflaster. Der Hang ändert die Zeit, nicht
   die Wahl des Wegs (die macht weiter Valhalla, höchstens über `use_hills`).
 - Status: umgesetzt.

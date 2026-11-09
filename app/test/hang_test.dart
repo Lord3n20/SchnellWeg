@@ -39,6 +39,15 @@ void main() {
     expect((q.auf, q.ab), (-30, 80));
   });
 
+  test('Zu Fuß ab: bergauf Gehtempo bei der Steigung, ersetzt den Prozentregler', () {
+    final p = TempoProfil('Longboard', 'eigen', 12)
+      ..auf = -50
+      ..zuFussAb = 4;
+    expect(p.serverMeiden, {'kmh_auf': standardKmh, 'hang_voll': 4});
+    final q = TempoProfil.json('x', p.toJson());
+    expect(q.zuFussAb, 4);
+  });
+
   test('Auto schickt keinen Hang', () {
     final p = TempoProfil('Auto', 'auto', 120)..ab = 50;
     expect(p.serverMeiden, isNull);
