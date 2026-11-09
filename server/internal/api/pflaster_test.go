@@ -118,6 +118,47 @@ func TestBelagUmwegRegler(t *testing.T) {
 	}
 }
 
+// Umgeht Klasse 4 nur mit zu langem Weg, Klasse 1 aber im Rahmen: Die Route weicht dann wenigstens Klasse 1 aus.
+func TestBelagTeilweise(t *testing.T) {
+	const roh, mittel, lang = "_ibE_ibE_seK_seK_seK_seK", "_ibE_ibE_seK?_seK?_seK?", "_ibE_ibE?_seK?_seK?_seK"
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		var q struct {
+			Polyline string         `json:"encoded_polyline"`
+			Polygone [][][2]float64 `json:"exclude_polygons"`
+		}
+		json.Unmarshal(b, &q)
+		if r.URL.Path == "/trace_attributes" {
+			way := map[string]int{roh: 1, mittel: 4, lang: 9}[q.Polyline]
+			json.NewEncoder(w).Encode(map[string]any{"shape": q.Polyline, "edges": []map[string]any{
+				{"length": 1.0, "way_id": way, "begin_shape_index": 0, "end_shape_index": 2}}})
+			return
+		}
+		shape, m := roh, 1.0
+		switch len(q.Polygone) {
+		case 0:
+		case 1:
+			shape, m = mittel, 1.1
+		default:
+			shape, m = lang, 5.0
+		}
+		json.NewEncoder(w).Encode(map[string]any{"trip": map[string]any{"legs": []map[string]any{{"shape": shape}},
+			"summary": map[string]any{"time": 100, "length": m}}})
+	}))
+	defer ts.Close()
+	b := make([]byte, 10)
+	binary.LittleEndian.PutUint32(b[0:], 1)
+	binary.LittleEndian.PutUint32(b[4:], 4)
+	b[8], b[9] = 1, 4
+	p := filepath.Join(t.TempDir(), "belag.ids")
+	os.WriteFile(p, b, 0o644)
+	v := &Valhalla{URL: ts.URL, Timeout: time.Second, Client: ts.Client(), Belag: &Belagliste{Muster: p}}
+	w, err := v.wegAnpassen(context.Background(), 40, 40, 41, 41, Kosten{Costing: "pedestrian", Faktor: 1, BelagMeiden: 0.8, BelagUmweg: 20}, time.Second)
+	if err != nil || w.Shape != mittel {
+		t.Fatalf("erwartet den Weg ohne Klasse 1: %+v, %v", w, err)
+	}
+}
+
 func TestPflasterAus(t *testing.T) {
 	v, routen := pflasterValhalla(t, 1.2)
 	w, err := v.wegAnpassen(context.Background(), 40, 40, 41, 41, Kosten{Costing: "pedestrian", Faktor: 1}, time.Second)
