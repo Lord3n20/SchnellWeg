@@ -187,7 +187,8 @@ class MainActivity : FlutterActivity() {
     }
 
     // Die Kennung hängt am Ort: Ein aufs Homescreen gezogener Kurzbefehl zeigt auch nach dem Umsortieren denselben Favoriten.
-    private fun kurzSetzen(orte: List<Map<String, Any>>) {
+    // Eigener Thread: Der Aufruf geht ans System und läuft bei jedem App-Start, die Oberfläche soll nicht darauf warten.
+    private fun kurzSetzen(orte: List<Map<String, Any>>) = Thread {
         runCatching {
             val m = getSystemService(ShortcutManager::class.java)
             m.setDynamicShortcuts(orte.take(m.maxShortcutCountPerActivity).map { o ->
@@ -201,7 +202,7 @@ class MainActivity : FlutterActivity() {
                     .build()
             })
         }
-    }
+    }.start()
 
     override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
         super.onRequestPermissionsResult(code, perms, res)

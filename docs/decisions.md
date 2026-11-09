@@ -632,3 +632,8 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - Kurzbefehle: die ersten vier Favoriten als dynamische Shortcuts (keine neue Berechtigung). Antippen plant von hier und jetzt. Kennung aus den
   Koordinaten, damit ein angepinnter Kurzbefehl beim Umsortieren nicht auf einen anderen Favoriten wechselt.
 - „Spätere Verbindungen“ unter der Liste: neue Suche ab einer Minute nach der spätesten Abfahrt mit Bus oder Bahn, gesetzt als geplante Abfahrtszeit (Zeit-Chip, Kreuz = wieder jetzt). Im Ankunftsmodus wechselt sie auf Abfahrt.
+
+## D-48 Bus-Erkennung: Streckenlänge vorab summieren (09.11.)
+- `BenchmarkFahrtenSuchen` (Fahrplan in NRW-Größe, ungünstiger Korridor mit 60 Linien, 7200 GPS-Punkte): 84 % der Zeit gingen in die Streckenlänge,
+  die für jeden Kandidaten die ganze Spur ablief. Jetzt einmal aufsummiert und per Binärsuche abgefragt, das Ergebnis der Erkennung bleibt gleich.
+- Die App schickt nur etwa jeden vierten GPS-Punkt, echte Anfragen sind also kleiner als die gemessene.
