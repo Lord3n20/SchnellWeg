@@ -17,7 +17,6 @@ const _bewegung = {
   'fuss': (0.6, 3.0),
   'eigen': (1.0, 14.0),
 };
-const _belagUmwegVorgabe = 50; // % wie der Server ohne Angabe
 const _spurMax = 20000;
 const _lueckeMax = 5000.0; // ms; größere Lücken im GPS werden nicht überbrückt
 const _zeitMin = Duration(minutes: 2), _streckeMin = 150.0;
@@ -203,19 +202,18 @@ class _ProfilSeiteState extends State<ProfilSeite> {
   }
 
   Widget _belagUmwegRegler() {
-    final w = (p.meiden['belag_umweg'] as num?)?.toInt() ?? _belagUmwegVorgabe;
+    final w = (p.meiden['belag_umweg'] as num?)?.toInt() ?? 0;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(children: [
-        Expanded(flex: 2, child: Text('Wie sehr: bis $w % Umweg')),
+        Expanded(flex: 2, child: Text(w == 0 ? 'Wie sehr: nicht ausweichen' : 'Wie sehr: bis $w % Umweg')),
         Expanded(
           flex: 3,
           child: Slider(
-            value: w.clamp(10, 200).toDouble(),
-            min: 10,
+            value: w.clamp(0, 200).toDouble(),
             max: 200,
-            divisions: 19,
-            onChanged: (v) => setState(() => p.meiden['belag_umweg'] = v.round()),
+            divisions: 20,
+            onChanged: (v) => setState(() => p.setzen('belag_umweg', v.round())),
           ),
         ),
       ]),
@@ -232,7 +230,8 @@ class _ProfilSeiteState extends State<ProfilSeite> {
               '3  + grobes Pflaster und holprige Abschnitte\n'
               '4  + Kopfsteinpflaster\n'
               '5  + Gehwegplatten\n\n'
-              '„Wie sehr“ sagt, wie viel länger der Weg dafür werden darf. Wird er länger, bleibt es beim besten Weg innerhalb der Grenze.\n\n'
+              '„Wie sehr“ sagt, wie viel länger der Weg dafür werden darf. Steht es auf „nicht ausweichen“, ändert der Belag die Route nicht. '
+              'Reicht der Umweg nicht für alles, werden zuerst die schlimmsten Beläge umgangen.\n\n'
               'Das Ziel und der Start selbst lassen sich nicht umgehen, und bekannt ist nur, was in OpenStreetMap eingetragen ist.'),
           actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
         ),

@@ -87,7 +87,7 @@ func pflasterValhalla(t *testing.T, langM float64) (*Valhalla, *int) {
 
 func TestPflasterUmgehen(t *testing.T) {
 	v, routen := pflasterValhalla(t, 1.2)
-	k := Kosten{Costing: "pedestrian", Faktor: 1, BelagMeiden: 0.8, Hang: &Hang{Eben: 12, Auf: 6, Ab: 24}}
+	k := Kosten{Costing: "pedestrian", Faktor: 1, BelagMeiden: 0.8, BelagUmweg: 50, Hang: &Hang{Eben: 12, Auf: 6, Ab: 24}}
 	w, err := v.wegAnpassen(context.Background(), 40, 40, 41, 41, k, time.Second)
 	if err != nil || w.M != 1200 || *routen != 2 {
 		t.Fatalf("Umweg erwartet: %+v, %v, %d Routen", w, err, *routen)
@@ -99,7 +99,7 @@ func TestPflasterUmgehen(t *testing.T) {
 
 func TestPflasterZuWeiterUmweg(t *testing.T) {
 	v, _ := pflasterValhalla(t, 2.0)
-	k := Kosten{Costing: "pedestrian", Faktor: 1, BelagMeiden: 0.8}
+	k := Kosten{Costing: "pedestrian", Faktor: 1, BelagMeiden: 0.8, BelagUmweg: 50}
 	w, err := v.wegAnpassen(context.Background(), 40, 40, 41, 41, k, time.Second)
 	if err != nil || w.M != 1000 {
 		t.Fatalf("doppelter Weg ist zu viel, Pflaster bleibt: %+v, %v", w, err)
@@ -159,6 +159,17 @@ func TestBelagTeilweise(t *testing.T) {
 	}
 }
 
+func TestBelagOhneUmwegWeichtNichtAus(t *testing.T) {
+	v, routen := pflasterValhalla(t, 1.2)
+	w, err := v.wegAnpassen(context.Background(), 40, 40, 41, 41, Kosten{Costing: "pedestrian", Faktor: 1, BelagMeiden: 0.8}, time.Second)
+	if err != nil || w.M != 1000 || *routen != 1 {
+		t.Fatalf("ohne belag_umweg kein Ausweichen: %+v, %v, %d", w, err, *routen)
+	}
+	if (&Meiden{Belag: 1}).belagUmweg() != 0 || (&Meiden{Pflaster: true}).belagUmweg() != 50 || (&Meiden{Pflaster: true, BelagUmweg: 20}).belagUmweg() != 20 {
+		t.Error("Umweg alter Apps")
+	}
+}
+
 func TestPflasterAus(t *testing.T) {
 	v, routen := pflasterValhalla(t, 1.2)
 	w, err := v.wegAnpassen(context.Background(), 40, 40, 41, 41, Kosten{Costing: "pedestrian", Faktor: 1}, time.Second)
@@ -209,7 +220,7 @@ func TestBelagStufen(t *testing.T) {
 
 func TestBelagKeinSchritt(t *testing.T) {
 	v, routen := pflasterValhalla(t, 1.2)
-	w, err := v.wegAnpassen(context.Background(), 40, 40, 41, 41, Kosten{Costing: "pedestrian", Faktor: 1, BelagMeiden: 0.6}, time.Second)
+	w, err := v.wegAnpassen(context.Background(), 40, 40, 41, 41, Kosten{Costing: "pedestrian", Faktor: 1, BelagMeiden: 0.6, BelagUmweg: 50}, time.Second)
 	if err != nil || w.M != 1000 || *routen != 1 {
 		t.Fatalf("Klasse 4 wird bei Stufe 0,6 nicht umgangen: %+v, %v, %d", w, err, *routen)
 	}

@@ -18,16 +18,16 @@ import (
 // Stücke, die sie davon benutzt, und fragt neu. So bleiben es wenige kleine Sperrflächen statt aller solchen Wege der Region.
 // Klasse k (1 = am schlechtesten) wird ab Stufe k × belagSchritt umgangen.
 const (
-	belagRundenGesamt  = 20      // so oft wird je Weg höchstens neu gefragt, über alle Stufen
-	pflasterMaxBoxen   = 200     // Valhalla erlaubt 10 km Umfang, eine Box hat ~20 m
-	pflasterBoxLat     = 0.00002 // ~2 m: trifft die Kante, aber kaum Nachbarwege
-	pflasterBoxLon     = 0.00003
-	pflasterFreiM      = 60 // am Start und am Ziel lässt sich Pflaster nicht umgehen
-	belagUmwegStandard = 50 // % länger darf der Weg werden …
-	belagExtraM        = 10 // … oder so viele Meter je %, was mehr erlaubt
-	belagUmwegMax      = 300
-	pflasterPruefen    = time.Minute
-	belagSchritt       = 0.2
+	belagRundenGesamt = 20      // so oft wird je Weg höchstens neu gefragt, über alle Stufen
+	pflasterMaxBoxen  = 200     // Valhalla erlaubt 10 km Umfang, eine Box hat ~20 m
+	pflasterBoxLat    = 0.00002 // ~2 m: trifft die Kante, aber kaum Nachbarwege
+	pflasterBoxLon    = 0.00003
+	pflasterFreiM     = 60 // am Start und am Ziel lässt sich Pflaster nicht umgehen
+	belagUmwegAlt     = 50 // % für den Schalter der App 0.2.4–0.2.6
+	belagExtraM       = 10 // so viele Meter je % darf der Weg mindestens länger werden
+	belagUmwegMax     = 300
+	pflasterPruefen   = time.Minute
+	belagSchritt      = 0.2
 
 	hangVoll    = 6.0 // % Steigung, ab der das volle Tempo bergauf/bergab gilt
 	hangMaxKMH  = 200.0
@@ -162,15 +162,13 @@ func pflasterStellen(t vhTraceResp, d Belagdaten, stufe float64, a, b pt) (boxen
 // bleibt der beste bisherige Weg: lieber übers Pflaster als gar kein Weg.
 func (v *Valhalla) wegAnpassen(ctx context.Context, aLat, aLon, bLat, bLon float64, k Kosten, zeit time.Duration) (WalkRoute, error) {
 	weg, err := v.route(ctx, aLat, aLon, bLat, bLon, k, zeit)
-	if err != nil || k.BelagMeiden < belagSchritt && k.Hang == nil {
+	belagAn := k.BelagMeiden >= belagSchritt && k.BelagUmweg > 0 // ohne erlaubten Umweg weicht der Server nicht aus
+	if err != nil || !belagAn && k.Hang == nil {
 		return weg, err
 	}
 	t := v.kanten(ctx, weg.Shape, k.Costing)
-	if d := v.Belag.Aktuell(); k.BelagMeiden >= belagSchritt && len(d.ids) > 0 {
+	if d := v.Belag.Aktuell(); belagAn && len(d.ids) > 0 {
 		p := float64(k.BelagUmweg)
-		if p <= 0 {
-			p = belagUmwegStandard
-		}
 		grenze := max(weg.M*(1+p/100), weg.M+p*belagExtraM)
 		// Reicht der Umweg nicht für alle gewählten Beläge, wenigstens den schlimmsten ausweichen.
 		start := belagVersuch{weg, t, false}
