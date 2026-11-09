@@ -294,15 +294,10 @@ class Api {
     }
   }
 
-  /// Höhenkachel für den Messgang (D-44); null, wenn der Server sie nicht hat.
-  Future<Uint8List?> hoehenKachel(String name) async {
-    try {
-      final (_, _, daten) = await _anfrage('GET', '/v1/hoehe/$name', zeit: const Duration(seconds: 90));
-      return daten;
-    } on ApiFehler catch (e) {
-      if (e.art == 'hoehe_unbekannt') return null;
-      rethrow;
-    }
+  /// Wertet einen Messgang aus (D-44): Strecke mit Metern und Sekunden; Antwort je Steigung und Belag.
+  Future<List<Map<String, dynamic>>> messung(List<List<double>> punkte) async {
+    final (_, _, daten) = await _anfrage('POST', '/v1/messung', body: {'punkte': punkte}, zeit: const Duration(seconds: 30));
+    return ((jsonDecode(utf8.decode(daten)) as Map)['stuecke'] as List? ?? const []).cast<Map<String, dynamic>>();
   }
 
   /// Alle Halte; null, wenn sich seit [etag] nichts geändert hat.

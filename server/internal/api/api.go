@@ -69,7 +69,6 @@ type Server struct {
 	LiveWait  time.Duration  // so lange wartet eine Anfrage höchstens auf einen Echtzeit-Abruf
 	Geocode   *geocode.Index // Adresssuche, nil = aus
 	MapDir    string         // Kartenstand des Jobs (Ordner mit regionen.json, Glob erlaubt), "" = aus
-	HoeheDir  string         // Höhenkacheln des Jobs valhalla (Glob erlaubt), "" = aus (D-44)
 	AppDir    string         // App-Fassung fürs Selbstupdate (version.json + APK, D-42), "" = aus
 	DirectM   float64        // reiner Fußweg als Vergleich bis zu dieser Luftlinie, 0 = aus
 	DirectMax time.Duration  // … und höchstens so lange (beim gewählten Tempo)
@@ -98,7 +97,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/map/{id}", s.mapFile)
 	mux.HandleFunc("GET /v1/app", s.appIndex)
 	mux.HandleFunc("GET /v1/app/apk", s.appFile)
-	mux.HandleFunc("GET /v1/hoehe/{kachel}", s.hoehe)
+	mux.HandleFunc("POST /v1/messung", s.messung)
 	return mux
 }
 

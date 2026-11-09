@@ -81,6 +81,9 @@ class TempoProfil {
   bool fern; // Fernverkehr zulassen
   int auf = 0, ab = 0; // bergauf/bergab: Abweichung vom Tempo in % (D-44)
   int zuFussAb = 0; // bergauf: ab dieser Steigung in % zu Fuß, 0 = aus (ersetzt `auf`)
+  /// Belagklasse 1–5 → negative % oder Name eines anderen Profils, dessen Tempo dort gilt (D-44).
+  final belagRegeln = <int, Object>{};
+  final belagProfilKmh = <int, double>{}; // aufgelöste Profile, nicht gespeichert
 
   TempoProfil(this.name, this.art, this.kmh, [this.gemessen]) : meiden = {}, ticket = false, fern = false;
 
@@ -96,9 +99,15 @@ class TempoProfil {
     if (!erlaubt(kmh)) throw const FormatException('kmh');
     auf = _prozent(j['auf'], meiden.remove('kmh_auf'), aufBereich);
     ab = _prozent(j['ab'], meiden.remove('kmh_ab'), abBereich);
-    if (meiden.remove('pflaster') == true) {
-      if (stufe('belag') < 0.8) meiden['belag'] = 0.8; // Schalter aus 0.2.4–0.2.6: war gewollt, also mit Umweg
-      meiden['belag_umweg'] ??= 50;
+    meiden.remove('pflaster'); // aus 0.2.4–0.2.6
+    meiden.remove('belag_umweg'); // aus 0.2.7–0.2.8
+    if (j['belag_regeln'] is Map) {
+      (j['belag_regeln'] as Map).forEach((k, v) {
+        final c = int.tryParse('$k');
+        if (c == null || c < 1 || c > 5) return;
+        if (v is num) belagRegeln[c] = v.round().clamp(-90, -10);
+        if (v is String) belagRegeln[c] = v;
+      });
     }
     zuFussAb = (j['zu_fuss_ab'] is num ? (j['zu_fuss_ab'] as num).round() : 0).clamp(0, zuFussMax);
   }
@@ -141,9 +150,16 @@ class TempoProfil {
           if (art != 'auto' && zuFussAb > 0) ...{'kmh_auf': kmh < standardKmh ? kmh : standardKmh, 'hang_voll': zuFussAb}
           else if (art != 'auto' && auf != 0) 'kmh_auf': _hangKmh(auf),
           if (art != 'auto' && ab != 0) 'kmh_ab': _hangKmh(ab),
+          if (art != 'auto' && belagRegeln.isNotEmpty) 'belag_kmh': [for (var k = 1; k <= 5; k++) _belagKmh(k)],
         };
 
-  bool get _ohneRegeln => meiden.isEmpty && (art == 'auto' || auf == 0 && ab == 0 && zuFussAb == 0);
+  bool get _ohneRegeln => meiden.isEmpty && (art == 'auto' || auf == 0 && ab == 0 && zuFussAb == 0 && belagRegeln.isEmpty);
+
+  double _belagKmh(int k) => switch (belagRegeln[k]) {
+        final int p => _hangKmh(p),
+        String _ => (belagProfilKmh[k] ?? 0).clamp(0.0, 200.0).toDouble(),
+        _ => 0.0,
+      };
 
   /// Der Server nimmt km/h bis 200 an; so folgt der Hang dem gemessenen Tempo.
   double _hangKmh(int prozent) => (kmh * (1 + prozent / 100)).clamp(0.01, 200.0).toDouble();
@@ -166,6 +182,7 @@ class TempoProfil {
         if (auf != 0) 'auf': auf,
         if (ab != 0) 'ab': ab,
         if (zuFussAb != 0) 'zu_fuss_ab': zuFussAb,
+        if (belagRegeln.isNotEmpty) 'belag_regeln': {for (final e in belagRegeln.entries) '${e.key}': e.value},
       };
 }
 
@@ -195,6 +212,7 @@ class Tempo {
         await _beiseite(datei); // nicht lesbar: nichts überschreiben, was noch zu retten wäre
         t = _vorgabe();
       }
+      t._aufloesen();
       return t;
     } on FileSystemException {
       // noch nie gespeichert
@@ -214,6 +232,7 @@ class Tempo {
     } on FileSystemException {
       // nichts da
     }
+    t._aufloesen();
     return t;
   }
 
@@ -275,7 +294,20 @@ class Tempo {
 
   /// Nur zum Testen der Umstellung älterer Stände.
   @visibleForTesting
-  static Tempo ausJson(Map<String, dynamic> j) => _vorgabe().._uebernehmen(j);
+  static Tempo ausJson(Map<String, dynamic> j) => _vorgabe()
+    .._uebernehmen(j)
+    .._aufloesen();
+
+  /// Profile, die ein anderes für einen Belag nutzen, bekommen dessen aktuelles Tempo. Gelöschte zählen nicht.
+  void _aufloesen() {
+    for (final p in profile) {
+      p.belagProfilKmh.clear();
+      p.belagRegeln.forEach((k, v) {
+        final o = profile.where((x) => x.name == v).firstOrNull;
+        if (o != null) p.belagProfilKmh[k] = o.kmh;
+      });
+    }
+  }
 
   /// Nur das aktive Profil (für die Startseite).
   static Future<TempoProfil> laden() async => (await oeffnen()).aktuell;

@@ -10,6 +10,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -85,40 +87,50 @@ func pflasterValhalla(t *testing.T, langM float64) (*Valhalla, *int) {
 	return &Valhalla{URL: ts.URL, Timeout: time.Second, Client: ts.Client(), Belag: &Belagliste{Muster: pflasterDatei(t, 4, 3, 7, 9)}}, &routen
 }
 
-func TestPflasterUmgehen(t *testing.T) {
+func belagRegel(klasse int, kmh float64) (r [belagKlassen + 1]float64) {
+	r[klasse] = kmh
+	return r
+}
+
+func TestBelagTempoWaehltUmweg(t *testing.T) {
 	v, routen := pflasterValhalla(t, 1.2)
-	k := Kosten{Costing: "pedestrian", Faktor: 1, BelagMeiden: 0.8, BelagUmweg: 50, Hang: &Hang{Eben: 12, Auf: 6, Ab: 24}}
+	k := Kosten{Costing: "pedestrian", Faktor: 1, Eben: 12, BelagKmh: belagRegel(4, 3), Hang: &Hang{Eben: 12, Auf: 6, Ab: 24}}
 	w, err := v.wegAnpassen(context.Background(), 40, 40, 41, 41, k, time.Second)
 	if err != nil || w.M != 1200 || *routen != 2 {
 		t.Fatalf("Umweg erwartet: %+v, %v, %d Routen", w, err, *routen)
 	}
-	if math.Abs(w.Sec-720) > 1e-6 { // 1,2 km bergauf mit 6 km/h
-		t.Errorf("Hang-Zeit %v", w.Sec)
+	if math.Abs(w.Sec-720) > 1e-6 { // 1,2 km bergauf mit 6 km/h statt 20 min Pflaster
+		t.Errorf("Zeit %v", w.Sec)
 	}
 }
 
-func TestPflasterZuWeiterUmweg(t *testing.T) {
-	v, _ := pflasterValhalla(t, 2.0)
-	k := Kosten{Costing: "pedestrian", Faktor: 1, BelagMeiden: 0.8, BelagUmweg: 50}
+func TestBelagTempoBleibtDirekt(t *testing.T) {
+	v, _ := pflasterValhalla(t, 1.2)
+	k := Kosten{Costing: "pedestrian", Faktor: 1, Eben: 12, BelagKmh: belagRegel(4, 11)}
 	w, err := v.wegAnpassen(context.Background(), 40, 40, 41, 41, k, time.Second)
-	if err != nil || w.M != 1000 {
-		t.Fatalf("doppelter Weg ist zu viel, Pflaster bleibt: %+v, %v", w, err)
+	if err != nil || w.M != 1000 || math.Abs(w.Sec-1.0*3600/11) > 1e-6 {
+		t.Fatalf("der Umweg lohnt sich nicht: %+v, %v", w, err)
 	}
 }
 
-func TestBelagUmwegRegler(t *testing.T) {
-	v, _ := pflasterValhalla(t, 2.0)
-	k := Kosten{Costing: "pedestrian", Faktor: 1, BelagMeiden: 0.8, BelagUmweg: 150}
+func TestBelagNichtLangsamerFragtNichtNeu(t *testing.T) {
+	v, routen := pflasterValhalla(t, 1.2)
+	k := Kosten{Costing: "pedestrian", Faktor: 1, Eben: 12, BelagKmh: belagRegel(4, 20)}
 	w, err := v.wegAnpassen(context.Background(), 40, 40, 41, 41, k, time.Second)
-	if err != nil || w.M != 2000 {
-		t.Fatalf("150 %% erlaubt den doppelten Weg: %+v, %v", w, err)
-	}
-	if (&Meiden{BelagUmweg: 301}).gueltig() || (&Meiden{BelagUmweg: -1}).gueltig() {
-		t.Error("Grenzen belag_umweg")
+	if err != nil || *routen != 1 || math.Abs(w.Sec-300) > 1e-6 {
+		t.Fatalf("%+v, %v, %d Routen", w, err, *routen)
 	}
 }
 
-// Umgeht Klasse 4 nur mit zu langem Weg, Klasse 1 aber im Rahmen: Die Route weicht dann wenigstens Klasse 1 aus.
+func TestBelagOhneRegel(t *testing.T) {
+	v, routen := pflasterValhalla(t, 1.2)
+	w, err := v.wegAnpassen(context.Background(), 40, 40, 41, 41, Kosten{Costing: "pedestrian", Faktor: 1, Eben: 12}, time.Second)
+	if err != nil || w.M != 1000 || *routen != 1 || w.Sec != 100 {
+		t.Fatalf("ohne Regel unverändert: %+v, %v, %d", w, err, *routen)
+	}
+}
+
+// Nur Klasse 1 zu umgehen ist am schnellsten; alles zu umgehen wäre zu lang.
 func TestBelagTeilweise(t *testing.T) {
 	const roh, mittel, lang = "_ibE_ibE_seK_seK_seK_seK", "_ibE_ibE_seK?_seK?_seK?", "_ibE_ibE?_seK?_seK?_seK"
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -128,22 +140,23 @@ func TestBelagTeilweise(t *testing.T) {
 			Polygone [][][2]float64 `json:"exclude_polygons"`
 		}
 		json.Unmarshal(b, &q)
+		km := map[string]float64{roh: 1, mittel: 1.1, lang: 5}
 		if r.URL.Path == "/trace_attributes" {
 			way := map[string]int{roh: 1, mittel: 4, lang: 9}[q.Polyline]
 			json.NewEncoder(w).Encode(map[string]any{"shape": q.Polyline, "edges": []map[string]any{
-				{"length": 1.0, "way_id": way, "begin_shape_index": 0, "end_shape_index": 2}}})
+				{"length": km[q.Polyline], "way_id": way, "begin_shape_index": 0, "end_shape_index": 2}}})
 			return
 		}
-		shape, m := roh, 1.0
+		shape := roh
 		switch len(q.Polygone) {
 		case 0:
 		case 1:
-			shape, m = mittel, 1.1
+			shape = mittel
 		default:
-			shape, m = lang, 5.0
+			shape = lang
 		}
 		json.NewEncoder(w).Encode(map[string]any{"trip": map[string]any{"legs": []map[string]any{{"shape": shape}},
-			"summary": map[string]any{"time": 100, "length": m}}})
+			"summary": map[string]any{"time": 100, "length": km[shape]}}})
 	}))
 	defer ts.Close()
 	b := make([]byte, 10)
@@ -153,75 +166,50 @@ func TestBelagTeilweise(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "belag.ids")
 	os.WriteFile(p, b, 0o644)
 	v := &Valhalla{URL: ts.URL, Timeout: time.Second, Client: ts.Client(), Belag: &Belagliste{Muster: p}}
-	w, err := v.wegAnpassen(context.Background(), 40, 40, 41, 41, Kosten{Costing: "pedestrian", Faktor: 1, BelagMeiden: 0.8, BelagUmweg: 20}, time.Second)
+	k := Kosten{Costing: "pedestrian", Faktor: 1, Eben: 12}
+	k.BelagKmh[1], k.BelagKmh[4] = 2, 6
+	w, err := v.wegAnpassen(context.Background(), 40, 40, 41, 41, k, time.Second)
 	if err != nil || w.Shape != mittel {
 		t.Fatalf("erwartet den Weg ohne Klasse 1: %+v, %v", w, err)
 	}
 }
 
-func TestBelagOhneUmwegWeichtNichtAus(t *testing.T) {
-	v, routen := pflasterValhalla(t, 1.2)
-	w, err := v.wegAnpassen(context.Background(), 40, 40, 41, 41, Kosten{Costing: "pedestrian", Faktor: 1, BelagMeiden: 0.8}, time.Second)
-	if err != nil || w.M != 1000 || *routen != 1 {
-		t.Fatalf("ohne belag_umweg kein Ausweichen: %+v, %v, %d", w, err, *routen)
+func TestBelagGueltig(t *testing.T) {
+	if (&Meiden{BelagKmh: []float64{1, 2, 3}}).gueltig() || (&Meiden{BelagKmh: []float64{0, 0, 0, 0, 201}}).gueltig() || !(&Meiden{BelagKmh: []float64{0, 3, 0, 4.3, 0}}).gueltig() {
+		t.Error("Grenzen belag_kmh")
 	}
-	if (&Meiden{Belag: 1}).belagUmweg() != 0 || (&Meiden{Pflaster: true}).belagUmweg() != 50 || (&Meiden{Pflaster: true, BelagUmweg: 20}).belagUmweg() != 20 {
-		t.Error("Umweg alter Apps")
-	}
-}
-
-func TestPflasterAus(t *testing.T) {
-	v, routen := pflasterValhalla(t, 1.2)
-	w, err := v.wegAnpassen(context.Background(), 40, 40, 41, 41, Kosten{Costing: "pedestrian", Faktor: 1}, time.Second)
-	if err != nil || w.M != 1000 || *routen != 1 || w.Sec != 100 {
-		t.Fatalf("ohne Schalter unverändert: %+v, %v, %d", w, err, *routen)
+	k := (&Meiden{BelagKmh: []float64{0, 3, 0, 4.3, 0}}).art().kosten(5, 12, 0.3)[0]
+	if k.BelagKmh[2] != 3 || k.BelagKmh[4] != 4.3 || k.Eben != 12 {
+		t.Errorf("%+v", k)
 	}
 }
 
-func TestHoehenKachel(t *testing.T) {
-	dir := t.TempDir()
-	os.MkdirAll(filepath.Join(dir, "N50"), 0o755)
-	os.WriteFile(filepath.Join(dir, "N50", "N50E006.hgt"), []byte("hoehe"), 0o644)
-	s := &Server{HoeheDir: dir}
+func TestMessungAuswertung(t *testing.T) {
+	var a messAbgleich
+	json.Unmarshal([]byte(`{"edges":[{"way_id":7,"weighted_grade":0.2},{"way_id":99,"weighted_grade":-4.6}],
+		"matched_points":[{"edge_index":0,"type":"matched"},{"edge_index":0,"type":"matched"},{"edge_index":1,"type":"interpolated"},{"edge_index":4294967295,"type":"unmatched"}]}`), &a)
+	d := Belagdaten{[]uint32{7}, []uint8{4}}
+	got := messAuswerten([][4]float64{{50, 6, 0, 0}, {50, 6, 20, 5}, {50, 6, 30, 3}, {50, 6, 99, 9}}, a, d)
+	want := []messStueck{{G: -5, C: 0, M: 30, S: 3}, {G: 0, C: 4, M: 20, S: 5}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func TestMessungAnfrage(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"edges":[{"way_id":1,"weighted_grade":2}],"matched_points":[{"edge_index":0,"type":"matched"},{"edge_index":0,"type":"matched"}]}`))
+	}))
+	defer ts.Close()
+	s := &Server{Valhalla: &Valhalla{URL: ts.URL, Timeout: time.Second, Client: ts.Client()}}
 	for _, c := range []struct {
-		k    string
+		body string
 		code int
-	}{{"N50E006", 200}, {"N51E006", 404}, {"..%2Fx", 404}} {
-		r := httptest.NewRequest("GET", "/v1/hoehe/x", nil)
-		r.SetPathValue("kachel", c.k)
+	}{{`{"punkte":[[50,6,0,0],[50,6,10,2]]}`, 200}, {`{"punkte":[[50,6,0,0]]}`, 400}, {`kaputt`, 400}} {
 		w := httptest.NewRecorder()
-		s.hoehe(w, r)
+		s.messung(w, httptest.NewRequest("POST", "/v1/messung", strings.NewReader(c.body)))
 		if w.Code != c.code {
-			t.Errorf("%s: %d", c.k, w.Code)
+			t.Errorf("%s: %d", c.body, w.Code)
 		}
-	}
-}
-
-func TestBelagStufen(t *testing.T) {
-	d := Belagdaten{[]uint32{1, 2, 3, 4, 5}, []uint8{1, 2, 3, 4, 5}}
-	for _, c := range []struct {
-		stufe float64
-		n     int
-	}{{0, 0}, {0.2, 1}, {0.5, 2}, {0.6, 3}, {0.8, 4}, {1, 5}} {
-		n := 0
-		for w := uint64(1); w <= 6; w++ {
-			if d.umgehen(w, c.stufe) {
-				n++
-			}
-		}
-		if n != c.n {
-			t.Errorf("Stufe %v: %d Klassen, erwartet %d", c.stufe, n, c.n)
-		}
-	}
-	if (&Meiden{Pflaster: true, Belag: 0.2}).belagStufe() != 0.8 || (&Meiden{Belag: 1, Pflaster: true}).belagStufe() != 1 {
-		t.Error("alte Apps: pflaster gilt als 0,8")
-	}
-}
-
-func TestBelagKeinSchritt(t *testing.T) {
-	v, routen := pflasterValhalla(t, 1.2)
-	w, err := v.wegAnpassen(context.Background(), 40, 40, 41, 41, Kosten{Costing: "pedestrian", Faktor: 1, BelagMeiden: 0.6, BelagUmweg: 50}, time.Second)
-	if err != nil || w.M != 1000 || *routen != 1 {
-		t.Fatalf("Klasse 4 wird bei Stufe 0,6 nicht umgangen: %+v, %v, %d", w, err, *routen)
 	}
 }

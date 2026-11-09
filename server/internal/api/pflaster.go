@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"encoding/binary"
 	"math"
@@ -14,20 +15,17 @@ import (
 )
 
 // Belag und Hang (D-44). Valhalla kennt zu Fuß keine Kosten für den Belag befestigter Wege und führt deshalb durchs
-// Kopfsteinpflaster. Der Job valhalla legt die Wege samt Belagklasse neben die Tiles; der Server fragt die Route, sperrt die
-// Stücke, die sie davon benutzt, und fragt neu. So bleiben es wenige kleine Sperrflächen statt aller solchen Wege der Region.
-// Klasse k (1 = am schlechtesten) wird ab Stufe k × belagSchritt umgangen.
+// Kopfsteinpflaster. Der Job valhalla legt die Wege samt Belagklasse neben die Tiles (1 = am schlechtesten). Das Profil sagt je
+// Klasse, wie schnell man dort ist. Der Server rechnet die normale Route und Varianten, die die langsamen Beläge über kleine
+// Sperrflächen umgehen, mit diesem Tempo durch und nimmt die schnellste.
 const (
-	belagRundenGesamt = 20      // so oft wird je Weg höchstens neu gefragt, über alle Stufen
+	belagRundenGesamt = 20      // so oft wird je Weg höchstens neu gefragt, über alle Varianten
 	pflasterMaxBoxen  = 200     // Valhalla erlaubt 10 km Umfang, eine Box hat ~20 m
 	pflasterBoxLat    = 0.00002 // ~2 m: trifft die Kante, aber kaum Nachbarwege
 	pflasterBoxLon    = 0.00003
-	pflasterFreiM     = 60 // am Start und am Ziel lässt sich Pflaster nicht umgehen
-	belagUmwegAlt     = 50 // % für den Schalter der App 0.2.4–0.2.6
-	belagExtraM       = 10 // so viele Meter je % darf der Weg mindestens länger werden
-	belagUmwegMax     = 300
+	pflasterFreiM     = 60 // am Start und am Ziel lässt sich Belag nicht umgehen
 	pflasterPruefen   = time.Minute
-	belagSchritt      = 0.2
+	belagKlassen      = 5
 
 	hangVoll    = 6.0 // % Steigung, ab der das volle Tempo bergauf/bergab gilt
 	hangMaxKMH  = 200.0
@@ -40,13 +38,16 @@ type Belagdaten struct {
 	klassen []uint8
 }
 
-// umgehen sagt, ob der Weg bei dieser Stufe zu meiden ist.
-func (d Belagdaten) umgehen(way uint64, stufe float64) bool {
+// klasse liefert die Belagklasse des Wegs, 0 = unauffällig.
+func (d Belagdaten) klasse(way uint64) uint8 {
 	if way > math.MaxUint32 {
-		return false
+		return 0
 	}
 	i, drin := slices.BinarySearch(d.ids, uint32(way))
-	return drin && float64(d.klassen[i])*belagSchritt <= stufe+1e-9
+	if !drin {
+		return 0
+	}
+	return d.klassen[i]
 }
 
 // Belagliste liest die Datei des Jobs (n IDs als uint32, dann n Klassen als uint8) und bemerkt neue Stände.
@@ -121,30 +122,50 @@ func (m *Meiden) hang(kmh float64) *Hang {
 	return &h
 }
 
-// hangZeit ersetzt die Zeit durch die Summe je Kante. Deckt die Antwort den Weg nicht ab, bleibt Valhallas Zeit.
-func hangZeit(weg *WalkRoute, t vhTraceResp, h Hang) {
-	var sek, m float64
+// kantenZeit summiert die Zeit über die Kanten: Tempo nach Steigung, auf einem Belag mit eigenem Tempo höchstens dieses.
+// ok = false, wenn die Kanten nicht zu rechnen sind.
+func (k Kosten) kantenZeit(t vhTraceResp, d Belagdaten) (sek, m float64, ok bool) {
 	for _, e := range t.Edges {
-		v := h.kmh(e.Steigung)
+		v := k.Eben
+		if k.Hang != nil {
+			v = k.Hang.kmh(e.Steigung)
+		}
+		if c := d.klasse(e.WayID); c > 0 && int(c) <= belagKlassen && k.BelagKmh[c] > 0 {
+			v = min(v, k.BelagKmh[c])
+		}
 		if v <= 0 {
-			return
+			return 0, 0, false
 		}
 		sek += e.Length * 3600 / v
 		m += e.Length * 1000
 	}
-	if m >= 0.9*weg.M && m > 0 {
-		weg.Sec = sek
-	}
+	return sek, m, m > 0
 }
 
-// pflasterStellen liefert kleine Sperrflächen auf den Pflasterstücken der Route und deren Länge in m.
-func pflasterStellen(t vhTraceResp, d Belagdaten, stufe float64, a, b pt) (boxen [][][2]float64, m float64) {
+// belagRegeln sagt, ob das Profil für einen Belag ein eigenes Tempo hat.
+func (k Kosten) belagRegeln() bool {
+	return slices.ContainsFunc(k.BelagKmh[:], func(v float64) bool { return v > 0 })
+}
+
+// langsameKlassen: Klassen, die langsamer sind als die Ebene, die langsamste zuerst.
+func (k Kosten) langsameKlassen() []uint8 {
+	var l []uint8
+	for c := uint8(1); c <= belagKlassen; c++ {
+		if v := k.BelagKmh[c]; v > 0 && v < k.Eben {
+			l = append(l, c)
+		}
+	}
+	slices.SortFunc(l, func(a, b uint8) int { return cmp.Compare(k.BelagKmh[a], k.BelagKmh[b]) })
+	return l
+}
+
+// belagStellen liefert kleine Sperrflächen auf den Abschnitten der Route, deren Klasse in meiden steht.
+func belagStellen(t vhTraceResp, d Belagdaten, meiden []uint8, a, b pt) (boxen [][][2]float64) {
 	form := dekodieren(t.Shape)
 	for _, e := range t.Edges {
-		if !d.umgehen(e.WayID, stufe) {
+		if c := d.klasse(e.WayID); c == 0 || !slices.Contains(meiden, c) {
 			continue
 		}
-		m += e.Length * 1000
 		if e.Von < 0 || e.Bis <= e.Von || e.Bis >= len(form) {
 			continue
 		}
@@ -155,68 +176,59 @@ func pflasterStellen(t vhTraceResp, d Belagdaten, stufe float64, a, b pt) (boxen
 		x, y := pflasterBoxLon, pflasterBoxLat
 		boxen = append(boxen, [][2]float64{{p.lon - x, p.lat - y}, {p.lon + x, p.lat - y}, {p.lon + x, p.lat + y}, {p.lon - x, p.lat + y}, {p.lon - x, p.lat - y}})
 	}
-	return boxen, m
+	return boxen
 }
 
-// wegAnpassen holt den Weg und wendet Pflaster-Umgehung und Hang-Tempo des Profils an. Schlägt ein späterer Schritt fehl,
-// bleibt der beste bisherige Weg: lieber übers Pflaster als gar kein Weg.
+// belagVersuch ist ein Weg samt Kanten und seiner Zeit nach dem Profil.
+type belagVersuch struct {
+	weg WalkRoute
+	t   vhTraceResp
+	sek float64
+}
+
+// wegAnpassen holt den Weg und wendet Belag- und Hang-Tempo des Profils an. Schlägt ein späterer Schritt fehl, bleibt der
+// beste bisherige Weg.
 func (v *Valhalla) wegAnpassen(ctx context.Context, aLat, aLon, bLat, bLon float64, k Kosten, zeit time.Duration) (WalkRoute, error) {
 	weg, err := v.route(ctx, aLat, aLon, bLat, bLon, k, zeit)
-	belagAn := k.BelagMeiden >= belagSchritt && k.BelagUmweg > 0 // ohne erlaubten Umweg weicht der Server nicht aus
-	if err != nil || !belagAn && k.Hang == nil {
+	if err != nil || !k.belagRegeln() && k.Hang == nil {
 		return weg, err
 	}
 	t := v.kanten(ctx, weg.Shape, k.Costing)
-	if d := v.Belag.Aktuell(); belagAn && len(d.ids) > 0 {
-		p := float64(k.BelagUmweg)
-		grenze := max(weg.M*(1+p/100), weg.M+p*belagExtraM)
-		// Reicht der Umweg nicht für alle gewählten Beläge, wenigstens den schlimmsten ausweichen.
-		start := belagVersuch{weg, t, false}
-		ergebnis, runden := start, 0
-		for stufe, erste := k.BelagMeiden, true; stufe+1e-9 >= belagSchritt; stufe, erste = stufe-belagSchritt, false {
-			e := v.belagPass(ctx, aLat, aLon, bLat, bLon, k, zeit, d, stufe, grenze, start, &runden)
-			if erste || e.sauber {
-				ergebnis = e
-			}
-			if e.sauber {
-				break
-			}
+	d := v.Belag.Aktuell()
+	start := belagVersuch{weg, t, math.Inf(1)}
+	if sek, _, ok := k.kantenZeit(t, d); ok {
+		start.sek = sek
+	}
+	beste, runden := start, 0
+	if len(d.ids) > 0 {
+		klassen := k.langsameKlassen()
+		for n := 1; n <= len(klassen); n++ { // erst nur den langsamsten Belag umgehen, dann auch die nächsten
+			v.belagPass(ctx, aLat, aLon, bLat, bLon, k, zeit, d, klassen[:n], start, &beste, &runden)
 		}
-		weg, t = ergebnis.weg, ergebnis.t
 	}
-	if k.Hang != nil {
-		hangZeit(&weg, t, *k.Hang)
+	if sek, m, ok := k.kantenZeit(beste.t, d); ok && m >= 0.9*beste.weg.M {
+		beste.weg.Sec = sek
 	}
-	return weg, nil
+	return beste.weg, nil
 }
 
-// belagVersuch ist ein Weg samt Kanten; sauber: auf ihm liegt bei der Stufe nichts mehr, was sich umgehen ließe.
-type belagVersuch struct {
-	weg    WalkRoute
-	t      vhTraceResp
-	sauber bool
-}
-
-// belagPass sucht ab start den Weg mit dem wenigsten Belag der Stufe innerhalb der Grenze. runden zählt über alle Stufen.
-func (v *Valhalla) belagPass(ctx context.Context, aLat, aLon, bLat, bLon float64, k Kosten, zeit time.Duration, d Belagdaten, stufe, grenze float64, start belagVersuch, runden *int) belagVersuch {
+// belagPass probiert ab start Wege ohne die Klassen in meiden und merkt sich den schnellsten. runden zählt über alle Varianten.
+func (v *Valhalla) belagPass(ctx context.Context, aLat, aLon, bLat, bLon float64, k Kosten, zeit time.Duration, d Belagdaten, meiden []uint8, start belagVersuch, beste *belagVersuch, runden *int) {
 	weg, t := start.weg, start.t
-	beste, besteM := start, math.Inf(1)
 	for len(t.Edges) > 0 {
-		boxen, m := pflasterStellen(t, d, stufe, pt{aLat, aLon}, pt{bLat, bLon})
-		innen := weg.M <= grenze
-		if innen && (m < besteM || len(boxen) == 0) {
-			beste, besteM = belagVersuch{weg, t, len(boxen) == 0}, m
+		if sek, _, ok := k.kantenZeit(t, d); ok && sek < beste.sek {
+			*beste = belagVersuch{weg, t, sek}
 		}
-		if len(boxen) == 0 || !innen || *runden >= belagRundenGesamt || len(k.Polygone)+len(boxen) > pflasterMaxBoxen {
-			break
+		boxen := belagStellen(t, d, meiden, pt{aLat, aLon}, pt{bLat, bLon})
+		if len(boxen) == 0 || *runden >= belagRundenGesamt || len(k.Polygone)+len(boxen) > pflasterMaxBoxen {
+			return
 		}
 		*runden++
 		k.Polygone = slices.Concat(k.Polygone, boxen)
 		neu, err := v.route(ctx, aLat, aLon, bLat, bLon, k, zeit)
 		if err != nil || neu.Shape == weg.Shape {
-			break
+			return
 		}
 		weg, t = neu, v.kanten(ctx, neu.Shape, k.Costing)
 	}
-	return beste
 }

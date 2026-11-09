@@ -40,15 +40,15 @@ const radMinKMH, radMaxKMH = 5.0, 60.0 // Bereich von Valhallas cycling_speed
 
 // Kosten ist eine Valhalla-Kostenart samt Faktor, mit dem ihre Zeiten zur Zeit im gewählten Tempo werden.
 type Kosten struct {
-	Costing     string
-	Opts        map[string]any
-	Faktor      float64
-	FangM       int            // Fangradius auf die Straße in m, 0 = Valhallas Standard (35 km)
-	Schritte    bool           // Abbiegehinweise mitliefern (Wege von Tür zu Tür)
-	Polygone    [][][2]float64 // Bereiche, die die Route meidet (Umfahrung, D-39)
-	BelagMeiden float64        // Stufe 0–1: bis zu welchem Belag die Route ausweicht (D-44)
-	BelagUmweg  int            // % Umweg für die Umgehung, 0 = belagUmwegStandard
-	Hang        *Hang          // Tempo je nach Steigung (D-44), nil = Valhallas Zeit
+	Costing  string
+	Opts     map[string]any
+	Faktor   float64
+	FangM    int                       // Fangradius auf die Straße in m, 0 = Valhallas Standard (35 km)
+	Schritte bool                      // Abbiegehinweise mitliefern (Wege von Tür zu Tür)
+	Polygone [][][2]float64            // Bereiche, die die Route meidet (Umfahrung, D-39)
+	Eben     float64                   // Tempo in der Ebene, Grundlage der Zeit je Kante
+	BelagKmh [belagKlassen + 1]float64 // Tempo je Belagklasse 1–5, 0 = wie normal (D-44)
+	Hang     *Hang                     // Tempo je nach Steigung (D-44), nil = Valhallas Zeit
 }
 
 // kosten liefert die Valhalla-Kostenarten für Art a in der Reihenfolge, in der sie versucht werden.
@@ -73,7 +73,8 @@ func (a Art) kosten(walkKMH, kmh, scale float64) []Kosten {
 	}
 	if m := a.Meiden; m != nil {
 		for i := range k {
-			k[i].BelagMeiden, k[i].BelagUmweg, k[i].Hang = m.belagStufe(), m.belagUmweg(), m.hang(kmh)
+			k[i].Eben, k[i].Hang = kmh, m.hang(kmh)
+			copy(k[i].BelagKmh[1:], m.BelagKmh)
 		}
 	}
 	return k
