@@ -21,6 +21,13 @@ func TestHangTempo(t *testing.T) {
 			t.Errorf("Steigung %v: %v km/h, erwartet %v", c.g, v, c.v)
 		}
 	}
+	f := Hang{Eben: 12, Auf: 4, Ab: 12, Voll: 4}
+	if f.kmh(2) != 8 || f.kmh(4) != 4 || f.kmh(9) != 4 || f.kmh(-9) != 12 {
+		t.Errorf("zu Fuß ab 4 %%: %v %v %v %v", f.kmh(2), f.kmh(4), f.kmh(9), f.kmh(-9))
+	}
+	if (&Meiden{HangVoll: 31}).gueltig() {
+		t.Error("Grenze hang_voll")
+	}
 	if (&Meiden{}).hang(12) != nil {
 		t.Error("ohne Tempi kein Hang")
 	}
@@ -103,5 +110,24 @@ func TestPflasterAus(t *testing.T) {
 	w, err := v.wegAnpassen(context.Background(), 40, 40, 41, 41, Kosten{Costing: "pedestrian", Faktor: 1}, time.Second)
 	if err != nil || w.M != 1000 || *routen != 1 || w.Sec != 100 {
 		t.Fatalf("ohne Schalter unverändert: %+v, %v, %d", w, err, *routen)
+	}
+}
+
+func TestHoehenKachel(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "N50"), 0o755)
+	os.WriteFile(filepath.Join(dir, "N50", "N50E006.hgt"), []byte("hoehe"), 0o644)
+	s := &Server{HoeheDir: dir}
+	for _, c := range []struct {
+		k    string
+		code int
+	}{{"N50E006", 200}, {"N51E006", 404}, {"..%2Fx", 404}} {
+		r := httptest.NewRequest("GET", "/v1/hoehe/x", nil)
+		r.SetPathValue("kachel", c.k)
+		w := httptest.NewRecorder()
+		s.hoehe(w, r)
+		if w.Code != c.code {
+			t.Errorf("%s: %d", c.k, w.Code)
+		}
 	}
 }

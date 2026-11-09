@@ -7,6 +7,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'hang_messung.dart';
 import 'standort.dart';
 import 'tempo.dart';
 
@@ -16,6 +17,7 @@ const _bewegung = {
   'fuss': (0.6, 3.0),
   'eigen': (1.0, 14.0),
 };
+const _spurMax = 20000;
 const _lueckeMax = 5000.0; // ms; größere Lücken im GPS werden nicht überbrückt
 const _zeitMin = Duration(minutes: 2), _streckeMin = 150.0;
 
@@ -44,12 +46,20 @@ class _TempoSeiteState extends State<TempoSeite> {
   }
 
   Future<void> _messen(TempoProfil p) async {
-    final kmh = await Navigator.of(context).push<double>(MaterialPageRoute(builder: (_) => MessSeite(profil: p)));
-    if (kmh == null) return;
+    final r = await Navigator.of(context).push<(double, HangErgebnis?)>(MaterialPageRoute(builder: (_) => MessSeite(profil: p)));
+    if (r == null) return;
+    final (kmh, e) = r;
     await _aendern((_) {
-      p.kmh = kmh;
+      p.kmh = e != null && p.erlaubt(e.kmhEben) ? e.kmhEben : kmh;
       p.gemessen = DateTime.now();
+      if (e != null) {
+        p.auf = e.auf ?? p.auf;
+        p.ab = e.ab ?? p.ab;
+        p.zuFussAb = e.zuFussAb ?? p.zuFussAb;
+      }
     });
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_messText(p, e))));
   }
 
   /// Bearbeiten oder (neu) anlegen; gespeichert wird erst beim Übernehmen.
@@ -122,6 +132,13 @@ class _TempoSeiteState extends State<TempoSeite> {
             ]),
     );
   }
+}
+
+String _messText(TempoProfil p, HangErgebnis? e) {
+  if (e == null) return 'Tempo gespeichert. Die Steigung ließ sich nicht auswerten, die Hang-Regler bleiben.';
+  if (e.auf == null && e.ab == null && e.zuFussAb == null) return 'Tempo gespeichert. Für die Hang-Regler war zu wenig Steigung dabei.';
+  return 'Gemessen: eben ${tempoText(p.kmh)}, '
+      '${p.zuFussAb > 0 ? 'zu Fuß ab ${p.zuFussAb} %' : 'bergauf ${p.auf} %'}, bergab ${p.ab > 0 ? '+' : ''}${p.ab} %';
 }
 
 /// Stufen, was die Route meiden soll: Schlüssel wie in /v1/route, Text, für welche Profile.
@@ -231,8 +248,24 @@ class _ProfilSeiteState extends State<ProfilSeite> {
           ),
         ),
         if (!auto) ...[
-          const _Ueberschrift('Am Hang', 'Abweichung vom Tempo, voll ab 6 % Steigung'),
-          _hangRegler('Bergauf', p.auf, aufBereich, (v) => p.auf = v),
+          const _Ueberschrift('Am Hang', 'Stellt der Messgang ein, von Hand änderbar. Bergauf wird es stufenlos langsamer'),
+          if (p.eigen)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(children: [
+                Expanded(flex: 2, child: Text(p.zuFussAb == 0 ? 'Zu Fuß ab: nie' : 'Zu Fuß ab ${p.zuFussAb} % Steigung')),
+                Expanded(
+                  flex: 3,
+                  child: Slider(
+                    value: p.zuFussAb.toDouble(),
+                    max: zuFussMax.toDouble(),
+                    divisions: zuFussMax,
+                    onChanged: (v) => setState(() => p.zuFussAb = v.round()),
+                  ),
+                ),
+              ]),
+            ),
+          if (p.zuFussAb == 0) _hangRegler('Bergauf', p.auf, aufBereich, (v) => p.auf = v),
           _hangRegler('Bergab', p.ab, abBereich, (v) => p.ab = v),
         ],
         const _Ueberschrift('Meiden', 'Links egal, rechts so weit wie möglich'),
@@ -357,6 +390,8 @@ class _MessSeiteState extends State<MessSeite> {
   String? _fehler;
   bool _genau = false; // schon eine brauchbare Position?
   double _gehMs = 0, _strecke = 0, _jetzt = 0; // ms in Bewegung, m, m/s
+  final _spur = <SpurPunkt>[]; // bleibt auf dem Handy und verschwindet mit der Seite
+  bool _wertet = false;
 
   late final (double, double) _grenze = _bewegung[widget.profil.art]!;
   double get _kmh => _gehMs == 0 ? 0 : _strecke / _gehMs * 3600;
@@ -397,6 +432,7 @@ class _MessSeiteState extends State<MessSeite> {
         if (v >= _grenze.$1 && v <= _grenze.$2) {
           _gehMs += dt;
           _strecke += v * dt / 1000;
+          if (_spur.length < _spurMax) _spur.add(SpurPunkt(f.lat, f.lon, v * dt / 1000, dt / 1000));
         }
       }
     }
@@ -409,14 +445,16 @@ class _MessSeiteState extends State<MessSeite> {
     super.dispose();
   }
 
-  void _fertig() {
+  Future<void> _fertig() async {
     final kmh = (_kmh * 10).round() / 10;
     final p = widget.profil;
     if (!p.erlaubt(kmh)) {
       setState(() => _fehler = 'Gemessen ${tempoText(kmh)} – für ${artName[p.art]} gehen ${tempoText(p.min)} bis ${tempoText(p.max)}.');
       return;
     }
-    Navigator.of(context).pop(kmh);
+    setState(() => _wertet = true);
+    final e = await hangMessen(_spur, kmh, eigen: p.eigen);
+    if (mounted) Navigator.of(context).pop((kmh, e));
   }
 
   @override
@@ -432,7 +470,8 @@ class _MessSeiteState extends State<MessSeite> {
       body: ListView(padding: const EdgeInsets.all(16), children: [
         Text('${fuss ? 'Geh' : 'Fahr'} so, wie du „$name“ ${fuss ? 'gehst' : 'fährst'} – am besten draußen mit freiem Himmel. '
             'Lass die App offen, der Bildschirm bleibt an${fuss ? '' : ' (Handy sicher verstauen oder in die Halterung)'}. '
-            'Stehen an Ampeln zählt nicht mit.'),
+            'Stehen an Ampeln zählt nicht mit. '
+            'Nimm auch ein Stück bergauf und bergab mit, dann stellt die Messung die Hang-Regler selbst ein.'),
         const SizedBox(height: 24),
         if (_fehler != null)
           Text(_fehler!, style: TextStyle(color: t.colorScheme.error))
@@ -459,8 +498,8 @@ class _MessSeiteState extends State<MessSeite> {
         ],
         const SizedBox(height: 24),
         FilledButton(
-          onPressed: _reicht ? _fertig : null,
-          child: Text(_reicht ? '${tempoText(_kmh)} für „$name“ übernehmen' : 'Fertig'),
+          onPressed: _reicht && !_wertet ? _fertig : null,
+          child: Text(_wertet ? 'Steigung wird ausgewertet …' : _reicht ? '${tempoText(_kmh)} für „$name“ übernehmen' : 'Fertig'),
         ),
       ]),
     );

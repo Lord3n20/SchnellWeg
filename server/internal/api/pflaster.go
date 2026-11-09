@@ -26,8 +26,9 @@ const (
 	pflasterExtraM   = 500 // … oder so viele Meter, was mehr erlaubt
 	pflasterPruefen  = time.Minute
 
-	hangVoll   = 6.0 // % Steigung, ab der das volle Tempo bergauf/bergab gilt
-	hangMaxKMH = 200.0
+	hangVoll    = 6.0 // % Steigung, ab der das volle Tempo bergauf/bergab gilt
+	hangMaxKMH  = 200.0
+	hangMaxVoll = 30.0
 )
 
 // Pflasterliste liest die sortierten Way-IDs aus der Datei des Jobs und bemerkt neue Stände.
@@ -73,14 +74,17 @@ func (l *Pflasterliste) Aktuell() []uint32 {
 }
 
 // Hang rechnet das Tempo je nach Steigung: Eben bei 0 %, linear bis Auf bzw. Ab bei hangVoll, darüber gleich.
-type Hang struct{ Eben, Auf, Ab float64 }
+// Voll > 0 ersetzt hangVoll bergauf (z. B. die Steigung, ab der man das Longboard trägt).
+type Hang struct{ Eben, Auf, Ab, Voll float64 }
 
 func (h Hang) kmh(steigung float64) float64 {
-	ziel := h.Auf
+	ziel, voll := h.Auf, hangVoll
 	if steigung < 0 {
 		ziel, steigung = h.Ab, -steigung
+	} else if h.Voll > 0 {
+		voll = h.Voll
 	}
-	return h.Eben + (ziel-h.Eben)*min(steigung/hangVoll, 1)
+	return h.Eben + (ziel-h.Eben)*min(steigung/voll, 1)
 }
 
 // hang liefert die Tempi des Profils; nil, wenn keins gesetzt ist.
@@ -88,7 +92,7 @@ func (m *Meiden) hang(kmh float64) *Hang {
 	if m.KmhAuf <= 0 && m.KmhAb <= 0 {
 		return nil
 	}
-	h := Hang{kmh, m.KmhAuf, m.KmhAb}
+	h := Hang{Eben: kmh, Auf: m.KmhAuf, Ab: m.KmhAb, Voll: m.HangVoll}
 	if h.Auf <= 0 {
 		h.Auf = kmh
 	}

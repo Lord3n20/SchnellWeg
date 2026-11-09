@@ -66,6 +66,7 @@ func main() {
 	far := flag.Float64("far", 15000, "ohne Halt im Suchradius bis zu dieser Luftlinie in m weitersuchen (0 = aus)")
 	valhalla := flag.String("valhalla", "", "Valhalla-URL für echte Zugangswege (leer = Luftlinie)")
 	pflaster := flag.String("pflaster", "/addon_configs/*_routing_jobs/valhalla/current/pflaster.ids", "Wege mit Kopfsteinpflaster aus dem Job valhalla (Glob erlaubt, ohne Treffer keine Umgehung)")
+	hoehe := flag.String("hoehe", "/addon_configs/*_routing_jobs/hoehe", "Höhenkacheln für den Messgang der App (Glob erlaubt)")
 	kmh := flag.Float64("kmh", 4.3, "Gehtempo für Zugangswege in km/h")
 	direct := flag.Float64("direct", 3000, "reiner Fußweg Start → Ziel als Vergleich bis zu dieser Luftlinie in m (0 = aus)")
 	directMax := flag.Duration("direct_max", time.Hour, "… und höchstens so lange beim gewählten Gehtempo")
@@ -167,7 +168,7 @@ func main() {
 	} else if *geo != "" {
 		log.Print("Keine Suchliste gefunden, /v1/search ist aus")
 	}
-	srv := &api.Server{Geocode: geoIx, MapDir: rel(*mapDir), AppDir: rel(*appDir), DirectM: *direct, DirectMax: *directMax, AccessM: *access, FarM: *far, LangM: *lang, MaxTrips: 6, WaitLimit: 2 * time.Second, LiveWait: *rtWait}
+	srv := &api.Server{Geocode: geoIx, MapDir: rel(*mapDir), HoeheDir: *hoehe, AppDir: rel(*appDir), DirectM: *direct, DirectMax: *directMax, AccessM: *access, FarM: *far, LangM: *lang, MaxTrips: 6, WaitLimit: 2 * time.Second, LiveWait: *rtWait}
 	if *rtURL != "" {
 		// Zeitbudget der Quelle 6 s je Versuch (CLAUDE.md), Stände älter als 5 min gelten nicht mehr
 		srv.Live = &rt.Live{URL: *rtURL, Client: &http.Client{Timeout: 6 * time.Second}, MinAge: 30 * time.Second,
