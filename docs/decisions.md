@@ -586,6 +586,7 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - Profil-Schalter `pflaster`: Route holen, per `/trace_attributes` die Pflasterstücke finden, je Stück eine ~2-m-Box (`exclude_polygons`) und neu fragen, höchstens
   8 Runden. Gesperrt wird nur, was die Route benutzt, damit die Valhalla-Grenze (10 km Umfang) reicht. Nicht umgangen wird in 60 m um Start und Ziel und wenn der Weg
   länger würde als max(1,5 ×, +500 m); dann bleibt der beste erlaubte Weg, im Zweifel über Pflaster statt gar keiner.
+  Valhallas Grenze von 100 Ecken je Anfrage reicht dafür nicht (eine Altstadt-Route braucht schon in Runde 1 39 Boxen), im Dienst steht sie deshalb auf 1000.
 - Höhendaten (Skadi, 1°-Kacheln der Region, einmalig nach `hoehe/`) gehen in die Tiles; Fahrrad-Kosten und `use_hills` sehen damit Steigungen.
 - Profil-Felder `kmh_auf`/`kmh_ab`: linear von `kmh` (0 %) bis zum Wert (±6 %), darüber gleich; fehlt einer, gilt die Ebene. Die Zeit ist dann die Summe je Kante.
   Die App stellt das als Regler in Prozent vom Tempo ein (bergauf −90…0 %, bergab −50…+200 %) und rechnet erst beim Senden in km/h um, damit es dem gemessenen Tempo folgt.
