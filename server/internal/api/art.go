@@ -47,6 +47,7 @@ type Kosten struct {
 	Schritte    bool           // Abbiegehinweise mitliefern (Wege von Tür zu Tür)
 	Polygone    [][][2]float64 // Bereiche, die die Route meidet (Umfahrung, D-39)
 	BelagMeiden float64        // Stufe 0–1: bis zu welchem Belag die Route ausweicht (D-44)
+	BelagUmweg  int            // % Umweg für die Umgehung, 0 = belagUmwegStandard
 	Hang        *Hang          // Tempo je nach Steigung (D-44), nil = Valhallas Zeit
 }
 
@@ -72,7 +73,7 @@ func (a Art) kosten(walkKMH, kmh, scale float64) []Kosten {
 	}
 	if m := a.Meiden; m != nil {
 		for i := range k {
-			k[i].BelagMeiden, k[i].Hang = m.belagStufe(), m.hang(kmh)
+			k[i].BelagMeiden, k[i].BelagUmweg, k[i].Hang = m.belagStufe(), m.BelagUmweg, m.hang(kmh)
 		}
 	}
 	return k

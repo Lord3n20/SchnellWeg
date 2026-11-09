@@ -18,15 +18,16 @@ import (
 // Stücke, die sie davon benutzt, und fragt neu. So bleiben es wenige kleine Sperrflächen statt aller solchen Wege der Region.
 // Klasse k (1 = am schlechtesten) wird ab Stufe k × belagSchritt umgangen.
 const (
-	pflasterRunden   = 8       // so oft wird höchstens neu gefragt
-	pflasterMaxBoxen = 200     // Valhalla erlaubt 10 km Umfang, eine Box hat ~20 m
-	pflasterBoxLat   = 0.00002 // ~2 m: trifft die Kante, aber kaum Nachbarwege
-	pflasterBoxLon   = 0.00003
-	pflasterFreiM    = 60  // am Start und am Ziel lässt sich Pflaster nicht umgehen
-	pflasterUmweg    = 1.5 // so viel länger darf der Weg werden …
-	pflasterExtraM   = 500 // … oder so viele Meter, was mehr erlaubt
-	pflasterPruefen  = time.Minute
-	belagSchritt     = 0.2
+	pflasterRunden     = 8       // so oft wird höchstens neu gefragt
+	pflasterMaxBoxen   = 200     // Valhalla erlaubt 10 km Umfang, eine Box hat ~20 m
+	pflasterBoxLat     = 0.00002 // ~2 m: trifft die Kante, aber kaum Nachbarwege
+	pflasterBoxLon     = 0.00003
+	pflasterFreiM      = 60 // am Start und am Ziel lässt sich Pflaster nicht umgehen
+	belagUmwegStandard = 50 // % länger darf der Weg werden …
+	belagExtraM        = 10 // … oder so viele Meter je %, was mehr erlaubt
+	belagUmwegMax      = 300
+	pflasterPruefen    = time.Minute
+	belagSchritt       = 0.2
 
 	hangVoll    = 6.0 // % Steigung, ab der das volle Tempo bergauf/bergab gilt
 	hangMaxKMH  = 200.0
@@ -166,7 +167,11 @@ func (v *Valhalla) wegAnpassen(ctx context.Context, aLat, aLon, bLat, bLon float
 	}
 	t := v.kanten(ctx, weg.Shape, k.Costing)
 	if d := v.Belag.Aktuell(); k.BelagMeiden >= belagSchritt && len(d.ids) > 0 {
-		grenze := max(weg.M*pflasterUmweg, weg.M+pflasterExtraM)
+		p := float64(k.BelagUmweg)
+		if p <= 0 {
+			p = belagUmwegStandard
+		}
+		grenze := max(weg.M*(1+p/100), weg.M+p*belagExtraM)
 		beste, besteT, besteM := weg, t, math.Inf(1)
 		for runde := 0; len(t.Edges) > 0; runde++ {
 			boxen, m := pflasterStellen(t, d, k.BelagMeiden, pt{aLat, aLon}, pt{bLat, bLon})
