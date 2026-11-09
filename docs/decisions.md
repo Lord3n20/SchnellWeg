@@ -631,3 +631,4 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - Teilen: Text mit Ankunft und Fahrten über die Android-Auswahl; der Startort kommt bewusst nicht vor.
 - Kurzbefehle: die ersten vier Favoriten als dynamische Shortcuts (keine neue Berechtigung). Antippen plant von hier und jetzt. Kennung aus den
   Koordinaten, damit ein angepinnter Kurzbefehl beim Umsortieren nicht auf einen anderen Favoriten wechselt.
+- „Spätere Verbindungen“ unter der Liste: neue Suche ab einer Minute nach der spätesten Abfahrt mit Bus oder Bahn, gesetzt als geplante Abfahrtszeit (Zeit-Chip, Kreuz = wieder jetzt). Im Ankunftsmodus wechselt sie auf Abfahrt.

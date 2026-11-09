@@ -18,6 +18,15 @@ String verbindungText(Verbindung v, String zielName) => [
               'an ${_uhr(a.anRt ?? a.an)}${a.faelltAus ? ' (fällt aus)' : ''}',
     ].join('\n');
 
+/// Ab wann „Spätere Verbindungen“ sucht: eine Minute nach der spätesten Abfahrt mit Bus oder Bahn, nie aus der Vergangenheit.
+/// null, wenn die Liste keine solche Verbindung enthält (nur Fußweg oder Auto).
+DateTime? spaeterAb(List<Verbindung> v, DateTime jetzt) {
+  final mit = v.where((x) => x.fahrten > 0);
+  if (mit.isEmpty) return null;
+  final letzte = mit.map((x) => x.ab).reduce((a, b) => a.isAfter(b) ? a : b);
+  return (letzte.isBefore(jetzt) ? jetzt : letzte).add(const Duration(minutes: 1));
+}
+
 /// Android-Auswahl „Teilen“ mit [text].
 Future<void> teilen(String text) => const MethodChannel('schnellweg/teilen').invokeMethod('teilen', text);
 
