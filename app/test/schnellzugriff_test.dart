@@ -70,5 +70,14 @@ void main() {
       final t = verbindungText(v([{'mode': 'walk', 'dep': zeit(17, 5), 'arr': zeit(17, 30)}]), 'Kino');
       expect(t.split('\n'), hasLength(2));
     });
+
+    test('spätere Verbindungen suchen nach der letzten Abfahrt mit Fahrt', () {
+      Verbindung ab(int m, int fahrten) =>
+          Verbindung.json({'trips': fahrten, 'dep': zeit(17, m), 'arr': zeit(18, 0), 'legs': <Map<String, dynamic>>[]});
+      final jetzt = DateTime(2026, 11, 9, 17, 0);
+      expect(spaeterAb([ab(5, 1), ab(20, 2), ab(40, 0)], jetzt), DateTime(2026, 11, 9, 17, 21));
+      expect(spaeterAb([ab(40, 0)], jetzt), isNull);
+      expect(spaeterAb([ab(5, 1)], DateTime(2026, 11, 9, 17, 30)), DateTime(2026, 11, 9, 17, 31));
+    });
   });
 }

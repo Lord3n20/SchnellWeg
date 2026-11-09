@@ -476,6 +476,17 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     _routeBerechnen(von: f);
   }
 
+  /// Nächste Verbindungen nach der spätesten aus der Liste; das Kreuz am Zeit-Chip führt zurück zu „jetzt“.
+  Future<void> _spaeter() async {
+    final t = spaeterAb(_verbindungen ?? const [], DateTime.now());
+    if (t == null) return;
+    setState(() {
+      _zeit = t;
+      _ankunft = false;
+    });
+    await _routeBerechnen();
+  }
+
   /// Fahransicht (D-40) für die gewählte Autoroute.
   Future<void> _fahren(int i) async {
     final v = _verbindungen, ziel = _ziel, pos = _pos, api = _api;
@@ -930,6 +941,11 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
             onFahren: x.auto && i == _gewaehlt && _zeit == null && _start == null ? () => _fahren(i) : null,
             onAufzeichnen: x.auto || !_tempo.messbar || i != _gewaehlt || _zeit != null || _start != null ? null : _zeichnet ? _aufzeichnungBeenden : () => _aufzeichnen(i),
             zeichnet: _zeichnet),
+        if (v.any((x) => x.fahrten > 0))
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+            child: OutlinedButton.icon(onPressed: _spaeter, icon: const Icon(Icons.expand_more), label: const Text('Spätere Verbindungen')),
+          ),
       ]),
     );
   }
