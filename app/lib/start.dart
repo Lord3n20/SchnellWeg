@@ -5,6 +5,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:latlong2/latlong.dart';
 
 import 'abfahrten.dart';
@@ -19,7 +20,9 @@ import 'favoriten.dart';
 import 'halte_db.dart';
 import 'karte.dart';
 import 'kartenlager.dart';
+import 'lernen.dart';
 import 'losgehen.dart';
+import 'messung.dart';
 import 'namen.dart';
 import 'standort.dart';
 import 'tempo.dart';
@@ -115,6 +118,64 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     Losgehen.instanz.laden();
     WidgetsBinding.instance.addObserver(this);
     _starten();
+    _aufzeichnungPruefen();
+  }
+
+  bool _zeichnet = false; // eine Route wird gerade aufgezeichnet
+  bool _fragt = false;
+
+  /// Stand der Aufzeichnung holen und offene Fragen zu erkannten Fahrten stellen.
+  Future<void> _aufzeichnungPruefen() async {
+    final z = await Messung.routeOffen() && await Messung.laeuft();
+    if (!mounted) return;
+    setState(() => _zeichnet = z);
+    if (_fragt || _verdeckt) return;
+    _fragt = true;
+    try {
+      for (final f in await lernFragen()) {
+        if (!mounted) return;
+        final ja = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text('Linie ${f.linie} gefahren?'),
+            content: Text('Von ${f.vonName} bis ${f.nachName}. Die Antwort fließt in dein Profil ein.'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Nein')),
+              FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Ja')),
+            ],
+          ),
+        );
+        if (ja == null) return; // weggetippt: beim nächsten Öffnen wieder
+        await lernAntwort(f, ja);
+      }
+      await _tempoNeuLesen();
+    } finally {
+      _fragt = false;
+    }
+  }
+
+  Future<void> _aufzeichnen(int i) async {
+    final v = _verbindungen, ziel = _ziel;
+    if (v == null || ziel == null || i >= v.length) return;
+    final m = ScaffoldMessenger.of(context);
+    if (await Messung.offen() != null) {
+      m.showSnackBar(const SnackBar(content: Text('Beende zuerst die laufende Messung unter Profile.')));
+      return;
+    }
+    try {
+      await Messung.starten(_tempo.name, _tempo.anzeige, route: routeKopf(v[i], _halteDerVerbindung), ziel: (ziel.lat, ziel.lon));
+      if (mounted) setState(() => _zeichnet = true);
+    } on PlatformException {
+      m.showSnackBar(const SnackBar(content: Text('GPS ist aus oder nicht erlaubt.')));
+    }
+  }
+
+  Future<void> _aufzeichnungBeenden() async {
+    await Messung.abschliessen();
+    if (mounted) setState(() => _zeichnet = false);
+    Future.delayed(const Duration(seconds: 8), () {
+      if (mounted) _aufzeichnungPruefen();
+    });
   }
 
   @override
@@ -156,6 +217,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
         _wegBeobachten();
       }
       _tempoNeuLesen(); // die Schnelleinstellung „Verkehrsmittel“ kann es geändert haben
+      _aufzeichnungPruefen();
       if (_api != null) KartenLager.instanz.start(_api!); // prüft höchstens täglich
     } else if (s == AppLifecycleState.paused || s == AppLifecycleState.hidden) {
       _timer?.cancel();
@@ -411,7 +473,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     _pos = p;
     try {
       final (roh, rt) = await _api!.route(p.lat, p.lon, ziel.lat, ziel.lon, kmh: _tempo.kmh, art: _tempo.serverArt, meiden: _tempo.serverMeiden, ticket: _tempo.ticket, wegArt: _tempo.wegArt, fern: _tempo.fern, lang: lang, ab: _zeit, ankunft: _ankunft, knapp: true);
-      final v = nachRang(roh);
+      final v = nachGelerntem(nachRang(roh), _tempo);
       if (!mounted || _ziel != ziel || (von != null && v.isEmpty)) return;
       if (von != null) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Route neu berechnet')));
       setState(() {
@@ -796,7 +858,9 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
       onRefresh: _routeBerechnen,
       child: ListView(children: [
         for (final (i, x) in v.indexed) _VerbindungZeile(x, kmh: _tempo.kmh, zuFuss: _tempo.art == 'fuss', bezug: _ankunft ? null : _zeit ?? DateTime.now(), gewaehlt: i == _gewaehlt, onTap: () => _details(i),
-            onFahren: x.auto && i == _gewaehlt && _zeit == null ? () => _fahren(i) : null),
+            onFahren: x.auto && i == _gewaehlt && _zeit == null ? () => _fahren(i) : null,
+            onAufzeichnen: x.auto || !_tempo.messbar || i != _gewaehlt || _zeit != null ? null : _zeichnet ? _aufzeichnungBeenden : () => _aufzeichnen(i),
+            zeichnet: _zeichnet),
       ]),
     );
   }
@@ -865,7 +929,9 @@ class _VerbindungZeile extends StatelessWidget {
   final bool gewaehlt;
   final VoidCallback onTap;
   final VoidCallback? onFahren; // gewählte Autoroute: Fahransicht starten
-  const _VerbindungZeile(this.v, {required this.kmh, required this.zuFuss, this.bezug, required this.gewaehlt, required this.onTap, this.onFahren});
+  final VoidCallback? onAufzeichnen; // gewählte Route: aufzeichnen und daraus lernen (D-46)
+  final bool zeichnet;
+  const _VerbindungZeile(this.v, {required this.kmh, required this.zuFuss, this.bezug, required this.gewaehlt, required this.onTap, this.onFahren, this.onAufzeichnen, this.zeichnet = false});
 
   @override
   Widget build(BuildContext context) {
@@ -969,6 +1035,15 @@ class _VerbindungZeile extends StatelessWidget {
             Align(
               alignment: Alignment.centerRight,
               child: FilledButton.icon(onPressed: onFahren, icon: const Icon(Icons.navigation), label: const Text('Start')),
+            ),
+          if (onAufzeichnen != null)
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.icon(
+                onPressed: onAufzeichnen,
+                icon: Icon(zeichnet ? Icons.stop : Icons.fiber_manual_record),
+                label: Text(zeichnet ? 'Aufzeichnung beenden' : 'Start'),
+              ),
             ),
         ]),
       )),

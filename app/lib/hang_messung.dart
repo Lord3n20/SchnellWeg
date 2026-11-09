@@ -28,7 +28,8 @@ class HangErgebnis {
   final double kmhEben;
   final int? auf, ab, zuFussAb;
   final Map<int, Object?> belag; // Klasse → Regel, null = wie normal
-  const HangErgebnis(this.kmhEben, this.auf, this.ab, this.zuFussAb, [this.belag = const {}]);
+  final List<Stueck> stuecke; // woraus es berechnet ist; daraus lernt das Profil weiter (D-46)
+  const HangErgebnis(this.kmhEben, this.auf, this.ab, this.zuFussAb, [this.belag = const {}, this.stuecke = const []]);
 }
 
 (double, double, double) _summe(Iterable<Stueck> l) {
@@ -88,6 +89,7 @@ HangErgebnis hangAuswerten(List<Stueck> alle, double kmh, {required bool eigen, 
     _prozent(runter, eben, abBereich),
     zuFuss,
     belag,
+    alle,
   );
 }
 
@@ -96,8 +98,8 @@ double _rund(double x, int stellen) {
   return (x * f).round() / f;
 }
 
-/// Ganze Auswertung; null, wenn der Server sie nicht liefern kann (dann zählt nur das gemessene Tempo).
-Future<HangErgebnis?> hangMessen(List<SpurPunkt> spur, double kmh, {required bool eigen, String? fuss}) async {
+/// Fragt den Server nach Steigung und Belag der Strecke; null, wenn er sie nicht liefern kann.
+Future<List<Stueck>?> stueckeHolen(List<SpurPunkt> spur) async {
   Api? api;
   try {
     final Zugang? z = await Zugang.laden();
@@ -106,10 +108,9 @@ Future<HangErgebnis?> hangMessen(List<SpurPunkt> spur, double kmh, {required boo
     final antwort = await api.messung([
       for (final p in spur) [_rund(p.lat, 6), _rund(p.lon, 6), _rund(p.m, 1), _rund(p.s, 1)]
     ]);
-    final st = [
+    return [
       for (final x in antwort) Stueck((x['g'] as num).toDouble(), (x['m'] as num).toDouble(), (x['s'] as num).toDouble(), (x['c'] as num).toInt())
     ];
-    return st.isEmpty ? null : hangAuswerten(st, kmh, eigen: eigen, fuss: fuss);
   } on Exception {
     return null;
   } on TypeError {
@@ -117,4 +118,10 @@ Future<HangErgebnis?> hangMessen(List<SpurPunkt> spur, double kmh, {required boo
   } finally {
     api?.schliessen();
   }
+}
+
+/// Ganze Auswertung; null, wenn der Server sie nicht liefern kann (dann zählt nur das gemessene Tempo).
+Future<HangErgebnis?> hangMessen(List<SpurPunkt> spur, double kmh, {required bool eigen, String? fuss}) async {
+  final st = await stueckeHolen(spur);
+  return st == null || st.isEmpty ? null : hangAuswerten(st, kmh, eigen: eigen, fuss: fuss);
 }

@@ -8,19 +8,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'hang_messung.dart';
+import 'lernen.dart';
 import 'messung.dart';
 import 'standort.dart';
 import 'tempo.dart';
 
-const _genauMax = 20.0; // m; ungenauere Positionen zählen nicht
 /// Art → (min, max) m/s in Bewegung; darunter Stehen, darüber etwas anderes (Rennen, Bus, Auto).
 const _bewegung = {
   'fuss': (0.6, 3.0),
   'eigen': (1.0, 14.0),
 };
-const _spurMax = 15000;
-const _lueckeMax = 5000.0; // ms; größere Lücken im GPS werden nicht überbrückt
-const _zeitMin = Duration(minutes: 2), _streckeMin = 150.0;
 
 /// Unterpunkt „Profile“: auswählen, anlegen, bearbeiten, messen, löschen.
 class TempoSeite extends StatefulWidget {
@@ -30,7 +27,7 @@ class TempoSeite extends StatefulWidget {
   State<TempoSeite> createState() => _TempoSeiteState();
 }
 
-class _TempoSeiteState extends State<TempoSeite> {
+class _TempoSeiteState extends State<TempoSeite> with WidgetsBindingObserver {
   Tempo? _t;
   String? _offen; // Profil mit angefangener Messung
 
@@ -41,6 +38,25 @@ class _TempoSeiteState extends State<TempoSeite> {
       if (mounted) setState(() => _t = t);
     });
     _offenLaden();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // Beenden über die Benachrichtigung ändert das Profil im Hintergrund.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState s) {
+    if (s == AppLifecycleState.resumed && ModalRoute.of(context)?.isCurrent == true) _neuLesen();
+  }
+
+  Future<void> _neuLesen() async {
+    final t = await Tempo.oeffnen();
+    if (mounted) setState(() => _t = t);
+    await _offenLaden();
   }
 
   Future<void> _offenLaden() async {
@@ -54,28 +70,23 @@ class _TempoSeiteState extends State<TempoSeite> {
   }
 
   Future<void> _messen(TempoProfil gewaehlt) async {
+    if (await Messung.routeOffen()) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gerade wird eine Route aufgezeichnet. Beende sie zuerst.')));
+      return;
+    }
     // Eine angefangene Messung geht vor; gehört sie zu einem gelöschten Profil, ist sie nichts mehr wert.
     final offen = await Messung.offen();
     final p = _t!.profile.where((x) => x.name == offen && x.messbar).firstOrNull ?? gewaehlt;
     if (offen != null && p.name != offen) await Messung.verwerfen();
     if (!mounted) return;
     final r = await Navigator.of(context).push<(double, HangErgebnis?)>(MaterialPageRoute(builder: (_) => MessSeite(profil: p, fuss: _t!.profile.where((x) => x.art == 'fuss').firstOrNull?.name)));
-    if (r == null) return _offenLaden();
+    if (r == null) return _neuLesen();
     final (kmh, e) = r;
-    await _aendern((_) {
-      p.kmh = e != null && p.erlaubt(e.kmhEben) ? e.kmhEben : kmh;
-      p.gemessen = DateTime.now();
-      if (e != null) {
-        p.auf = e.auf ?? p.auf;
-        p.ab = e.ab ?? p.ab;
-        p.zuFussAb = e.zuFussAb ?? p.zuFussAb;
-        e.belag.forEach((k, v) => v == null ? p.belagRegeln.remove(k) : p.belagRegeln[k] = v);
-      }
-    });
+    await _aendern((_) => ergebnisAnwenden(p, kmh, e));
     await Messung.verwerfen(); // erst jetzt, das Ergebnis ist gespeichert
     await _offenLaden();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_messText(p, e))));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(messText(p, e))));
   }
 
   /// Bearbeiten oder (neu) anlegen; gespeichert wird erst beim Übernehmen.
@@ -151,14 +162,6 @@ class _TempoSeiteState extends State<TempoSeite> {
 }
 
 const _belagArten = [(1, 'Erde, Gras, Sand'), (2, 'Schotter'), (3, 'Grobes Pflaster'), (4, 'Kopfsteinpflaster'), (5, 'Gehwegplatten')];
-
-String _messText(TempoProfil p, HangErgebnis? e) {
-  if (e == null) return 'Tempo gespeichert. Hang und Belag ließen sich nicht auswerten, die Einstellungen bleiben.';
-  if (e.auf == null && e.ab == null && e.zuFussAb == null && e.belag.isEmpty) return 'Tempo gespeichert. Für Hang und Belag war zu wenig dabei.';
-  return 'Gemessen: eben ${tempoText(p.kmh)}, '
-      '${p.zuFussAb > 0 ? 'zu Fuß ab ${p.zuFussAb} %' : 'bergauf ${p.auf} %'}, bergab ${p.ab > 0 ? '+' : ''}${p.ab} %'
-      '${e.belag.isEmpty ? '' : ', ${e.belag.length} Beläge'}';
-}
 
 /// Stufen, was die Route meiden soll: Schlüssel wie in /v1/route, Text, für welche Profile.
 const _stufen = [
@@ -407,6 +410,17 @@ class _ProfilSeiteState extends State<ProfilSeite> {
               ),
           ],
         ],
+        if (!auto && (p.lern.isNotEmpty || p.busLern.isNotEmpty)) ...[
+          const _Ueberschrift('Gelernt', 'Aus aufgezeichneten Routen'),
+          for (final z in gelerntText(p)) ListTile(dense: true, title: Text(z)),
+          TextButton(
+            onPressed: () => setState(() {
+              p.lern = [];
+              p.busLern = {};
+            }),
+            child: const Text('Gelerntes zurücksetzen'),
+          ),
+        ],
       ]),
     );
   }
@@ -443,17 +457,20 @@ class MessSeite extends StatefulWidget {
 class _MessSeiteState extends State<MessSeite> {
   Timer? _takt;
   MessLeser? _leser;
-  bool _liest = false, _laeuft = true, _pausiert = false, _wertFehler = false;
-  Fix? _letzter;
+  bool _liest = false, _laeuft = true, _wertFehler = false;
+  bool _gesehen = false; // Aufzeichnung war schon da; verschwindet sie, hat die Benachrichtigung sie abgeschlossen
   String? _fehler;
-  bool _genau = false; // schon eine brauchbare Position?
-  double _gehMs = 0, _strecke = 0, _jetzt = 0; // ms in Bewegung, m, m/s
-  final _spur = <SpurPunkt>[]; // aus der Aufzeichnung des Dienstes
   bool _wertet = false;
 
   late final (double, double) _grenze = _bewegung[widget.profil.art]!;
-  double get _kmh => _gehMs == 0 ? 0 : _strecke / _gehMs * 3600;
-  bool get _reicht => _gehMs >= _zeitMin.inMilliseconds && _strecke >= _streckeMin;
+  late final _s = MessStand(_grenze);
+  bool get _pausiert => _s.pausiert;
+  double get _gehMs => _s.gehMs;
+  double get _strecke => _s.strecke;
+  double get _jetzt => _s.jetzt;
+  double get _kmh => _s.kmh;
+  bool get _reicht => _s.reicht;
+  bool get _genau => _s.genau;
 
   @override
   void initState() {
@@ -489,42 +506,19 @@ class _MessSeiteState extends State<MessSeite> {
     if (_liest || _leser == null) return;
     _liest = true;
     try {
-      for (final x in await _leser!.neue()) {
-        if (x is MessPause) {
-          _pausiert = x.an;
-          _letzter = null; // keine Strecke über die Pause hinweg
-        } else if (x is Fix && !_pausiert) {
-          _neu(x);
-        }
+      if (await _leser!.datei.exists()) {
+        _gesehen = true;
+      } else if (_gesehen && !_wertet) {
+        if (mounted) Navigator.of(context).pop();
+        return;
       }
+      (await _leser!.neue()).forEach(_s.aufnehmen);
       final l = await Messung.laeuft();
       if (mounted) setState(() => _laeuft = l);
     } on Exception {
       // beim nächsten Takt wieder
     } finally {
       _liest = false;
-    }
-  }
-
-  void _neu(Fix f) {
-    if (f.genau > _genauMax) {
-      _letzter = null; // keine Strecke über ungenaue Stellen hinweg
-      return;
-    }
-    final a = _letzter;
-    _letzter = f;
-    _genau = true;
-    if (a != null) {
-      final dt = f.zeit - a.zeit;
-      if (dt > 0 && dt <= _lueckeMax) {
-        final v = f.tempo >= 0 ? f.tempo : _abstand(a, f) / dt * 1000;
-        _jetzt = v;
-        if (v >= _grenze.$1 && v <= _grenze.$2) {
-          _gehMs += dt;
-          _strecke += v * dt / 1000;
-          if (_spur.length < _spurMax) _spur.add(SpurPunkt(f.lat, f.lon, v * dt / 1000, dt / 1000));
-        }
-      }
     }
   }
 
@@ -563,7 +557,7 @@ class _MessSeiteState extends State<MessSeite> {
       _wertFehler = false;
     });
     await Messung.anhalten();
-    final e = nurTempo ? null : await hangMessen(_spur, kmh, eigen: p.eigen, fuss: widget.fuss);
+    final e = nurTempo ? null : await hangMessen(_s.spur, kmh, eigen: p.eigen, fuss: widget.fuss);
     if (!mounted) return;
     if (e == null && !nurTempo) {
       setState(() {
@@ -580,8 +574,8 @@ class _MessSeiteState extends State<MessSeite> {
     final t = Theme.of(context);
     final name = widget.profil.anzeige, fuss = widget.profil.art == 'fuss';
     final fehlt = [
-      if (_gehMs < _zeitMin.inMilliseconds) 'noch ${_dauer(_zeitMin.inMilliseconds - _gehMs)}',
-      if (_strecke < _streckeMin) 'noch ${(_streckeMin - _strecke).ceil()} m',
+      if (_gehMs < messZeitMin.inMilliseconds) 'noch ${_dauer(messZeitMin.inMilliseconds - _gehMs)}',
+      if (_strecke < messStreckeMin) 'noch ${(messStreckeMin - _strecke).ceil()} m',
     ];
     return Scaffold(
       appBar: AppBar(title: Text('Messen: $name')),
@@ -610,7 +604,7 @@ class _MessSeiteState extends State<MessSeite> {
           if (fehlt.isNotEmpty) ...[
             const SizedBox(height: 8),
             LinearProgressIndicator(
-                value: min(_gehMs / _zeitMin.inMilliseconds, _strecke / _streckeMin).clamp(0, 1).toDouble()),
+                value: min(_gehMs / messZeitMin.inMilliseconds, _strecke / messStreckeMin).clamp(0, 1).toDouble()),
             const SizedBox(height: 4),
             Text('Für ein brauchbares Ergebnis: ${fehlt.join(', ')}', style: t.textTheme.bodySmall),
           ],
@@ -657,12 +651,4 @@ class _Wert extends StatelessWidget {
 String _dauer(double ms) {
   final s = (ms / 1000).round();
   return '${s ~/ 60}:${(s % 60).toString().padLeft(2, '0')} min';
-}
-
-/// Abstand in Metern (Haversine).
-double _abstand(Position a, Position b) {
-  const r = 6371000.0, rad = pi / 180;
-  final dLat = (b.lat - a.lat) * rad, dLon = (b.lon - a.lon) * rad;
-  final h = pow(sin(dLat / 2), 2) + cos(a.lat * rad) * cos(b.lat * rad) * pow(sin(dLon / 2), 2);
-  return 2 * r * asin(sqrt(h));
 }
