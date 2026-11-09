@@ -1,7 +1,11 @@
 package io.github.lord3n20.schnellweg
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ShortcutInfo
+import android.content.pm.ShortcutManager
+import android.graphics.drawable.Icon
 import android.location.Location
 import android.location.LocationManager
 import android.os.CancellationSignal
@@ -20,12 +24,14 @@ import io.flutter.plugin.common.MethodChannel
 // steuert den MessDienst (Messgang im Hintergrund, D-45), schnellweg/karte den KartenDienst (Download im Hintergrund),
 // schnellweg/aussteigen den AusstiegDienst (Ausstiegs-Erinnerung), schnellweg/sperrbildschirm, ob die Activity über dem
 // Sperrbildschirm erscheinen darf (nur solange die Detailansicht offen ist), schnellweg/losgehen den Losgeh-Wecker,
-// schnellweg/update das Selbstupdate.
+// schnellweg/update das Selbstupdate, schnellweg/kurzbefehl die Favoriten am App-Icon, schnellweg/teilen die Android-Auswahl „Teilen“.
 class MainActivity : FlutterActivity() {
     private val wartend = mutableListOf<MethodChannel.Result>()
     private var laufend: LocationListener? = null
     private var gefragt = false
     private val kalenderWartend = mutableListOf<MethodChannel.Result>()
+    private var kurzKanal: MethodChannel? = null
+    private var kurzOffen: Map<String, Any>? = null
 
     override fun configureFlutterEngine(engine: FlutterEngine) {
         super.configureFlutterEngine(engine)
@@ -128,6 +134,29 @@ class MainActivity : FlutterActivity() {
                 else -> LosgehWecker.kanal(this, call, result)
             }
         }
+        MethodChannel(engine.dartExecutor.binaryMessenger, "schnellweg/teilen").setMethodCallHandler { call, result ->
+            if (call.method != "teilen") return@setMethodCallHandler result.notImplemented()
+            startActivity(Intent.createChooser(
+                Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, call.arguments as String), null))
+            result.success(null)
+        }
+        kurzLesen(intent)
+        kurzKanal = MethodChannel(engine.dartExecutor.binaryMessenger, "schnellweg/kurzbefehl").apply {
+            setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "setzen" -> {
+                        @Suppress("UNCHECKED_CAST")
+                        kurzSetzen(call.arguments as List<Map<String, Any>>)
+                        result.success(null)
+                    }
+                    "abholen" -> {
+                        result.success(kurzOffen)
+                        kurzOffen = null
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        }
         MethodChannel(engine.dartExecutor.binaryMessenger, "schnellweg/update").setMethodCallHandler { call, result ->
             Selbstupdate.kanal(this, call, result)
         }
@@ -138,6 +167,39 @@ class MainActivity : FlutterActivity() {
                 if (wartend.size == 1) requestPermissions(
                     arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), ANFRAGE)
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (kurzLesen(intent)) kurzKanal?.invokeMethod("neu", null)
+    }
+
+    // Aus dem Verlauf (Letzte Apps) zählt der Kurzbefehl nicht noch einmal.
+    private fun kurzLesen(i: Intent?): Boolean {
+        if (i?.action != KURZBEFEHL || i.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return false
+        kurzOffen = mapOf(
+            "art" to (i.getStringExtra("art") ?: "karte"), "name" to (i.getStringExtra("name") ?: ""),
+            "detail" to (i.getStringExtra("detail") ?: ""),
+            "lat" to i.getDoubleExtra("lat", 0.0), "lon" to i.getDoubleExtra("lon", 0.0))
+        i.action = Intent.ACTION_MAIN
+        return true
+    }
+
+    // Die Kennung hängt am Ort: Ein aufs Homescreen gezogener Kurzbefehl zeigt auch nach dem Umsortieren denselben Favoriten.
+    private fun kurzSetzen(orte: List<Map<String, Any>>) {
+        runCatching {
+            val m = getSystemService(ShortcutManager::class.java)
+            m.setDynamicShortcuts(orte.take(m.maxShortcutCountPerActivity).map { o ->
+                ShortcutInfo.Builder(this, "ziel_${o["lat"]}_${o["lon"]}")
+                    .setShortLabel(o["name"] as String)
+                    .setIcon(Icon.createWithResource(this, R.drawable.kurz_stern))
+                    .setIntent(Intent(this, MainActivity::class.java).setAction(KURZBEFEHL)
+                        .putExtra("art", o["art"] as String).putExtra("name", o["name"] as String)
+                        .putExtra("detail", o["detail"] as String)
+                        .putExtra("lat", o["lat"] as Double).putExtra("lon", o["lon"] as Double))
+                    .build()
+            })
         }
     }
 
@@ -206,5 +268,8 @@ class MainActivity : FlutterActivity() {
 
     private fun karte(l: Location) = mapOf("lat" to l.latitude, "lon" to l.longitude, "genau" to l.accuracy.toDouble())
 
-    companion object { const val ANFRAGE = 7 }
+    companion object {
+        const val ANFRAGE = 7
+        const val KURZBEFEHL = "io.github.lord3n20.schnellweg.KURZBEFEHL"
+    }
 }
