@@ -108,6 +108,7 @@ func fahrtenSuchen(tt *raptor.Timetable, base time.Time, punkte [][4]float64) []
 			alle = append(alle, kandidatenAb(&tt.Routes[ri], tt.StopPos[halt][k], vs, besuche)...)
 		}
 	}
+	strecke := spurMessen(punkte)
 	slices.SortFunc(alle, func(a, b kandidat) int {
 		return cmp.Or(cmp.Compare(len(b.t), len(a.t)), cmp.Compare(a.streu, b.streu), cmp.Compare(a.t[0].v.last, b.t[0].v.last))
 	})
@@ -118,7 +119,7 @@ func fahrtenSuchen(tt *raptor.Timetable, base time.Time, punkte [][4]float64) []
 		if slices.ContainsFunc(belegt, func(x [2]int32) bool { return von < x[1] && x[0] < bis }) {
 			continue
 		}
-		f, ok := fahrtBewerten(tt, c, b0, punkte)
+		f, ok := fahrtBewerten(tt, c, b0, strecke)
 		if !ok {
 			continue
 		}
@@ -175,13 +176,13 @@ func versatz(plan int32, v *besuch) int32 {
 	return min(max(plan, v.first), v.last) - plan
 }
 
-func fahrtBewerten(tt *raptor.Timetable, c kandidat, b0 int64, punkte [][4]float64) (fahrtOut, bool) {
+func fahrtBewerten(tt *raptor.Timetable, c kandidat, b0 int64, strecke spurMeter) (fahrtOut, bool) {
 	erster, letzter := c.t[0].v, c.t[len(c.t)-1].v
 	dauer := letzter.first - erster.last
 	if dauer <= 0 {
 		return fahrtOut{}, false
 	}
-	m, _ := spurLaenge(punkte, b0+int64(erster.last), b0+int64(letzter.first))
+	m := strecke.laenge(b0+int64(erster.last), b0+int64(letzter.first))
 	innen, gehalten := len(c.t)-2, 0
 	for _, x := range c.t[1 : len(c.t)-1] {
 		if x.v.steht >= gehaltenAbS {
@@ -200,21 +201,31 @@ func fahrtBewerten(tt *raptor.Timetable, c kandidat, b0 int64, punkte [][4]float
 		Ab: b0 + int64(erster.last), An: b0 + int64(letzter.first), M: math.Round(m), WarteS: max(0, erster.last-erster.first), Sicher: sicher}, true
 }
 
-// spurLaenge summiert die Meter der Spur zwischen zwei Zeitpunkten.
-func spurLaenge(punkte [][4]float64, von, bis int64) (m float64, n int) {
-	var a *[4]float64
+// spurMeter hält die aufsummierten Meter je Punkt: Jeder Kandidat fragt die Länge ab, ohne die Spur erneut abzulaufen (D-48).
+type spurMeter struct {
+	zeit  []int64
+	summe []float64
+}
+
+func spurMessen(punkte [][4]float64) spurMeter {
+	s := spurMeter{make([]int64, len(punkte)), make([]float64, len(punkte))}
 	for i := range punkte {
-		p := &punkte[i]
-		if int64(p[2]) < von || int64(p[2]) > bis {
-			continue
+		s.zeit[i] = int64(punkte[i][2])
+		if i > 0 {
+			s.summe[i] = s.summe[i-1] + abstandM(punkte[i-1][0], punkte[i-1][1], punkte[i][0], punkte[i][1])
 		}
-		if a != nil {
-			m += abstandM(a[0], a[1], p[0], p[1])
-		}
-		a = p
-		n++
 	}
-	return m, n
+	return s
+}
+
+// laenge liefert die Meter zwischen zwei Zeitpunkten (beide einschließlich).
+func (s spurMeter) laenge(von, bis int64) float64 {
+	a, _ := slices.BinarySearch(s.zeit, von)
+	b, _ := slices.BinarySearch(s.zeit, bis+1)
+	if b <= a {
+		return 0
+	}
+	return s.summe[b-1] - s.summe[a]
 }
 
 func abstandM(aLat, aLon, bLat, bLon float64) float64 {

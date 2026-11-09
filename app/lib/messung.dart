@@ -111,8 +111,10 @@ class MessLeser {
     if (!await datei.exists()) return const [];
     final f = await datei.open();
     try {
+      final rest = await f.length() - _pos;
+      if (rest <= 0) return const [];
       await f.setPosition(_pos);
-      final daten = await f.read(1 << 24);
+      final daten = await f.read(rest.clamp(1, 1 << 24)); // die Messseite liest jede Sekunde: nicht jedes Mal 16 MB anfordern
       final ende = daten.lastIndexOf(10);
       if (ende < 0) return const [];
       _pos += ende + 1;
