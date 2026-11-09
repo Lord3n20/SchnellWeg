@@ -622,3 +622,12 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   (3) Wartezeit: ab 5 Beobachtungen werden Verbindungen mit längerem Umsteigen ausgeblendet. (4) Strecken je Halt-Paar: ab 3× ausgelassen ausgeblendet, ab 3× genutzt vorgezogen, wenn sie höchstens 3 min später ankommt.
   (3) und (4) wirken in der App auf die gelieferten Verbindungen, es bleibt immer mindestens eine. Von Hand gemiedene Busse ändert das Lernen nicht. In der Profilseite steht das Gelernte und lässt sich zurücksetzen.
 - Status: umgesetzt.
+
+## D-47 Abkürzungen: anderer Start, Rückweg, Teilen, Kurzbefehle am Icon (09.11.)
+- „Von“ ist wählbar (Suche wie beim Ziel), das Kreuz führt zurück zum eigenen Standort. „Rückweg“ tauscht Start und Ziel; vom eigenen
+  Standort aus wird er als Ziel festgehalten (Art `standort`, kein Favorit) und beim nächsten Tausch wieder zum Live-Standort.
+- Mit gewähltem Start ist man nicht dort: Abweichungs-GPS, Fahransicht, Aufzeichnung (D-46), knappe Verbindungen (D-31) und der Gehhinweis (D-33)
+  sind dann aus, weil sie alle voraussetzen, dass man jetzt am Start steht. Der Server bekommt nur andere Koordinaten, die API bleibt gleich.
+- Teilen: Text mit Ankunft und Fahrten über die Android-Auswahl; der Startort kommt bewusst nicht vor.
+- Kurzbefehle: die ersten vier Favoriten als dynamische Shortcuts (keine neue Berechtigung). Antippen plant von hier und jetzt. Kennung aus den
+  Koordinaten, damit ein angepinnter Kurzbefehl beim Umsortieren nicht auf einen anderen Favoriten wechselt.

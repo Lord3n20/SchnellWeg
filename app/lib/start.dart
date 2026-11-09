@@ -24,6 +24,7 @@ import 'lernen.dart';
 import 'losgehen.dart';
 import 'messung.dart';
 import 'namen.dart';
+import 'schnellzugriff.dart';
 import 'standort.dart';
 import 'tempo.dart';
 import 'verkehr.dart';
@@ -91,6 +92,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
   bool _rt = false;
   String? _hinweis;
   Ort? _ziel;
+  Ort? _start; // null = eigener Standort
   _GewaehlterHalt? _halt;
   List<Verbindung>? _verbindungen; // null = wird berechnet
   bool _routeRt = false;
@@ -114,11 +116,30 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
   @override
   void initState() {
     super.initState();
-    Favoriten.instanz.laden();
+    Favoriten.instanz.laden().then((_) {
+      if (!mounted) return;
+      _kurzbefehleSetzen();
+      Favoriten.instanz.addListener(_kurzbefehleSetzen);
+    });
+    Kurzbefehle.beiNeu(_kurzbefehlAbholen);
     Losgehen.instanz.laden();
     WidgetsBinding.instance.addObserver(this);
     _starten();
     _aufzeichnungPruefen();
+  }
+
+  void _kurzbefehleSetzen() => Kurzbefehle.setzen(Favoriten.instanz.liste.take(4).toList());
+
+  /// App über einen Favoriten am Icon geöffnet: Route von hier und jetzt dorthin.
+  Future<void> _kurzbefehlAbholen() async {
+    if (_api == null) return; // bleibt liegen, bis der Zugang steht
+    final o = await Kurzbefehle.abholen();
+    if (o == null || !mounted) return;
+    Navigator.of(context).popUntil((r) => r.isFirst);
+    _start = null;
+    _zeit = null;
+    _ankunft = false;
+    await _zielSetzen(o);
   }
 
   bool _zeichnet = false; // eine Route wird gerade aufgezeichnet
@@ -201,6 +222,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
 
   @override
   void dispose() {
+    Favoriten.instanz.removeListener(_kurzbefehleSetzen);
     seitenBeobachter.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
@@ -255,6 +277,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     });
     KartenLager.instanz.start(_api!);
     Aktualisieren.instanz.start(_api!);
+    _kurzbefehlAbholen();
   }
 
   Future<void> _zugangEinrichten() async {
@@ -281,6 +304,39 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     final o = await Navigator.of(context).push<Ort>(
         MaterialPageRoute(builder: (_) => ZielSuche(api: _api!, db: _db!, nahe: _pos)));
     if (o != null) await _zielSetzen(o);
+  }
+
+  Future<void> _startWaehlen() async {
+    if (_api == null || _db == null) return;
+    final o = await Navigator.of(context).push<Ort>(MaterialPageRoute(
+        builder: (_) => ZielSuche(api: _api!, db: _db!, nahe: _pos, hinweis: 'Start: Haltestelle, Adresse, Ort …')));
+    if (o != null) await _startSetzen(o);
+  }
+
+  /// [o] null = wieder vom eigenen Standort.
+  Future<void> _startSetzen(Ort? o) async {
+    setState(() {
+      _start = o;
+      _strecken = [];
+    });
+    if (_ziel != null) await _routeBerechnen();
+  }
+
+  Future<void> _rueckweg() async {
+    final ziel = _ziel;
+    if (ziel == null) return;
+    final t = tauschen(_start, ziel, _pos);
+    if (t == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Standort noch nicht bekannt.')));
+      return;
+    }
+    setState(() {
+      _start = t.$1;
+      _ziel = t.$2;
+      _halt = null;
+      _strecken = [];
+    });
+    await _routeBerechnen();
   }
 
   Future<void> _zielSetzen(Ort o) async {
@@ -338,7 +394,8 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
   /// Fußwege folgen der Wegform vom Server (sonst gerade), Fahrten verbinden ihre Halte der Reihe nach
   /// (Linienverlauf liefert keiner der Feeds).
   Future<void> _waehlen(int i) async {
-    final v = _verbindungen, ziel = _ziel, pos = _pos;
+    final v = _verbindungen, ziel = _ziel, von = _start;
+    final pos = von == null ? _pos : Position(von.lat, von.lon, 0);
     if (v == null || i >= v.length || ziel == null || pos == null) return;
     final halte = await _db!.holen([
       for (final a in v[i].abschnitte) ...[?a.von?.id, ?a.nach?.id, ...a.halte]
@@ -364,7 +421,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
         strecken.add(Strecke([von, ...form, nach], !a.auto, a.auto ? 'Auto' : ''));
       }
     }
-    if (!mounted || _ziel != ziel) return;
+    if (!mounted || _ziel != ziel || _start != von) return;
     setState(() {
       _gewaehlt = i;
       _strecken = strecken;
@@ -385,7 +442,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
   void _wegBeobachten() {
     _wegStopp();
     final v = _verbindungen;
-    if (v == null || _gewaehlt >= v.length || _zeit != null || _verdeckt || _strecken.isEmpty) return;
+    if (v == null || _gewaehlt >= v.length || _zeit != null || _start != null || _verdeckt || _strecken.isEmpty) return;
     final erste = v[_gewaehlt].abschnitte.where((a) => a.fahrt).firstOrNull;
     if (erste != null && !_strecken.first.fuss) return; // beginnt direkt mit der Fahrt
     final weg = erste == null ? [for (final s in _strecken) ...s.punkte] : _strecken.first.punkte;
@@ -458,7 +515,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
 
   /// [von]: abgewichen, ab hier neu berechnen. Die alte Route bleibt stehen, bis die neue da ist, und bleibt bei einem Fehler.
   Future<void> _routeBerechnen({bool lang = false, Position? von}) async {
-    final ziel = _ziel;
+    final ziel = _ziel, start = _start;
     if (ziel == null || _api == null) return;
     if (von == null) {
       _wegStopp();
@@ -468,13 +525,13 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
         _langFrage = false;
       });
     }
-    final p = von ?? await Standort.holen() ?? _pos;
+    final p = von ?? (start != null ? Position(start.lat, start.lon, 0) : await Standort.holen() ?? _pos);
     if (p == null) return setState(() => _routeHinweis = 'Kein Standort (Berechtigung oder GPS aus?)');
-    _pos = p;
+    if (start == null) _pos = p; // ein gewählter Start bewegt den eigenen Punkt nicht
     try {
-      final (roh, rt) = await _api!.route(p.lat, p.lon, ziel.lat, ziel.lon, kmh: _tempo.kmh, art: _tempo.serverArt, meiden: _tempo.serverMeiden, ticket: _tempo.ticket, wegArt: _tempo.wegArt, fern: _tempo.fern, lang: lang, ab: _zeit, ankunft: _ankunft, knapp: true);
+      final (roh, rt) = await _api!.route(p.lat, p.lon, ziel.lat, ziel.lon, kmh: _tempo.kmh, art: _tempo.serverArt, meiden: _tempo.serverMeiden, ticket: _tempo.ticket, wegArt: _tempo.wegArt, fern: _tempo.fern, lang: lang, ab: _zeit, ankunft: _ankunft, knapp: start == null);
       final v = nachGelerntem(nachRang(roh), _tempo);
-      if (!mounted || _ziel != ziel || (von != null && v.isEmpty)) return;
+      if (!mounted || _ziel != ziel || _start != start || (von != null && v.isEmpty)) return;
       if (von != null) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Route neu berechnet')));
       setState(() {
         _verbindungen = v;
@@ -485,7 +542,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
       final normal = _verbindungen!.indexWhere((x) => x.eilKmh == null);
       await _waehlen(normal < 0 ? 0 : normal);
     } on ApiFehler catch (e) {
-      if (!mounted || _ziel != ziel || von != null) return;
+      if (!mounted || _ziel != ziel || _start != start || von != null) return;
       setState(() {
         _verbindungen = [];
         _langFrage = e.art == 'fussweg_lang';
@@ -672,7 +729,13 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
           child: Column(children: [
-            _Feld(label: 'Von', text: 'Mein Standort', icon: Icons.my_location, onIcon: () => _aktualisieren(standortNeu: true)),
+            _Feld(
+              label: 'Von',
+              text: _start?.name ?? 'Mein Standort',
+              onTap: _startWaehlen,
+              icon: _start == null ? Icons.my_location : Icons.close,
+              onIcon: _start == null ? () => _aktualisieren(standortNeu: true) : () => _startSetzen(null),
+            ),
             const SizedBox(height: 8),
             _Feld(
               label: 'Nach',
@@ -709,6 +772,11 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
                         setState(() => _tempo = p);
                         _routeBerechnen();
                       },
+                    ),
+                    ActionChip(
+                      avatar: const Icon(Icons.swap_vert, size: 18),
+                      label: const Text('Rückweg'),
+                      onPressed: _rueckweg,
                     ),
                   ]),
                 ),
@@ -804,7 +872,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
               Text(_ziel == null ? 'Haltestellen in der Nähe' : 'Verbindungen',
                   style: Theme.of(context).textTheme.titleSmall),
               const Spacer(),
-              if (_ziel != null) FavoritStern(_ziel!, klein: true),
+              if (_ziel != null && _ziel!.art != artHier) FavoritStern(_ziel!, klein: true),
               if (_ziel == null ? _gruppen.isNotEmpty && !_rt : (_verbindungen?.any((v) => v.fahrten > 0) ?? false) && !_routeRt)
                 Text('nur Fahrplan', style: TextStyle(fontSize: 12, color: farbe.outline)),
             ]),
@@ -835,6 +903,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     if (ziel == null) return;
     _zeit = p.termin.beginn.subtract(Duration(minutes: Losgehen.instanz.puffer));
     _ankunft = true;
+    _start = null; // der Wecker rechnet vom eigenen Standort
     _zielSetzen(Ort(ziel.art, p.termin.titel, ziel.name, ziel.lat, ziel.lon));
   }
 
@@ -857,9 +926,9 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     return RefreshIndicator(
       onRefresh: _routeBerechnen,
       child: ListView(children: [
-        for (final (i, x) in v.indexed) _VerbindungZeile(x, kmh: _tempo.kmh, zuFuss: _tempo.art == 'fuss', bezug: _ankunft ? null : _zeit ?? DateTime.now(), gewaehlt: i == _gewaehlt, onTap: () => _details(i),
-            onFahren: x.auto && i == _gewaehlt && _zeit == null ? () => _fahren(i) : null,
-            onAufzeichnen: x.auto || !_tempo.messbar || i != _gewaehlt || _zeit != null ? null : _zeichnet ? _aufzeichnungBeenden : () => _aufzeichnen(i),
+        for (final (i, x) in v.indexed) _VerbindungZeile(x, kmh: _tempo.kmh, zuFuss: _tempo.art == 'fuss', bezug: _ankunft || _start != null ? null : _zeit ?? DateTime.now(), gewaehlt: i == _gewaehlt, onTap: () => _details(i),
+            onFahren: x.auto && i == _gewaehlt && _zeit == null && _start == null ? () => _fahren(i) : null,
+            onAufzeichnen: x.auto || !_tempo.messbar || i != _gewaehlt || _zeit != null || _start != null ? null : _zeichnet ? _aufzeichnungBeenden : () => _aufzeichnen(i),
             zeichnet: _zeichnet),
       ]),
     );

@@ -11,6 +11,7 @@ import 'aussteigen.dart';
 import 'halte_db.dart';
 import 'karte.dart';
 import 'namen.dart';
+import 'schnellzugriff.dart';
 import 'sperrbildschirm.dart';
 import 'verkehr.dart';
 
@@ -37,7 +38,10 @@ class Details extends StatelessWidget {
     return UeberSperrbildschirm(child: Scaffold(
       appBar: AppBar(
         title: Text('${_uhr(v.ab)} – ${_uhr(v.ankunft)} · ${minuten(v.ankunft.difference(v.ab))} min'),
-        actions: [if (v.fahrten > 0) ErinnerungKnopf(v: v, halte: halte)],
+        actions: [
+          IconButton(icon: const Icon(Icons.share), tooltip: 'Teilen', onPressed: () => teilen(verbindungText(v, zielName))),
+          if (v.fahrten > 0) ErinnerungKnopf(v: v, halte: halte),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(20),
           child: Padding(

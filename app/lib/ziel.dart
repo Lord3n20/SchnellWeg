@@ -19,7 +19,8 @@ class ZielSuche extends StatefulWidget {
   final Api api;
   final HalteDb db;
   final Position? nahe; // schon bekannter Standort der Startseite (spart den GPS-Start)
-  const ZielSuche({super.key, required this.api, required this.db, this.nahe});
+  final String hinweis; // Platzhalter im Suchfeld
+  const ZielSuche({super.key, required this.api, required this.db, this.nahe, this.hinweis = 'Ziel: Haltestelle, Adresse, Ort …'});
 
   @override
   State<ZielSuche> createState() => _ZielSucheState();
@@ -128,7 +129,7 @@ class _ZielSucheState extends State<ZielSuche> {
         title: TextField(
           controller: _feld,
           autofocus: true,
-          decoration: const InputDecoration(hintText: 'Ziel: Haltestelle, Adresse, Ort …', border: InputBorder.none),
+          decoration: InputDecoration(hintText: widget.hinweis, border: InputBorder.none),
           textInputAction: TextInputAction.search,
           onChanged: _eingabe,
           onSubmitted: _suchen,
