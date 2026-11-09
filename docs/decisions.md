@@ -588,6 +588,8 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   länger würde als max(1,5 ×, +500 m); dann bleibt der beste erlaubte Weg, im Zweifel über Pflaster statt gar keiner.
 - Höhendaten (Skadi, 1°-Kacheln der Region, einmalig nach `hoehe/`) gehen in die Tiles; Fahrrad-Kosten und `use_hills` sehen damit Steigungen.
 - Profil-Felder `kmh_auf`/`kmh_ab`: linear von `kmh` (0 %) bis zum Wert (±6 %), darüber gleich; fehlt einer, gilt die Ebene. Die Zeit ist dann die Summe je Kante.
+  Die App stellt das als Regler in Prozent vom Tempo ein (bergauf −90…0 %, bergab −50…+200 %) und rechnet erst beim Senden in km/h um, damit es dem gemessenen Tempo folgt.
+  Im Messgang mitmessen wurde verworfen: GPS-Höhe ist zu ungenau, und die Spur soll auf dem Handy bleiben.
 - Grenzen: Zu- und Abgangswege zu Haltestellen kommen aus der Matrix, ihre Zeit bleibt eben und ohne Pflaster-Umweg; nur ihre Form umgeht Pflaster. Der Hang ändert die Zeit, nicht
   die Wahl des Wegs (die macht weiter Valhalla, höchstens über `use_hills`).
 - Status: umgesetzt.

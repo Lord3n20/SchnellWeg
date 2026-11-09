@@ -149,25 +149,11 @@ class _ProfilSeiteState extends State<ProfilSeite> {
   late final TempoProfil p = widget.p;
   late final _name = TextEditingController(text: p.titel ?? (widget.neu ? '' : p.anzeige));
   late final _tempo = TextEditingController(text: p.kmh.toString().replaceAll('.', ','));
-  late final _auf = TextEditingController(text: _hangText('kmh_auf'));
-  late final _ab = TextEditingController(text: _hangText('kmh_ab'));
-
-  String _hangText(String k) => p.stufe(k) > 0 ? p.stufe(k).toString().replaceAll('.', ',') : '';
-
-  /// Tempo bergauf/bergab: leer = wie in der Ebene (null), sonst 0 < v ≤ 200; -1 = ungültig.
-  double? _hang(TextEditingController c) {
-    final t = c.text.trim();
-    if (t.isEmpty) return null;
-    final v = double.tryParse(t.replaceAll(',', '.'));
-    return v != null && v > 0 && v <= 200 ? v : -1;
-  }
 
   @override
   void dispose() {
     _name.dispose();
     _tempo.dispose();
-    _auf.dispose();
-    _ab.dispose();
     super.dispose();
   }
 
@@ -176,7 +162,7 @@ class _ProfilSeiteState extends State<ProfilSeite> {
     return v != null && p.erlaubt(v) ? v : null;
   }
 
-  bool get _ok => _kmh != null && (!p.eigen || _name.text.trim().isNotEmpty) && _hang(_auf) != -1 && _hang(_ab) != -1;
+  bool get _ok => _kmh != null && (!p.eigen || _name.text.trim().isNotEmpty);
 
   void _uebernehmen() {
     if ((_kmh! - p.kmh).abs() >= 0.05) {
@@ -184,19 +170,28 @@ class _ProfilSeiteState extends State<ProfilSeite> {
       p.gemessen = null;
     }
     if (p.eigen) p.titel = _name.text.trim();
-    if (p.messbar) {
-      p.setzen('kmh_auf', _hang(_auf));
-      p.setzen('kmh_ab', _hang(_ab));
-    }
     if (p.meiden['bus'] == true || p.meiden['oev'] == true) p.meiden.remove('bus_min'); // ausgeblendet, soll nicht mitgehen
     Navigator.pop(context, p);
   }
 
-  Widget _hangFeld(String titel, TextEditingController c) => TextField(
-        controller: c,
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        decoration: InputDecoration(labelText: titel, suffixText: 'km/h', helperText: 'leer = wie in der Ebene', errorText: _hang(c) == -1 ? 'über 0 bis 200' : null),
-        onChanged: (_) => setState(() {}),
+  Widget _hangRegler(String titel, int wert, (int, int) b, void Function(int) setzen) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(children: [
+          Expanded(
+            flex: 2,
+            child: Text('$titel: ${wert == 0 ? 'wie im Schnitt' : '${wert.abs()} % ${wert < 0 ? 'langsamer' : 'schneller'}'}'),
+          ),
+          Expanded(
+            flex: 3,
+            child: Slider(
+              value: wert.toDouble(),
+              min: b.$1.toDouble(),
+              max: b.$2.toDouble(),
+              divisions: (b.$2 - b.$1) ~/ hangSchritt,
+              onChanged: (v) => setState(() => setzen(v.round())),
+            ),
+          ),
+        ]),
       );
 
   Widget _schalter(String titel, String k, {String? unter}) => SwitchListTile(
@@ -235,15 +230,11 @@ class _ProfilSeiteState extends State<ProfilSeite> {
             onChanged: (_) => setState(() {}),
           ),
         ),
-        if (!auto)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Row(children: [
-              Expanded(child: _hangFeld('Bergauf', _auf)),
-              const SizedBox(width: 12),
-              Expanded(child: _hangFeld('Bergab', _ab)),
-            ]),
-          ),
+        if (!auto) ...[
+          const _Ueberschrift('Am Hang', 'Abweichung vom Tempo, voll ab 6 % Steigung'),
+          _hangRegler('Bergauf', p.auf, aufBereich, (v) => p.auf = v),
+          _hangRegler('Bergab', p.ab, abBereich, (v) => p.ab = v),
+        ],
         const _Ueberschrift('Meiden', 'Links egal, rechts so weit wie möglich'),
         if (p.eigen)
           _schalter('Fußwege', 'fusswege', unter: 'Route über Straßen und Radwege; Fußwege nur, wenn es sonst keinen Weg gibt'),

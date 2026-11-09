@@ -53,6 +53,9 @@ const _alteFuss = {'normal', 'schnell'};
 /// Puffer ums Gehtempo in beide Richtungen (D-33): so weit daneben gilt noch als normales Tempo.
 const tempoPuffer = 0.2;
 
+/// Abweichung vom Tempo am Hang in % (D-44), Schritte wie der Regler.
+const aufBereich = (-90, 0), abBereich = (-50, 200), hangSchritt = 5;
+
 enum GehStufe { entspannter, normal, schneller }
 
 /// Wie man zum ersten Halt gehen muss: Zugangsweg `weg` (beim Gehtempo `kmh` gerechnet), `frei` bis zur Abfahrt.
@@ -73,6 +76,7 @@ class TempoProfil {
   Map<String, dynamic> meiden; // Stufen 0–1 und Schalter wie in /v1/route (D-34); fehlt = egal
   bool ticket; // Fahrradticket nötig: nur Anzeige in der App
   bool fern; // Fernverkehr zulassen
+  int auf = 0, ab = 0; // bergauf/bergab: Abweichung vom Tempo in % (D-44)
 
   TempoProfil(this.name, this.art, this.kmh, [this.gemessen]) : meiden = {}, ticket = false, fern = false;
 
@@ -86,6 +90,15 @@ class TempoProfil {
         ticket = j['ticket'] == true,
         fern = j['fern'] == true {
     if (!erlaubt(kmh)) throw const FormatException('kmh');
+    auf = _prozent(j['auf'], meiden.remove('kmh_auf'), aufBereich);
+    ab = _prozent(j['ab'], meiden.remove('kmh_ab'), abBereich);
+  }
+
+  /// Gespeicherte Abweichung; 0.2.4 hat stattdessen km/h unter `meiden` abgelegt.
+  int _prozent(Object? p, Object? alt, (int, int) b) {
+    final v = p is num ? p.toDouble() : (alt is num && alt > 0 ? (alt / kmh - 1) * 100 : 0.0);
+    if (!v.isFinite) return 0;
+    return ((v / hangSchritt).round() * hangSchritt).clamp(b.$1, b.$2);
   }
 
   static String? _titel(Object? t) => t is String && t.trim().isNotEmpty ? t : null;
@@ -111,8 +124,19 @@ class TempoProfil {
   double get max => grenzen[art]!.$2;
 
   /// Für /v1/route: `art` nur bei festen Regeln (Auto; zu Fuß ohne Meiden wie ältere Apps), sonst entscheidet `meiden`.
-  String? get serverArt => art == 'auto' || (art == 'fuss' && meiden.isEmpty) ? art : null;
-  Map<String, dynamic>? get serverMeiden => meiden.isEmpty && !eigen ? null : meiden;
+  String? get serverArt => art == 'auto' || (art == 'fuss' && _ohneRegeln) ? art : null;
+  Map<String, dynamic>? get serverMeiden => _ohneRegeln && !eigen
+      ? null
+      : {
+          ...meiden,
+          if (art != 'auto' && auf != 0) 'kmh_auf': _hangKmh(auf),
+          if (art != 'auto' && ab != 0) 'kmh_ab': _hangKmh(ab),
+        };
+
+  bool get _ohneRegeln => meiden.isEmpty && (art == 'auto' || auf == 0 && ab == 0);
+
+  /// Der Server nimmt km/h bis 200 an; so folgt der Hang dem gemessenen Tempo.
+  double _hangKmh(int prozent) => (kmh * (1 + prozent / 100)).clamp(0.01, 200.0).toDouble();
 
   double stufe(String k) => (meiden[k] as num?)?.toDouble() ?? 0;
 
@@ -129,6 +153,8 @@ class TempoProfil {
         if (meiden.isNotEmpty) 'meiden': meiden,
         if (ticket) 'ticket': true,
         if (fern) 'fern': true,
+        if (auf != 0) 'auf': auf,
+        if (ab != 0) 'ab': ab,
       };
 }
 
