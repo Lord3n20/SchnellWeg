@@ -320,11 +320,18 @@ class Tempo {
   /// Nur das aktive Profil (für die Startseite).
   static Future<TempoProfil> laden() async => (await oeffnen()).aktuell;
 
-  /// Das zuletzt gestartete Speichern; Tests warten darauf statt auf eine feste Zeit.
-  static Future<void> letztesSpeichern = Future<void>.value();
+  /// Wie viele Speichervorgänge gerade laufen; Tests warten darauf statt auf eine feste Zeit.
+  static int speichertGerade = 0;
 
   /// Über eine eigene Zwischendatei: rename ist atomar, Lesende und die Kachel sehen nie einen halben Stand.
-  Future<void> speichern() => letztesSpeichern = _speichern();
+  Future<void> speichern() async {
+    speichertGerade++;
+    try {
+      await _speichern();
+    } finally {
+      speichertGerade--;
+    }
+  }
 
   Future<void> _speichern() async {
     final f = await _datei('tempo.json');

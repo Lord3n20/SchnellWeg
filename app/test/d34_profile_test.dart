@@ -33,10 +33,9 @@ Future<void> _warten(WidgetTester t) async {
   for (var i = 0; i < 200; i++) {
     await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 5)));
     await t.pump();
-    if (i >= 4 && find.byType(CircularProgressIndicator).evaluate().isEmpty) break;
+    // Auf langsamen Rechnern (CI) ist die Datei nach ein paar Takten noch nicht geschrieben.
+    if (i >= 4 && Tempo.speichertGerade == 0 && find.byType(CircularProgressIndicator).evaluate().isEmpty) break;
   }
-  // Auf langsamen Rechnern (CI) ist die Datei nach ein paar Takten noch nicht geschrieben.
-  await t.runAsync(() => Tempo.letztesSpeichern);
   await t.pumpAndSettle();
 }
 
