@@ -91,10 +91,13 @@ class AppStand {
   final String version, sha256;
   final int code, bytes;
 
-  AppStand(this.version, this.code, this.sha256, this.bytes);
+  /// Kurze Zusammenfassung, was das Update ändert; fehlt bei älteren Servern.
+  final String? hinweis;
 
-  factory AppStand.json(Map<String, dynamic> j) =>
-      AppStand(j['version'] as String, (j['code'] as num).toInt(), j['sha256'] as String, (j['bytes'] as num).toInt());
+  AppStand(this.version, this.code, this.sha256, this.bytes, [this.hinweis]);
+
+  factory AppStand.json(Map<String, dynamic> j) => AppStand(j['version'] as String, (j['code'] as num).toInt(),
+      j['sha256'] as String, (j['bytes'] as num).toInt(), (j['hinweis'] as String?)?.trim());
 }
 
 class HaltRef {

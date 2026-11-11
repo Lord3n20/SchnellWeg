@@ -138,6 +138,12 @@ class AktualisierenSeite extends StatelessWidget {
             else
               Text('Neu: ${neu.version} (${groesse(neu.bytes)}). Deine Daten bleiben erhalten. '
                   'Die App startet bei der Installation neu.'),
+            if (neu != null && (neu.hinweis ?? '').isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Text('Was ist neu', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 4),
+              Text(neu.hinweis!),
+            ],
             if (u.laedt) ...[
               const SizedBox(height: 16),
               LinearProgressIndicator(value: u.anteil),

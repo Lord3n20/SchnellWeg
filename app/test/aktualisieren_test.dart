@@ -13,5 +13,11 @@ void main() {
   test('Serverantwort lesen', () {
     final s = AppStand.json({'version': '0.2.0', 'code': 2, 'sha256': 'abc', 'bytes': 59177813});
     expect((s.version, s.code, s.sha256, s.bytes), ('0.2.0', 2, 'abc', 59177813));
+    expect(s.hinweis, isNull);
+  });
+
+  test('Hinweis zum Update lesen', () {
+    final s = AppStand.json({'version': '0.2.15', 'code': 17, 'sha256': 'abc', 'bytes': 1, 'hinweis': ' Neu: X\n'});
+    expect(s.hinweis, 'Neu: X');
   });
 }
