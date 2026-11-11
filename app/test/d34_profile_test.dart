@@ -35,6 +35,8 @@ Future<void> _warten(WidgetTester t) async {
     await t.pump();
     if (i >= 4 && find.byType(CircularProgressIndicator).evaluate().isEmpty) break;
   }
+  // Auf langsamen Rechnern (CI) ist die Datei nach ein paar Takten noch nicht geschrieben.
+  await t.runAsync(() => Tempo.letztesSpeichern);
   await t.pumpAndSettle();
 }
 
