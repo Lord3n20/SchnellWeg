@@ -15,6 +15,8 @@ type appStand struct {
 	Code    int    `json:"code"`
 	SHA256  string `json:"sha256"`
 	Bytes   int64  `json:"bytes"`
+	// Hinweis: kurze Zusammenfassung, was das Update ändert (aus app/neu.txt, von app-release.sh eingetragen).
+	Hinweis string `json:"hinweis,omitempty"`
 }
 
 func (s *Server) appDatei() (*os.File, appStand, bool) {

@@ -637,3 +637,9 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - `BenchmarkFahrtenSuchen` (Fahrplan in NRW-Größe, ungünstiger Korridor mit 60 Linien, 7200 GPS-Punkte): 84 % der Zeit gingen in die Streckenlänge,
   die für jeden Kandidaten die ganze Spur ablief. Jetzt einmal aufsummiert und per Binärsuche abgefragt, das Ergebnis der Erkennung bleibt gleich.
 - Die App schickt nur etwa jeden vierten GPS-Punkt, echte Anfragen sind also kleiner als die gemessene.
+
+## D-49 App wird auf GitHub gebaut, Updates sagen, was neu ist (11.11.)
+- Lokal gibt es keine Flutter-/Android-Werkzeuge mehr (Betreiber: Laptop aufräumen). `scripts/app-release.sh` setzt den Tag `app-v<version>`,
+  wartet auf den Workflow app.yml (Tests, signierter Build, APK-Prüfung), lädt die APK per `gh` und legt sie wie bisher auf den Server.
+- `app/neu.txt` beschreibt kurz, was das Update ändert, und ist Pflicht. Das Skript schreibt den Text als `hinweis` in version.json,
+  `/v1/app` gibt ihn weiter, die App zeigt ihn unter „Was ist neu“ vor der Installation. Ältere Apps und Server ignorieren das Feld.
