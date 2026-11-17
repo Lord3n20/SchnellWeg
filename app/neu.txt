@@ -1,1 +1,1 @@
-Updates zeigen jetzt vor der Installation kurz, was neu ist. Diese Version wurde zum ersten Mal komplett auf GitHub gebaut statt auf dem Laptop. Sonst ändert sich nichts.
+Neu unter Einstellungen → Darstellung: „Custom“ mit eigenen Farben (Hintergrund, Flächen, Text, Akzent, Kontrast, Kritisch). Vorgabe ist dunkel mit Cyan.
