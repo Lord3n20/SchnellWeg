@@ -26,8 +26,8 @@ class SchnellWeg extends StatelessWidget {
       builder: (context, _) => MaterialApp(
         title: 'SchnellWeg',
         theme: ThemeData(colorSchemeSeed: saat),
-        darkTheme: dunklesThema(saat, oled: d.oled),
-        themeMode: d.modus,
+        darkTheme: d.custom ? customThema(d.farben) : dunklesThema(saat, oled: d.oled),
+        themeMode: d.themenModus,
         navigatorObservers: [seitenBeobachter],
         home: const Start(),
       ),
