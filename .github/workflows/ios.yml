@@ -1,0 +1,39 @@
+# Baut die iPhone-App als unsignierte .ipa (D-53): ohne bezahlten Apple-Account signiert erst SideStore/AltStore bzw. Sideloadly
+# auf dem Gerät mit der Apple-ID des Nutzers. Läuft bei Tags „app-v<version>“ und bei PRs, die die App ändern.
+# Fehlt app/ios noch, erzeugt der Lauf es mit flutter create und legt es als Artefakt „ios-vorlage“ ab (einmalig, dann committen).
+name: App-iOS
+
+on:
+  push:
+    tags: ["app-v*"]
+  pull_request:
+    paths: ["app/**", ".github/workflows/ios.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ipa:
+    runs-on: macos-15
+    env:
+      FLUTTER_VERSION: 3.47.8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Flutter
+        run: |
+          git clone --depth 1 --branch "$FLUTTER_VERSION" https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+      - name: Vorlage
+        if: hashFiles('app/ios/Runner.xcodeproj/project.pbxproj') == ''
+        working-directory: app
+        run: |
+          flutter create --platforms=ios --org io.github.lord3n20 --project-name schnellweg .
+          xcodebuild -version
+      - if: hashFiles('app/ios/Runner.xcodeproj/project.pbxproj') == ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-vorlage
+          path: app/ios
+          include-hidden-files: true
+          retention-days: 3
