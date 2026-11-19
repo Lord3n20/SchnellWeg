@@ -25,12 +25,13 @@ jobs:
           git clone --depth 1 --branch "$FLUTTER_VERSION" https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
           echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
       - name: Vorlage
+        id: vorlage
         if: hashFiles('app/ios/Runner.xcodeproj/project.pbxproj') == ''
         working-directory: app
         run: |
           flutter create --platforms=ios --org io.github.lord3n20 --project-name schnellweg .
-          xcodebuild -version
-      - if: hashFiles('app/ios/Runner.xcodeproj/project.pbxproj') == ''
+          echo neu=1 >> "$GITHUB_OUTPUT"
+      - if: steps.vorlage.outputs.neu == '1'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-vorlage
