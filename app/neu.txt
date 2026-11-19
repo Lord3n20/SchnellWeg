@@ -1,1 +1,1 @@
-Neu unter Einstellungen → Darstellung: „Custom“ mit eigenen Farben (Hintergrund, Flächen, Text, Akzent, Kontrast, Kritisch). Vorgabe ist dunkel mit Cyan.
+Studentenverbindungen: auf der Karte als Fahne in ihren Farben (nah heranzoomen), auf der Startseite die vier nächsten unter den Haltestellen, in der Zielsuche findbar. Antippen zeigt Angaben und „Hierhin“. Neu in der Zielauswahl: „Bummelrunde“ (noch ohne Funktion).

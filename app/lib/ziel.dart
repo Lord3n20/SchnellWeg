@@ -1,6 +1,7 @@
 // Ziel wählen: Haltestellen sucht das Handy in der eigenen SQLite, Adressen und Orte fragt es bei /v1/search
 // (Suchtext nur im Body), RWTH-Gebäude live bei RWTH Maps (D-18). Alles parallel; Haltestellen oben, weil sofort da.
-// Ohne Eingabe stehen die Favoriten da (Ordner aufklappbar); jeder Treffer hat einen Stern.
+// Ohne Eingabe stehen die Favoriten da (Ordner aufklappbar) und darüber „Bummelrunde“ (noch ohne Funktion, D-50);
+// jeder Treffer hat einen Stern. Studentenverbindungen sucht das Handy in der eigenen Liste (korporationen.dart).
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'api.dart';
 import 'favoriten.dart';
 import 'halte_db.dart';
+import 'korporationen.dart';
 import 'namen.dart';
 import 'rwth.dart';
 import 'standort.dart';
@@ -30,7 +32,7 @@ class _ZielSucheState extends State<ZielSuche> {
   final _feld = TextEditingController();
   Timer? _timer;
   int _nr = 0; // verwirft Antworten auf veraltete Eingaben
-  List<Ort> _halte = [], _orte = [], _gebaeude = [];
+  List<Ort> _halte = [], _orte = [], _gebaeude = [], _korps = [];
   String? _fehler;
   bool _laeuft = false;
   Position? _nahe;
@@ -39,6 +41,7 @@ class _ZielSucheState extends State<ZielSuche> {
   void initState() {
     super.initState();
     Favoriten.instanz.laden();
+    Korporationen.instanz.laden();
     _nahe = widget.nahe; // für die Adresssuche: nahe Treffer zuerst
     if (_nahe == null) Standort.holen().then((p) => _nahe = p);
   }
@@ -62,10 +65,14 @@ class _ZielSucheState extends State<ZielSuche> {
         _halte = [];
         _orte = [];
         _gebaeude = [];
+        _korps = [];
         _fehler = null;
       });
     }
-    setState(() => _laeuft = true);
+    setState(() {
+      _laeuft = true;
+      _korps = [for (final k in Korporationen.instanz.suchen(q)) k.ort];
+    });
     // Alle drei gleichzeitig: die Server-Suche wartet nicht mehr auf die SQLite
     widget.db.suchen(q).then((halte) {
       if (nr == _nr && mounted) setState(() => _halte = _zusammenfassen(halte));
@@ -106,6 +113,7 @@ class _ZielSucheState extends State<ZielSuche> {
         'adresse' => Icons.home_outlined,
         'strasse' => Icons.add_road,
         'ort' => Icons.location_city,
+        artKorporation => Icons.flag_outlined,
         _ => Icons.place_outlined,
       };
 
@@ -123,7 +131,7 @@ class _ZielSucheState extends State<ZielSuche> {
     final live = {for (final g in _gebaeude) g.name};
     final orte = _orte.where((o) => o.art != 'gebaeude' || !live.contains(o.name));
     final nachNr = RegExp(r'^\d{3,4}[a-zA-Z]?$').hasMatch(_feld.text.trim()); // „1010“: Gebäude zuerst
-    final treffer = nachNr ? [..._gebaeude, ..._halte, ...orte] : [..._halte, ..._gebaeude, ...orte];
+    final treffer = nachNr ? [..._gebaeude, ..._halte, ..._korps, ...orte] : [..._halte, ..._korps, ..._gebaeude, ...orte];
     return Scaffold(
       appBar: AppBar(
         title: TextField(
@@ -146,6 +154,13 @@ class _ZielSucheState extends State<ZielSuche> {
         builder: (context, _) => ListView(children: [
           if (_fehler != null) ListTile(leading: const Icon(Icons.cloud_off), title: Text(_fehler!)),
           if (_feld.text.trim().length < 2) ...[
+            ListTile(
+              leading: const Icon(Icons.sports_bar_outlined),
+              title: const Text('Bummelrunde'),
+              subtitle: const Text('Runde über mehrere Häuser – kommt noch'),
+              onTap: () => ScaffoldMessenger.of(context)
+                  .showSnackBar(const SnackBar(content: Text('Die Bummelrunde gibt es noch nicht.'))),
+            ),
             for (final o in Favoriten.instanz.oben) _favZeile(o),
             for (final (name, orte) in Favoriten.instanz.ordner)
               ExpansionTile(

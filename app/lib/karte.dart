@@ -16,10 +16,12 @@ import 'package:vector_map_tiles_pmtiles/src/themes/v4/_package.dart' as v4;
 import 'api.dart';
 import 'darstellung.dart';
 import 'kartenlager.dart';
+import 'korporationen.dart';
 
 const _blickVersatz = 0.2; // Standort so viel der Kartenhöhe unter der Mitte
 const _treffer = 24.0; // so viele Pixel um den Finger gilt ein Antippen als Treffer auf eine Haltestelle
 const _trefferAb = 14.0; // darunter liegen zu viele Halte unter dem Finger: Antippen meint den Punkt
+const _korporationenAb = 14.0; // ab dieser Zoomstufe stehen die Studentenverbindungen als Fahnen auf der Karte (D-50)
 const _detailAb = 10.0; // ab dieser Zoomstufe fällt die grobe Übersicht auf
 const _feinAb = 10.0; // darunter reicht die Übersicht (bis Z9 + Hochskalieren), die Bundesländer werden nicht gezeichnet –
 // bei 9–10 kosteten beide Vektorebenen zusammen zu viel (lange Verbindungen, App „reagiert nicht“)
@@ -91,6 +93,8 @@ class Karte extends StatefulWidget {
   final List<Meldung> meldungen; // Stau, Sperrung, Baustelle auf der Route (D-38)
   final ValueListenable<Fahrblick?>? fahrblick; // Fahransicht: Karte in Fahrtrichtung, nur die Kamera bewegt sich
   final void Function(LatLng, double trefferMeter)? onAntippen; // trefferMeter: Umkreis für Haltestellen, 0 = keine
+  final List<Korporation> korporationen; // Häuser als Fahnen (ab Zoom 14, nicht in der Fahransicht)
+  final void Function(Korporation)? onKorporation;
   const Karte({
     super.key,
     this.standort,
@@ -101,6 +105,8 @@ class Karte extends StatefulWidget {
     this.meldungen = const [],
     this.fahrblick,
     this.onAntippen,
+    this.korporationen = const [],
+    this.onKorporation,
   });
 
   @override
@@ -116,6 +122,7 @@ class _KarteState extends State<Karte> {
   // Welche Ebenen gezeichnet werden: jede kostet Rechenzeit, die Übersicht über Zoom 9 hinaus besonders viel
   // (eine Kachel wird vielfach vergrößert neu gezeichnet). Deckt ein geladenes Bundesland den Ausschnitt, fällt sie weg.
   bool _grob = true, _fein = false;
+  bool _fahnen = false; // nah genug für die Studentenverbindungen
 
   @override
   void initState() {
@@ -155,11 +162,13 @@ class _KarteState extends State<Karte> {
     final fein = c.zoom >= _feinAb && _lager.regionenQuelle != null;
     final grob = !fein ||
         ![b.northWest, b.northEast, b.southWest, b.southEast].every((p) => _lager.abgedeckt(p.latitude, p.longitude));
-    if (f?.id != _fehlt?.id || fein != _fein || grob != _grob) {
+    final fahnen = c.zoom >= _korporationenAb;
+    if (f?.id != _fehlt?.id || fein != _fein || grob != _grob || fahnen != _fahnen) {
       setState(() {
         _fehlt = f;
         _fein = fein;
         _grob = grob;
+        _fahnen = fahnen;
       });
     }
   }
@@ -293,6 +302,20 @@ class _KarteState extends State<Karte> {
               CircleMarker(point: widget.standort!, radius: 6, color: farbe.primary, borderColor: Colors.white, borderStrokeWidth: 2),
             ],
           ]),
+          if (_fahnen && widget.fahrblick == null && widget.korporationen.isNotEmpty)
+            MarkerLayer(markers: [
+              for (final k in widget.korporationen)
+                Marker(
+                  point: LatLng(k.lat, k.lon),
+                  width: 30,
+                  height: 24,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: widget.onKorporation == null ? null : () => widget.onKorporation!(k),
+                    child: Center(child: FarbBand(k.farben, breite: 20, hoehe: 14)),
+                  ),
+                ),
+            ]),
           if (widget.meldungen.isNotEmpty)
             MarkerLayer(markers: [
               for (final m in widget.meldungen)

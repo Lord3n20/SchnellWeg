@@ -643,3 +643,14 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   wartet auf den Workflow app.yml (Tests, signierter Build, APK-Prüfung), lädt die APK per `gh` und legt sie wie bisher auf den Server.
 - `app/neu.txt` beschreibt kurz, was das Update ändert, und ist Pflicht. Das Skript schreibt den Text als `hinweis` in version.json,
   `/v1/app` gibt ihn weiter, die App zeigt ihn unter „Was ist neu“ vor der Installation. Ältere Apps und Server ignorieren das Feld.
+
+## D-50 Studentenverbindungen als Orte, Platz für die Bummelrunde (19.11.)
+- Betreiber 19.11.: Häuser der Studentenverbindungen aus der Couleurbummel-Liste (github.com/heinstalator/couleurbummel_database_failback,
+  Release v0.2.0-alpha, `wikipedia-corporations-cleaned_V9.csv`, aus Wikipedia, ungeprüft) als Orte in die App.
+- `scripts/korporationen.py` baut daraus `app/assets/korporationen.json`: nur Häuser in `config/region.geojson`; fehlen Koordinaten, sucht der
+  eigene Server die Anschrift, sonst einmalig Nominatim (nur die Anschrift des Hauses). Stand V9: 39 Häuser (35 Aachen, 4 Bonn). Köln und die
+  übrigen Bonner Verbindungen haben in der Liste keine Anschrift und fehlen deshalb.
+- Die Liste liegt im App-Paket, nichts geht dafür an den Server. Karte: Fahne in den Farben ab Zoom 14, nicht in der Fahransicht.
+  Startseite ohne Ziel: die vier nächsten (bis 25 km) unter den Haltestellen. Zielsuche: lokale Treffer. Antippen → Angaben + „Hierhin“, mit Quellenhinweis.
+- „Bummelrunde“ steht in der Zielauswahl ohne Eingabe über den Favoriten, ist aber noch ohne Funktion.
+- Status: umgesetzt (App 0.2.17).

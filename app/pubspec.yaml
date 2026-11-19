@@ -1,7 +1,7 @@
 name: schnellweg
 description: "A new Flutter project."
 publish_to: 'none'
-version: 0.2.16+18
+version: 0.2.17+19
 
 environment:
   sdk: ^3.13.7
@@ -27,3 +27,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/korporationen.json
