@@ -1,0 +1,123 @@
+# Baut die iPhone-App als unsignierte .ipa (D-53): Ohne bezahlten Apple-Account signiert erst SideStore/AltStore (oder Sideloadly)
+# mit der kostenlosen Apple-ID des Nutzers. Bei PRs, die die App ändern, nur bauen; bei Tags „app-v<version>“ zusätzlich ein
+# GitHub-Release mit SchnellWeg.ipa und quelle.json (die APK hängt app.yml an) (Quelle für SideStore/AltStore: zeigt Updates an). Flutter per git-Tag wie app.yml.
+# Fehlt app/ios, erzeugt der Lauf es mit flutter create und legt es als Artefakt „ios-vorlage“ ab (so entstand app/ios).
+name: App-iOS
+
+on:
+  push:
+    tags: ["app-v*"]
+  pull_request:
+    paths: ["app/**", ".github/workflows/ios.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ipa:
+    runs-on: macos-15
+    env:
+      FLUTTER_VERSION: 3.47.8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Flutter
+        run: |
+          git clone --depth 1 --branch "$FLUTTER_VERSION" https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+      - name: Vorlage
+        id: vorlage
+        if: hashFiles('app/ios/Runner.xcodeproj/project.pbxproj') == ''
+        working-directory: app
+        run: |
+          flutter create --platforms=ios --org io.github.lord3n20 --project-name schnellweg .
+          echo neu=1 >> "$GITHUB_OUTPUT"
+      - if: steps.vorlage.outputs.neu == '1'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-vorlage
+          path: app/ios
+          include-hidden-files: true
+          retention-days: 3
+      - name: App
+        working-directory: app
+        run: flutter build ios --release --no-codesign
+      - name: IPA
+        working-directory: app/build/ios/iphoneos
+        run: |
+          mkdir Payload
+          cp -R Runner.app Payload/
+          zip -qry "$GITHUB_WORKSPACE/SchnellWeg.ipa" Payload
+          ls -l "$GITHUB_WORKSPACE/SchnellWeg.ipa" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: schnellweg-ios
+          path: SchnellWeg.ipa
+          retention-days: 30
+
+  # Startprobe bei PRs: App im iPhone-Simulator starten (Standort Aachen Hbf, erlaubt) und Bildschirmfotos ablegen.
+  simulator:
+    if: github.event_name != 'push'
+    runs-on: macos-15
+    env:
+      FLUTTER_VERSION: 3.47.8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Flutter
+        run: |
+          git clone --depth 1 --branch "$FLUTTER_VERSION" https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+      - name: Bauen
+        working-directory: app
+        run: flutter build ios --simulator --debug
+      - name: Starten
+        run: |
+          geraet=$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.name | startswith("iPhone"))][0].udid')
+          xcrun simctl boot "$geraet"
+          xcrun simctl bootstatus "$geraet"
+          xcrun simctl install "$geraet" app/build/ios/iphonesimulator/Runner.app
+          xcrun simctl privacy "$geraet" grant location io.github.lord3n20.schnellweg
+          xcrun simctl location "$geraet" set 50.7677,6.0912
+          mkdir bilder
+          xcrun simctl launch --console-pty "$geraet" io.github.lord3n20.schnellweg > bilder/konsole.txt 2>&1 &
+          sleep 25
+          xcrun simctl io "$geraet" screenshot bilder/start.png
+          xcrun simctl spawn "$geraet" launchctl list | grep -q UIKitApplication:io.github.lord3n20.schnellweg || { echo "App läuft nicht mehr"; cat bilder/konsole.txt; exit 1; }
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: simulator
+          path: bilder
+          retention-days: 7
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/app-v')
+    needs: ipa
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Release
+        run: |
+          gh run download "$GITHUB_RUN_ID" -n schnellweg-ios -D .
+          zeile=$(sed -n 's/^version: //p' app/pubspec.yaml)
+          version=${zeile%+*} code=${zeile#*+}
+          basis="https://github.com/$GH_REPO/releases/download/$GITHUB_REF_NAME"
+          jq -n --arg v "$version" --arg c "$code" --arg h "$(cat app/neu.txt)" --arg url "$basis/SchnellWeg.ipa" \
+            --argjson groesse "$(stat -c %s SchnellWeg.ipa)" --arg datum "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg icon "https://raw.githubusercontent.com/$GH_REPO/$GITHUB_REF_NAME/app/ios/Runner/Assets.xcassets/AppIcon.appiconset/icon-1024.png" \
+            --arg standort "$(plutil -extract NSLocationWhenInUseUsageDescription raw app/ios/Runner/Info.plist 2>/dev/null || sed -n '/NSLocationWhenInUseUsageDescription/{n;s/.*<string>\(.*\)<\/string>.*/\1/p;}' app/ios/Runner/Info.plist)" \
+            '{name: "SchnellWeg", identifier: "io.github.lord3n20.schnellweg.quelle", iconURL: $icon,
+              apps: [{name: "SchnellWeg", bundleIdentifier: "io.github.lord3n20.schnellweg", developerName: "Lord3n20",
+                subtitle: "Bus, Bahn, Rad und Auto in Aachen", iconURL: $icon, tintColor: "5A5F66",
+                localizedDescription: "Routen mit Bus, Bahn, Rad und Auto über den eigenen SchnellWeg-Server. Braucht Server-Adresse und Zertifikat.",
+                versions: [{version: $v, buildVersion: $c, date: $datum, localizedDescription: $h, downloadURL: $url,
+                  size: $groesse, minOSVersion: "15.0"}],
+                appPermissions: {entitlements: [], privacy: {NSLocationWhenInUseUsageDescription: $standort}}}],
+              news: []}' > quelle.json
+          scripts/github-release.sh SchnellWeg.ipa quelle.json

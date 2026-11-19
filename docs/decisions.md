@@ -682,3 +682,24 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   (hin + weiter − direkt) ≤ max(1 km, halber direkter Weg), −0,25 je km Umweg. „Zurück“ und „Ende“ haken ein gewähltes Haus wie „Weiter“ ab.
 - Die Zielsuche für „Von“ und für Zuhause zeigt keine Bummelrunde mehr (vorher lieferte sie dort einen Ort ohne Koordinaten).
 - Status: umgesetzt (App 0.2.19).
+
+## D-53 App fürs iPhone ohne bezahlten Apple-Account (19.11.)
+- Betreiber 19.11.: SchnellWeg soll auf einem iPhone laufen (Tester mit eigenem iPhone), einfach zu installieren, ohne Developer-Account (99 €/Jahr).
+  Damit fallen App Store, TestFlight und EU-Alternativmarktplätze weg; es bleibt Sideloading mit kostenloser Apple-ID (SideStore/AltStore/Sideloadly),
+  die Signatur gilt 7 Tage und wird von SideStore auf dem Handy erneuert.
+- Workflow ios.yml (macOS-Runner, öffentliches Repo → kostenlos) baut eine unsignierte .ipa. Bei `app-v…`-Tags legt er ein öffentliches
+  GitHub-Release mit `SchnellWeg.ipa` und `quelle.json` an (Betreiberwahl: Release statt nur Artefakt); die Quelle unter
+  `releases/latest/download/quelle.json` fügt man einmal in SideStore/AltStore hinzu und bekommt so Updates. Die .ipa enthält keine Zugangsdaten.
+  Betreiber 19.11.: Die signierte APK kommt als `SchnellWeg.apk` ins selbe Release (app.yml, `scripts/github-release.sh`); das Selbstupdate
+  auf Android läuft weiter über den Server (D-42).
+- Betreiber 19.11.: Die Bewertungen (`/v1/bummel`) dürfen nur Leute mit einem Zertifikat des Betreibers lesen und abgeben (keine Falschbewertungen,
+  kein Ausnutzen gegen einzelne Bünde). Das gilt schon, weil NPM für die ganze API ein Client-Zertifikat der eigenen CA verlangt (D-13);
+  geprüft 19.11.: ohne Zertifikat und mit fremdem Zertifikat 400, Port 8090 im LAN nicht offen. App und Releases enthalten keine Bewertungen,
+  nur die öffentliche Häuserliste. Wer ein Zertifikat hat, gilt als vertrauenswürdig (die Geräte-Kennung schützt nicht vor Mehrfachstimmen).
+- `app/ios` stammt aus `flutter create` im Workflow (lokal kein Flutter, D-49). Native Teile in `AppDelegate.swift` (Klasse `Kanaele`):
+  Standort einzeln und laufend über CoreLocation (nur im Vordergrund, Erlaubnis „beim Verwenden“), Teilen, Favoriten als Quick Actions.
+- Auf dem iPhone ausgeblendet (`lib/plattform.dart`), weil es ohne Hintergrunddienst nicht geht oder iOS es nicht erlaubt: Messgang und
+  Routen-Aufzeichnung, Ausstiegs-Erinnerung, Losgeh-Wecker, Selbstupdate, Anzeige über dem Sperrbildschirm, Download-Meldung. Kanäle dafür
+  antworten neutral, damit nichts abstürzt. Später möglich: Hintergrund-Standort für Messgang/Erinnerung, Live Activity statt Sperrbildschirm.
+- Zugang wie bei Android: Server-Adresse und eigenes p12-Zertifikat je Person in der App eintragen.
+- Status: umgesetzt (App 0.2.20), noch nicht auf einem iPhone getestet.

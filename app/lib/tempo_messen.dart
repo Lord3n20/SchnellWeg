@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'hang_messung.dart';
 import 'lernen.dart';
 import 'messung.dart';
+import 'plattform.dart';
 import 'standort.dart';
 import 'tempo.dart';
 
@@ -151,7 +152,7 @@ class _TempoSeiteState extends State<TempoSeite> with WidgetsBindingObserver {
                   onSelected: (w) => switch (w) { 'messen' => _messen(p), 'weg' => _loeschen(p), _ => _bearbeiten(p) },
                   itemBuilder: (_) => [
                     const PopupMenuItem(value: 'hand', child: ListTile(leading: Icon(Icons.tune), title: Text('Bearbeiten'))),
-                    if (p.messbar) const PopupMenuItem(value: 'messen', child: ListTile(leading: Icon(Icons.gps_fixed), title: Text('Messen'))),
+                    if (p.messbar && !aufIos) const PopupMenuItem(value: 'messen', child: ListTile(leading: Icon(Icons.gps_fixed), title: Text('Messen'))),
                     if (p.eigen) const PopupMenuItem(value: 'weg', child: ListTile(leading: Icon(Icons.delete_outline), title: Text('Löschen'))),
                   ],
                 ),

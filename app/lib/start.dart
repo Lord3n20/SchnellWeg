@@ -26,6 +26,7 @@ import 'lernen.dart';
 import 'losgehen.dart';
 import 'messung.dart';
 import 'namen.dart';
+import 'plattform.dart';
 import 'schnellzugriff.dart';
 import 'sperrbildschirm.dart';
 import 'standort.dart';
@@ -1110,7 +1111,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
       child: ListView(children: [
         for (final (i, x) in v.indexed) _VerbindungZeile(x, kmh: _tempo.kmh, zuFuss: _tempo.art == 'fuss', bezug: _ankunft || _start != null ? null : _zeit ?? DateTime.now(), gewaehlt: i == _gewaehlt, onTap: () => _details(i),
             onFahren: x.auto && i == _gewaehlt && _zeit == null && _start == null ? () => _fahren(i) : null,
-            onAufzeichnen: x.auto || !_tempo.messbar || i != _gewaehlt || _zeit != null || _start != null ? null : _zeichnet ? _aufzeichnungBeenden : () => _aufzeichnen(i),
+            onAufzeichnen: x.auto || aufIos || !_tempo.messbar || i != _gewaehlt || _zeit != null || _start != null ? null : _zeichnet ? _aufzeichnungBeenden : () => _aufzeichnen(i),
             zeichnet: _zeichnet),
         if (v.any((x) => x.fahrten > 0))
           Padding(

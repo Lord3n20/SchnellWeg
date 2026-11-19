@@ -1,1 +1,1 @@
-Bummelrunde: zu Beginn das Ende der Runde wählen (Zuhause oder ein Bund). „Zurück“ bummelt über andere Häuser auf dem Weg dorthin, „Ende“ zeigt den direkten Weg. Geplant wird jetzt immer als Runde, auch auf dem Hinweg entfernt sie sich nicht unnötig weit vom Ende.
+SchnellWeg gibt es jetzt auch fürs iPhone. Auf Android ändert sich nichts.
