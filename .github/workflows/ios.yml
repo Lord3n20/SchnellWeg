@@ -1,6 +1,6 @@
 # Baut die iPhone-App als unsignierte .ipa (D-53): Ohne bezahlten Apple-Account signiert erst SideStore/AltStore (oder Sideloadly)
 # mit der kostenlosen Apple-ID des Nutzers. Bei PRs, die die App ändern, nur bauen; bei Tags „app-v<version>“ zusätzlich ein
-# GitHub-Release mit SchnellWeg.ipa und quelle.json (Quelle für SideStore/AltStore: zeigt Updates an). Flutter per git-Tag wie app.yml.
+# GitHub-Release mit SchnellWeg.ipa und quelle.json (die APK hängt app.yml an) (Quelle für SideStore/AltStore: zeigt Updates an). Flutter per git-Tag wie app.yml.
 # Fehlt app/ios, erzeugt der Lauf es mit flutter create und legt es als Artefakt „ios-vorlage“ ab (so entstand app/ios).
 name: App-iOS
 
@@ -120,7 +120,4 @@ jobs:
                   size: $groesse, minOSVersion: "15.0"}],
                 appPermissions: {entitlements: [], privacy: {NSLocationWhenInUseUsageDescription: $standort}}}],
               news: []}' > quelle.json
-          gh release create "$GITHUB_REF_NAME" SchnellWeg.ipa quelle.json --title "SchnellWeg $version fürs iPhone" \
-            --notes "$(cat app/neu.txt)
-
-          Installation: docs/iphone.md. Quelle für SideStore/AltStore: https://github.com/$GH_REPO/releases/latest/download/quelle.json"
+          scripts/github-release.sh SchnellWeg.ipa quelle.json

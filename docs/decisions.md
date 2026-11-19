@@ -690,7 +690,12 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - Workflow ios.yml (macOS-Runner, öffentliches Repo → kostenlos) baut eine unsignierte .ipa. Bei `app-v…`-Tags legt er ein öffentliches
   GitHub-Release mit `SchnellWeg.ipa` und `quelle.json` an (Betreiberwahl: Release statt nur Artefakt); die Quelle unter
   `releases/latest/download/quelle.json` fügt man einmal in SideStore/AltStore hinzu und bekommt so Updates. Die .ipa enthält keine Zugangsdaten.
-  Android bleibt beim Selbstupdate über den Server (D-42).
+  Betreiber 19.11.: Die signierte APK kommt als `SchnellWeg.apk` ins selbe Release (app.yml, `scripts/github-release.sh`); das Selbstupdate
+  auf Android läuft weiter über den Server (D-42).
+- Betreiber 19.11.: Die Bewertungen (`/v1/bummel`) dürfen nur Leute mit einem Zertifikat des Betreibers lesen und abgeben (keine Falschbewertungen,
+  kein Ausnutzen gegen einzelne Bünde). Das gilt schon, weil NPM für die ganze API ein Client-Zertifikat der eigenen CA verlangt (D-13);
+  geprüft 19.11.: ohne Zertifikat und mit fremdem Zertifikat 400, Port 8090 im LAN nicht offen. App und Releases enthalten keine Bewertungen,
+  nur die öffentliche Häuserliste. Wer ein Zertifikat hat, gilt als vertrauenswürdig (die Geräte-Kennung schützt nicht vor Mehrfachstimmen).
 - `app/ios` stammt aus `flutter create` im Workflow (lokal kein Flutter, D-49). Native Teile in `AppDelegate.swift` (Klasse `Kanaele`):
   Standort einzeln und laufend über CoreLocation (nur im Vordergrund, Erlaubnis „beim Verwenden“), Teilen, Favoriten als Quick Actions.
 - Auf dem iPhone ausgeblendet (`lib/plattform.dart`), weil es ohne Hintergrunddienst nicht geht oder iOS es nicht erlaubt: Messgang und
