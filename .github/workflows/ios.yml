@@ -55,6 +55,41 @@ jobs:
           path: SchnellWeg.ipa
           retention-days: 30
 
+  # Startprobe bei PRs: App im iPhone-Simulator starten (Standort Aachen Hbf, erlaubt) und Bildschirmfotos ablegen.
+  simulator:
+    if: github.event_name != 'push'
+    runs-on: macos-15
+    env:
+      FLUTTER_VERSION: 3.47.8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Flutter
+        run: |
+          git clone --depth 1 --branch "$FLUTTER_VERSION" https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+      - name: Bauen
+        working-directory: app
+        run: flutter build ios --simulator --debug
+      - name: Starten
+        run: |
+          geraet=$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.name | startswith("iPhone"))][0].udid')
+          xcrun simctl boot "$geraet"
+          xcrun simctl bootstatus "$geraet"
+          xcrun simctl install "$geraet" app/build/ios/iphonesimulator/Runner.app
+          xcrun simctl privacy "$geraet" grant location io.github.lord3n20.schnellweg
+          xcrun simctl location "$geraet" set 50.7677,6.0912
+          mkdir bilder
+          xcrun simctl launch --console-pty "$geraet" io.github.lord3n20.schnellweg > bilder/konsole.txt 2>&1 &
+          sleep 25
+          xcrun simctl io "$geraet" screenshot bilder/start.png
+          xcrun simctl spawn "$geraet" launchctl list | grep -q UIKitApplication:io.github.lord3n20.schnellweg || { echo "App läuft nicht mehr"; cat bilder/konsole.txt; exit 1; }
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: simulator
+          path: bilder
+          retention-days: 7
+
   release:
     if: startsWith(github.ref, 'refs/tags/app-v')
     needs: ipa
