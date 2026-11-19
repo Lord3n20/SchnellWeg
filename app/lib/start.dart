@@ -12,6 +12,7 @@ import 'abfahrten.dart';
 import 'abweichung.dart';
 import 'aktualisieren.dart';
 import 'api.dart';
+import 'bummel.dart';
 import 'details.dart';
 import 'einstellungen.dart';
 import 'einstellungen_seite.dart';
@@ -26,6 +27,7 @@ import 'losgehen.dart';
 import 'messung.dart';
 import 'namen.dart';
 import 'schnellzugriff.dart';
+import 'sperrbildschirm.dart';
 import 'standort.dart';
 import 'tempo.dart';
 import 'verkehr.dart';
@@ -113,6 +115,8 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
   List<Schritt> _schritte = [];
   (Schritt, double)? _naechster; // Abbiegehinweis über der Karte
   TempoProfil _tempo = TempoProfil('entspannt', 'fuss', standardKmh); // bis tempo.json gelesen ist
+  List<(Korporation, double, Verbindung?)>? _vorschlaege; // Bummelrunde ohne Ziel: nächste Häuser mit schnellstem Weg
+  bool _vorschlaegeLaufen = false;
 
   @override
   void initState() {
@@ -127,6 +131,8 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     Korporationen.instanz.laden().then((_) {
       if (mounted) setState(() {});
     });
+    Bummel.instanz.laden();
+    Bummel.instanz.addListener(_bummelGeaendert);
     WidgetsBinding.instance.addObserver(this);
     _starten();
     _aufzeichnungPruefen();
@@ -227,6 +233,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
   @override
   void dispose() {
     Favoriten.instanz.removeListener(_kurzbefehleSetzen);
+    Bummel.instanz.removeListener(_bummelGeaendert);
     seitenBeobachter.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
@@ -270,6 +277,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     _api?.schliessen();
     _zugang = z;
     _api = Api(z);
+    Bummel.instanz.api = _api;
     // Mit gespeicherten Halten gleich Abfahrten zeigen, der Abgleich läuft nebenher; nur ein neuer Stand oder die
     // erste Liste (frisch installiert) löst danach noch eine Aktualisierung aus.
     final db = _db!;
@@ -307,6 +315,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     if (_api == null || _db == null) return;
     final o = await Navigator.of(context).push<Ort>(
         MaterialPageRoute(builder: (_) => ZielSuche(api: _api!, db: _db!, nahe: _pos)));
+    if (o?.art == artBummel) return _bummelBeginnen();
     if (o != null) await _zielSetzen(o);
   }
 
@@ -360,6 +369,103 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     if (!mounted) return;
     setState(() => _halt = _GewaehlterHalt(halteOrt(h, bahnsteige), [for (final x in bahnsteige) x.id]));
     await _aktualisieren();
+  }
+
+  void _bummelGeaendert() {
+    if (mounted) setState(() {});
+  }
+
+  /// Bummelrunde gestartet (oder wieder aufgenommen): Ziel weg, Vorschläge rechnen.
+  Future<void> _bummelBeginnen() async {
+    _zielWeg();
+    _start = null; // die Runde geht vom eigenen Standort aus
+    _vorschlaege = null;
+    await _vorschlaegeLaden();
+  }
+
+  /// Die drei besten Häuser für die Runde, je mit der schnellsten Verbindung von hier und jetzt.
+  Future<void> _vorschlaegeLaden() async {
+    final b = Bummel.instanz, api = _api;
+    if (!b.aktiv || api == null || _vorschlaegeLaufen) return;
+    _vorschlaegeLaufen = true;
+    try {
+      final p = await Standort.holen() ?? _pos;
+      if (p == null) {
+        if (mounted) setState(() => _vorschlaege = const []);
+        return;
+      }
+      _pos = p;
+      await Korporationen.instanz.laden();
+      if (!b.werteGeladen) await b.werteHolen();
+      final roh = b.vorschlaege(p.lat, p.lon);
+      if (!mounted) return;
+      setState(() => _vorschlaege = [for (final (k, m) in roh) (k, m, null)]);
+      final wege = await Future.wait([
+        for (final (k, _) in roh)
+          api
+              .route(p.lat, p.lon, k.lat, k.lon,
+                  kmh: _tempo.kmh, art: _tempo.serverArt, meiden: _tempo.serverMeiden, ticket: _tempo.ticket, wegArt: _tempo.wegArt, fern: _tempo.fern)
+              .then<Verbindung?>((r) => r.$1.isEmpty ? null : r.$1.reduce((a, c) => c.ankunft.isBefore(a.ankunft) ? c : a),
+                  onError: (Object _) => null),
+      ]);
+      if (!mounted || !b.aktiv || _ziel != null) return;
+      setState(() => _vorschlaege = [for (final (i, (k, m)) in roh.indexed) (k, m, wege[i])]);
+    } finally {
+      _vorschlaegeLaufen = false;
+    }
+  }
+
+  /// „Weiter“: aktuelles Haus abhaken, bewerten (freiwillig), die nächsten drei vorschlagen.
+  Future<void> _bummelWeiter() async {
+    final z = _ziel;
+    if (z == null || z.art != artKorporation) return;
+    final k = Korporationen.instanz.liste.where((x) => x.name == z.name).firstOrNull;
+    await Bummel.instanz.abhaken(z.name);
+    if (k != null && mounted) await bummelBewerten(context, k);
+    if (!mounted) return;
+    _zielWeg();
+    _vorschlaege = null;
+    await _vorschlaegeLaden();
+  }
+
+  Future<void> _bummelEnde() async {
+    await Bummel.instanz.beenden();
+    if (!mounted) return;
+    _zielWeg();
+    _vorschlaege = null;
+  }
+
+  Widget _bummelListe() {
+    final v = _vorschlaege;
+    if (v == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _vorschlaegeLaden());
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (v.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+              _pos == null
+                  ? 'Kein Standort (Berechtigung oder GPS aus?)'
+                  : Bummel.instanz.besucht.isEmpty
+                      ? 'Kein Haus im Umkreis von 15 km passt zum Filter.'
+                      : 'Keine weiteren Häuser – Zeit für „Ende“?',
+              textAlign: TextAlign.center),
+        ),
+      );
+    }
+    final gast = Bummel.instanz.filter?.gast ?? '';
+    return RefreshIndicator(
+      onRefresh: () async {
+        _vorschlaege = null;
+        await _vorschlaegeLaden();
+      },
+      child: ListView(children: [
+        for (final (k, m, weg) in v)
+          _VorschlagZeile(k, m, weg, gast: gast, onTap: () => _zielSetzen(k.ort), onInfo: () => _korporationOeffnen(k)),
+      ]),
+    );
   }
 
   /// Studentenverbindung (Karte oder Liste): Angaben mit „Hierhin“.
@@ -866,6 +972,10 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
             onKorporation: _korporationOeffnen,
           ),
         ),
+        if (Bummel.instanz.aktiv) ...[
+          const UeberSperrbildschirm(child: SizedBox.shrink()), // Runde auch bei gesperrtem Handy sichtbar
+          BummelLeiste(onWeiter: _ziel?.art == artKorporation ? _bummelWeiter : null, onEnde: _bummelEnde),
+        ],
         if (halt != null) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 4, 0),
@@ -893,15 +1003,15 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Row(children: [
-              Text(_ziel == null ? 'Haltestellen in der Nähe' : 'Verbindungen',
+              Text(_ziel == null ? (Bummel.instanz.aktiv ? 'Nächste Häuser' : 'Haltestellen in der Nähe') : 'Verbindungen',
                   style: Theme.of(context).textTheme.titleSmall),
               const Spacer(),
               if (_ziel != null && _ziel!.art != artHier) FavoritStern(_ziel!, klein: true),
-              if (_ziel == null ? _gruppen.isNotEmpty && !_rt : (_verbindungen?.any((v) => v.fahrten > 0) ?? false) && !_routeRt)
+              if (_ziel == null ? !Bummel.instanz.aktiv && _gruppen.isNotEmpty && !_rt : (_verbindungen?.any((v) => v.fahrten > 0) ?? false) && !_routeRt)
                 Text('nur Fahrplan', style: TextStyle(fontSize: 12, color: farbe.outline)),
             ]),
           ),
-          Expanded(flex: 6, child: _ziel == null ? _halteListe() : _routeListe()),
+          Expanded(flex: 6, child: _ziel == null ? (Bummel.instanz.aktiv ? _bummelListe() : _halteListe()) : _routeListe()),
         ],
       ]),
       ),
@@ -1026,6 +1136,45 @@ class _HaltZeile extends StatelessWidget {
           ]),
           for (final a in g.abfahrten.take(3))
             Padding(padding: const EdgeInsets.only(left: 12, top: 2), child: AbfahrtZeile(a, jetzt)),
+        ]),
+      ),
+    );
+  }
+}
+
+/// Vorschlag der Bummelrunde: Fahne, Name, Werte, schnellster Weg.
+class _VorschlagZeile extends StatelessWidget {
+  final Korporation k;
+  final double meter;
+  final Verbindung? weg;
+  final String gast;
+  final VoidCallback onTap, onInfo;
+  const _VorschlagZeile(this.k, this.meter, this.weg, {required this.gast, required this.onTap, required this.onInfo});
+
+  @override
+  Widget build(BuildContext context) {
+    final farbe = Theme.of(context).colorScheme;
+    final w = weg;
+    final min = w == null ? null : w.ankunft.difference(DateTime.now()).inMinutes.clamp(0, 999);
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
+        child: Row(children: [
+          FarbBand(k.farben),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(k.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
+              Text(bummelKurz(k, gast), maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
+            ]),
+          ),
+          const SizedBox(width: 8),
+          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Text(min == null ? '${(meter / 10).round() * 10} m' : '$min min', style: const TextStyle(fontWeight: FontWeight.w600)),
+            Text(w == null ? 'Luftlinie' : 'an ${_uhr(w.ankunft)} · ${w.artText}', style: TextStyle(fontSize: 12, color: farbe.outline)),
+          ]),
+          IconButton(icon: const Icon(Icons.info_outline), tooltip: 'Angaben', onPressed: onInfo),
         ]),
       ),
     );

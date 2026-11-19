@@ -342,6 +342,17 @@ class Api {
     return [for (final h in hits.cast<Map<String, dynamic>>()) Ort.json(h)];
   }
 
+  /// Summen aller Bewertungen der Studentenverbindungen (D-51), je Haus.
+  Future<Map<String, dynamic>> bummelWerte() async {
+    final (_, _, daten) = await _anfrage('GET', '/v1/bummel');
+    return ((jsonDecode(utf8.decode(daten)) as Map)['haeuser'] as Map?)?.cast<String, dynamic>() ?? const {};
+  }
+
+  /// Eigene Bewertung eines Hauses; ersetzt die vorige dieses Geräts, ohne Werte löscht sie sie.
+  Future<void> bummelBewerten(Map<String, dynamic> stimme) async {
+    await _anfrage('POST', '/v1/bummel', body: stimme);
+  }
+
   /// Verbindungen (mehrere Abfahrten, ggf. knappe vorn) und ob der Echtzeitstand verfügbar war.
   Future<(List<Verbindung>, bool)> route(double vonLat, double vonLon, double nachLat, double nachLon,
       {DateTime? ab, bool ankunft = false, double? kmh, String? art, Map<String, dynamic>? meiden, bool ticket = false, String wegArt = 'fuss', bool fern = false, bool lang = false, bool knapp = false}) async {

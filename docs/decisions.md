@@ -652,5 +652,23 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
   übrigen Bonner Verbindungen haben in der Liste keine Anschrift und fehlen deshalb.
 - Die Liste liegt im App-Paket, nichts geht dafür an den Server. Karte: Fahne in den Farben ab Zoom 14, nicht in der Fahransicht.
   Startseite ohne Ziel: die vier nächsten (bis 25 km) unter den Haltestellen. Zielsuche: lokale Treffer. Antippen → Angaben + „Hierhin“, mit Quellenhinweis.
-- „Bummelrunde“ steht in der Zielauswahl ohne Eingabe über den Favoriten, ist aber noch ohne Funktion.
+- „Bummelrunde“ steht in der Zielauswahl ohne Eingabe über den Favoriten (Funktion: D-51).
 - Status: umgesetzt (App 0.2.17).
+
+## D-51 Bummelrunde (19.11.)
+- Betreiber 19.11.: Modus, der von Haus zu Haus führt, auch bei gesperrtem Handy, mit „Weiter“ und „Ende“; zeigt den schnellsten Weg zu den
+  nächsten drei noch nicht besuchten Häusern. Bewertet wird nach Reinkommen (je Dachverband), Presslust 1–10, Fechtsteilheit 1–10, politischer
+  Ausrichtung (zwei Achsen: links–rechts, liberal–konservativ, je 1–10, angezeigt auch relativ zu den anderen Bünden) – alles auf dem Server
+  für alle – und Vorbeigehen 0–10 (0 = Umgangsverbot, 10 = darf nicht fehlen) nur auf dem Handy. Filter wählt man zu Beginn, einer lässt sich als Standard speichern.
+- Ablauf (Betreiberwahl): drei Vorschläge mit Wegzeit, eins antippen = normale Route. „Weiter“ hakt das gewählte Haus ab, fragt freiwillig nach
+  einer Bewertung und schlägt die nächsten drei vor. Die Runde (Filter, besuchte Häuser) übersteht einen Neustart der App. Solange sie läuft,
+  steht die Startseite über dem Sperrbildschirm (wie die Fahransicht).
+- Server `GET/POST /v1/bummel`: je Gerät (zufällige Kennung der App, kein Zertifikatsname – NPM reicht ihn nicht durch) und Haus eine Stimme,
+  eine neue ersetzt die alte, ohne Werte wird sie gelöscht. Gespeichert in `/data/bummel.json` des Add-ons (klein, im HA-Backup, damit Stimmen
+  nicht verloren gehen); nur das Datum, kein Ort, keine Uhrzeit. Ausgeliefert werden nur Summen, keine Kennungen. Haus-Schlüssel = Name aus der Liste (D-50).
+- Reinkommen (Betreiber: „beides“): Wahrscheinlichkeit für den eigenen Dachverband, vom Groben zum Feinen geschätzt, jede Stufe zieht mit Gewicht 2
+  zur vorigen: 50 % → Dachverband des Hauses gesamt → derselbe mit diesem Gast → Haus gesamt → Haus mit diesem Gast. Skalen: Mittel des Hauses,
+  sonst seines Dachverbands, sonst unbekannt (Filter: „ohne Bewertung zulassen“). Eine Skala über die ganze Breite filtert nicht.
+- Reihenfolge: 0,4·Vorbeigehen/10 + 0,35·Reinkommen + 0,25·Presslust/10 (+0,3 bei „darf nicht fehlen“) − 0,12 je km Luftlinie, nur bis 15 km.
+  Für die drei besten fragt die App je eine Route mit dem eingestellten Verkehrsmittel und zeigt die schnellste.
+- Status: umgesetzt (App 0.2.18, routing-core 0.1.57).
