@@ -80,6 +80,7 @@ func main() {
 	dir := flag.String("dir", "", "Ordner, auf den sich relative Pfade in -gtfs/-footpaths beziehen")
 	gtfsDir := flag.String("gtfs_dir", "", "Ordner für relative Pfade in -gtfs statt -dir (Glob erlaubt, erster Treffer)")
 	appDir := flag.String("app", "", "Ordner mit version.json und APK für das Selbstupdate der App (/v1/app)")
+	bummel := flag.String("bummel", "/data/bummel.json", "Bewertungen der Bummelrunde (D-51), leer = aus; liegt im Add-on-Ordner /data (im HA-Backup)")
 	options := flag.String("options", "", "JSON-Datei mit Optionen (HA-Add-on: /data/options.json)")
 	flag.Parse()
 	log.SetFlags(0)
@@ -168,6 +169,9 @@ func main() {
 		log.Print("Keine Suchliste gefunden, /v1/search ist aus")
 	}
 	srv := &api.Server{Geocode: geoIx, MapDir: rel(*mapDir), AppDir: rel(*appDir), DirectM: *direct, DirectMax: *directMax, AccessM: *access, FarM: *far, LangM: *lang, MaxTrips: 6, WaitLimit: 2 * time.Second, LiveWait: *rtWait}
+	if *bummel != "" {
+		srv.Bummel = &api.Bummel{Pfad: rel(*bummel)}
+	}
 	if *rtURL != "" {
 		// Zeitbudget der Quelle 6 s je Versuch (CLAUDE.md), Stände älter als 5 min gelten nicht mehr
 		srv.Live = &rt.Live{URL: *rtURL, Client: &http.Client{Timeout: 6 * time.Second}, MinAge: 30 * time.Second,

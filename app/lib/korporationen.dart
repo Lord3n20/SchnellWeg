@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'api.dart';
+import 'bummel.dart';
 
 const artKorporation = 'korporation';
 const quelleKorporationen = 'Daten: Wikipedia (CC BY-SA 4.0) über die Couleurbummel-Liste, ungeprüft';
@@ -183,6 +184,7 @@ Future<void> korporationZeigen(BuildContext context, Korporation k, {required vo
               if (k.motto.isNotEmpty) zeile(Icons.format_quote, k.motto),
               if (k.jourFixe.isNotEmpty) zeile(Icons.event_repeat, k.jourFixe),
               if (k.web.isNotEmpty) zeile(Icons.link, k.web),
+              BummelAbschnitt(k),
               const SizedBox(height: 12),
               Row(children: [
                 Expanded(child: Text(quelleKorporationen, style: t.bodySmall?.copyWith(color: farbe.outline))),

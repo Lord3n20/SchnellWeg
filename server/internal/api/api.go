@@ -72,6 +72,7 @@ type Server struct {
 	AppDir    string         // App-Fassung fürs Selbstupdate (version.json + APK, D-42), "" = aus
 	DirectM   float64        // reiner Fußweg als Vergleich bis zu dieser Luftlinie, 0 = aus
 	DirectMax time.Duration  // … und höchstens so lange (beim gewählten Tempo)
+	Bummel    *Bummel        // Bewertungen der Studentenverbindungen (D-51), nil = aus
 }
 
 // Swap setzt einen neuen Plan; laufende Anfragen rechnen auf dem alten zu Ende.
@@ -99,6 +100,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/app/apk", s.appFile)
 	mux.HandleFunc("POST /v1/messung", s.messung)
 	mux.HandleFunc("POST /v1/fahrten", s.fahrten)
+	mux.HandleFunc("GET /v1/bummel", s.bummelLesen)
+	mux.HandleFunc("POST /v1/bummel", s.bummelBewerten)
 	return mux
 }
 

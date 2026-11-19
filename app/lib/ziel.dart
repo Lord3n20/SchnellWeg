@@ -1,12 +1,14 @@
 // Ziel wählen: Haltestellen sucht das Handy in der eigenen SQLite, Adressen und Orte fragt es bei /v1/search
 // (Suchtext nur im Body), RWTH-Gebäude live bei RWTH Maps (D-18). Alles parallel; Haltestellen oben, weil sofort da.
-// Ohne Eingabe stehen die Favoriten da (Ordner aufklappbar) und darüber „Bummelrunde“ (noch ohne Funktion, D-50);
+// Ohne Eingabe stehen die Favoriten da (Ordner aufklappbar) und darüber „Bummelrunde“ (D-51: Filter wählen, dann
+// gibt die Suche Art „bummel“ zurück und die Startseite wechselt in den Modus);
 // jeder Treffer hat einen Stern. Studentenverbindungen sucht das Handy in der eigenen Liste (korporationen.dart).
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'bummel.dart';
 import 'favoriten.dart';
 import 'halte_db.dart';
 import 'korporationen.dart';
@@ -157,9 +159,13 @@ class _ZielSucheState extends State<ZielSuche> {
             ListTile(
               leading: const Icon(Icons.sports_bar_outlined),
               title: const Text('Bummelrunde'),
-              subtitle: const Text('Runde über mehrere Häuser – kommt noch'),
-              onTap: () => ScaffoldMessenger.of(context)
-                  .showSnackBar(const SnackBar(content: Text('Die Bummelrunde gibt es noch nicht.'))),
+              subtitle: Text(Bummel.instanz.aktiv ? 'läuft – zurück zur Runde' : 'von Haus zu Haus, mit Filtern'),
+              onTap: () async {
+                final nav = Navigator.of(context);
+                final los = Bummel.instanz.aktiv ||
+                    await nav.push<bool>(MaterialPageRoute(builder: (_) => const BummelStart())) == true;
+                if (los && mounted) nav.pop(Ort(artBummel, 'Bummelrunde', '', 0, 0));
+              },
             ),
             for (final o in Favoriten.instanz.oben) _favZeile(o),
             for (final (name, orte) in Favoriten.instanz.ordner)
