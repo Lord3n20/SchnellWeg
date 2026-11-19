@@ -24,7 +24,9 @@ class ZielSuche extends StatefulWidget {
   final HalteDb db;
   final Position? nahe; // schon bekannter Standort der Startseite (spart den GPS-Start)
   final String hinweis; // Platzhalter im Suchfeld
-  const ZielSuche({super.key, required this.api, required this.db, this.nahe, this.hinweis = 'Ziel: Haltestelle, Adresse, Ort …'});
+  final bool mitBummel; // Eintrag „Bummelrunde“ (nur bei der Zielwahl der Startseite)
+  const ZielSuche(
+      {super.key, required this.api, required this.db, this.nahe, this.hinweis = 'Ziel: Haltestelle, Adresse, Ort …', this.mitBummel = true});
 
   @override
   State<ZielSuche> createState() => _ZielSucheState();
@@ -156,6 +158,7 @@ class _ZielSucheState extends State<ZielSuche> {
         builder: (context, _) => ListView(children: [
           if (_fehler != null) ListTile(leading: const Icon(Icons.cloud_off), title: Text(_fehler!)),
           if (_feld.text.trim().length < 2) ...[
+            if (widget.mitBummel)
             ListTile(
               leading: const Icon(Icons.sports_bar_outlined),
               title: const Text('Bummelrunde'),
@@ -163,7 +166,9 @@ class _ZielSucheState extends State<ZielSuche> {
               onTap: () async {
                 final nav = Navigator.of(context);
                 final los = Bummel.instanz.aktiv ||
-                    await nav.push<bool>(MaterialPageRoute(builder: (_) => const BummelStart())) == true;
+                    await nav.push<bool>(MaterialPageRoute(
+                            builder: (_) => BummelStart(api: widget.api, db: widget.db, nahe: _nahe))) ==
+                        true;
                 if (los && mounted) nav.pop(Ort(artBummel, 'Bummelrunde', '', 0, 0));
               },
             ),

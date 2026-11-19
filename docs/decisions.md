@@ -672,3 +672,13 @@ Format: Entscheidung · Begründung · verworfene Alternativen · Messwerte · S
 - Reihenfolge: 0,4·Vorbeigehen/10 + 0,35·Reinkommen + 0,25·Presslust/10 (+0,3 bei „darf nicht fehlen“) − 0,12 je km Luftlinie, nur bis 15 km.
   Für die drei besten fragt die App je eine Route mit dem eingestellten Verkehrsmittel und zeigt die schnellste.
 - Status: umgesetzt (App 0.2.18, routing-core 0.1.57).
+
+## D-52 Bummelrunde mit Ende und Zurückbummel (19.11.)
+- Betreiber 19.11.: „Ende“ zeigt den direkten Weg nach Hause oder zu einem vorher festgelegten Bund, „Zurück“ bummelt über andere Bünde dorthin;
+  die Planung ist immer eine Runde.
+- Das Ende wählt man auf der Filterseite (gehört zum Filter, also auch zum Standard): Zuhause (einmal per Suche festgelegt, bleibt gespeichert)
+  oder ein Haus der Liste. Ohne Ende startet keine Runde. Der Bund am Ende wird nicht vorgeschlagen.
+- Hinweg: zusätzlich −0,04 Punkte je km Luftlinie vom Haus zum Ende. Zurück: nur Häuser, die näher ans Ende bringen, mit Umweg
+  (hin + weiter − direkt) ≤ max(1 km, halber direkter Weg), −0,25 je km Umweg. „Zurück“ und „Ende“ haken ein gewähltes Haus wie „Weiter“ ab.
+- Die Zielsuche für „Von“ und für Zuhause zeigt keine Bummelrunde mehr (vorher lieferte sie dort einen Ort ohne Koordinaten).
+- Status: umgesetzt (App 0.2.19).

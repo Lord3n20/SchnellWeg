@@ -1,7 +1,8 @@
 // Bummelrunde (D-51): ein Modus der Startseite, der von Haus zu Haus führt. Zu Beginn Filter wählen (oder den
 // gespeicherten Standard), dann schlägt die App die drei besten noch nicht besuchten Häuser mit Wegzeit vor; eins
-// antippen = Route. „Weiter“ hakt das Haus ab (mit Bewertung), „Ende“ beendet die Runde. Die Startseite darf dabei
-// über dem Sperrbildschirm stehen.
+// antippen = Route. „Weiter“ hakt das Haus ab (mit Bewertung), „Zurück“ bummelt über andere Häuser zum Ende der
+// Runde (Zuhause oder ein vorher gewählter Bund), „Ende“ führt direkt dorthin (D-52). Geplant wird immer als Runde:
+// schon auf dem Hinweg zählt, wie weit ein Haus vom Ende wegführt. Die Startseite darf dabei über dem Sperrbildschirm stehen.
 // Bewertungen: Reinkommen, Presslust, Fechtsteilheit und politische Ausrichtung (zwei Achsen) liegen auf dem Server
 // für alle; „Vorbeigehen“ (0 = Umgangsverbot … 10 = darf nicht fehlen) nur auf dem Handy.
 import 'dart:convert';
@@ -12,7 +13,10 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'api.dart';
+import 'halte_db.dart';
 import 'korporationen.dart';
+import 'standort.dart';
+import 'ziel.dart';
 
 const artBummel = 'bummel'; // Ergebnis der Zielsuche: Bummelrunde starten statt Ziel setzen
 const vorbeiStandard = 5;
@@ -34,8 +38,10 @@ class BummelFilter {
   Map<Skala, RangeValues> bereiche;
   int vorbeiMin; // 1–10; 0 (Umgangsverbot) ist immer ausgeschlossen
   bool unbekannt; // Häuser ohne Bewertung trotz eingeschränkter Skala zulassen
+  String endeBund; // Ende der Runde: Name eines Hauses, "" = Zuhause
 
-  BummelFilter({this.gast = '', this.reinMin = 0, Map<Skala, RangeValues>? bereiche, this.vorbeiMin = 1, this.unbekannt = true})
+  BummelFilter(
+      {this.gast = '', this.reinMin = 0, Map<Skala, RangeValues>? bereiche, this.vorbeiMin = 1, this.unbekannt = true, this.endeBund = ''})
       : bereiche = bereiche ?? {for (final s in Skala.values) s: const RangeValues(1, 10)};
 
   BummelFilter kopie() => BummelFilter.json(json());
@@ -45,6 +51,7 @@ class BummelFilter {
         'rein_min': reinMin,
         'vorbei_min': vorbeiMin,
         'unbekannt': unbekannt,
+        'ende_bund': endeBund,
         for (final e in bereiche.entries) e.key.schluessel: [e.value.start, e.value.end],
       };
 
@@ -60,6 +67,7 @@ class BummelFilter {
       reinMin: (j['rein_min'] as num?)?.toInt() ?? 0,
       vorbeiMin: (j['vorbei_min'] as num?)?.toInt() ?? 1,
       unbekannt: j['unbekannt'] as bool? ?? true,
+      endeBund: j['ende_bund'] as String? ?? '',
       bereiche: {for (final s in Skala.values) s: bereich(s)},
     );
   }
@@ -99,11 +107,21 @@ class Bummel extends ChangeNotifier {
   Map<String, Map<String, dynamic>> eigene = {}; // eigene Stimmen je Haus (wie an den Server geschickt)
   BummelFilter? filter; // laufende Runde, null = keine
   List<String> besucht = [];
+  bool zurueckPhase = false; // „Zurück“ gedrückt: nur noch Häuser auf dem Weg zum Ende
+  Ort? zuhause;
   Map<String, HausWerte> werte = {};
   bool werteGeladen = false;
   Future<void>? _laden;
 
   bool get aktiv => filter != null;
+
+  /// Ende der laufenden Runde (bzw. des Standards): gewählter Bund oder Zuhause; null = noch nicht festgelegt.
+  Ort? endeVon(BummelFilter f) {
+    if (f.endeBund.isEmpty) return zuhause;
+    return Korporationen.instanz.liste.where((k) => k.name == f.endeBund).firstOrNull?.ort;
+  }
+
+  Ort? get endeOrt => filter == null ? null : endeVon(filter!);
 
   static Future<File> _datei() async => File('${(await getApplicationSupportDirectory()).path}/bummel.json');
 
@@ -118,7 +136,12 @@ class Bummel extends ChangeNotifier {
       eigene = {
         for (final e in ((j['eigene'] as Map?) ?? const {}).entries) e.key as String: (e.value as Map).cast<String, dynamic>()
       };
+      if (j['zuhause'] case final Map<String, dynamic> z) {
+        zuhause = Ort(z['art'] as String, z['name'] as String, z['detail'] as String? ?? '', (z['lat'] as num).toDouble(),
+            (z['lon'] as num).toDouble());
+      }
       if (j['runde'] case final Map<String, dynamic> r) {
+        zurueckPhase = r['zurueck'] == true;
         filter = BummelFilter.json((r['filter'] as Map).cast<String, dynamic>());
         besucht = ((r['besucht'] as List?) ?? const []).cast<String>();
       }
@@ -141,7 +164,8 @@ class Bummel extends ChangeNotifier {
       'standard': standard.json(),
       'vorbei': vorbei,
       'eigene': eigene,
-      if (filter != null) 'runde': {'filter': filter!.json(), 'besucht': besucht},
+      if (zuhause case final z?) 'zuhause': {'art': z.art, 'name': z.name, 'detail': z.detail, 'lat': z.lat, 'lon': z.lon},
+      if (filter != null) 'runde': {'filter': filter!.json(), 'besucht': besucht, 'zurueck': zurueckPhase},
     }));
     await tmp.rename(d.path);
   }
@@ -163,6 +187,7 @@ class Bummel extends ChangeNotifier {
   Future<void> starten(BummelFilter f, {bool alsStandard = false}) async {
     filter = f;
     besucht = [];
+    zurueckPhase = false;
     if (alsStandard) standard = f.kopie();
     await _speichern();
     notifyListeners();
@@ -181,9 +206,23 @@ class Bummel extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> zuhauseSetzen(Ort o) async {
+    zuhause = Ort(o.art, o.name, o.detail, o.lat, o.lon);
+    await _speichern();
+    notifyListeners();
+  }
+
+  /// „Zurück“: ab jetzt nur noch Häuser, die auf dem Weg zum Ende liegen.
+  Future<void> zurueck() async {
+    zurueckPhase = true;
+    await _speichern();
+    notifyListeners();
+  }
+
   Future<void> beenden() async {
     filter = null;
     besucht = [];
+    zurueckPhase = false;
     await _speichern();
     notifyListeners();
   }
@@ -295,15 +334,33 @@ class Bummel extends ChangeNotifier {
     return 0.4 * v / 10 + 0.35 * rein(k, gast) + 0.25 * (mittel(k, Skala.presslust) ?? 5) / 10 + (v == 10 ? 0.3 : 0) - 0.12 * meter / 1000;
   }
 
-  /// Die [n] besten noch nicht besuchten Häuser (bis 15 km) für die laufende Runde.
+  /// Die [n] besten noch nicht besuchten Häuser (bis 15 km) für die laufende Runde, als Runde gerechnet:
+  /// Hinweg – je km vom Ende weg kostet ein wenig (die Runde soll sich nicht verlaufen);
+  /// Zurück – nur Häuser, die näher ans Ende bringen, bewertet nach dem Umweg gegenüber dem direkten Weg.
   List<(Korporation, double)> vorschlaege(double lat, double lon, {int n = 3}) {
     final f = filter;
     if (f == null) return const [];
-    final l = [
-      for (final k in Korporationen.instanz.liste)
-        if (!besucht.contains(k.name) && passt(k, f))
-          if (meterZwischen(lat, lon, k.lat, k.lon) case final m when m <= 15000) (k, m, punkte(k, f.gast, m))
-    ]..sort((a, b) => b.$3.compareTo(a.$3));
+    final ende = endeOrt;
+    final direkt = ende == null ? 0.0 : meterZwischen(lat, lon, ende.lat, ende.lon);
+    final l = <(Korporation, double, double)>[];
+    for (final k in Korporationen.instanz.liste) {
+      if (besucht.contains(k.name) || k.name == f.endeBund || !passt(k, f)) continue;
+      final m = meterZwischen(lat, lon, k.lat, k.lon);
+      if (m > 15000) continue;
+      var p = punkte(k, f.gast, m);
+      if (ende != null) {
+        final rest = meterZwischen(k.lat, k.lon, ende.lat, ende.lon);
+        if (zurueckPhase) {
+          final umweg = m + rest - direkt;
+          if (rest >= direkt || umweg > max(1000, direkt * 0.5)) continue;
+          p -= 0.25 * umweg / 1000;
+        } else {
+          p -= 0.04 * rest / 1000;
+        }
+      }
+      l.add((k, m, p));
+    }
+    l.sort((a, b) => b.$3.compareTo(a.$3));
     return [for (final x in l.take(n)) (x.$1, x.$2)];
   }
 }
@@ -467,7 +524,10 @@ Future<void> bummelBewerten(BuildContext context, Korporation k) async {
 
 /// Beginn einer Runde: Filter wählen, als Standard speichern; true = Runde gestartet.
 class BummelStart extends StatefulWidget {
-  const BummelStart({super.key});
+  final Api api;
+  final HalteDb db;
+  final Position? nahe;
+  const BummelStart({super.key, required this.api, required this.db, this.nahe});
 
   @override
   State<BummelStart> createState() => _BummelStartState();
@@ -476,6 +536,54 @@ class BummelStart extends StatefulWidget {
 class _BummelStartState extends State<BummelStart> {
   BummelFilter _f = BummelFilter();
   bool _bereit = false;
+
+  Future<void> _zuhauseWaehlen() async {
+    final o = await Navigator.of(context).push<Ort>(MaterialPageRoute(
+        builder: (_) => ZielSuche(
+            api: widget.api, db: widget.db, nahe: widget.nahe, hinweis: 'Zuhause: Adresse, Haltestelle …', mitBummel: false)));
+    if (o == null) return;
+    await Bummel.instanz.zuhauseSetzen(o);
+    if (mounted) setState(() => _f.endeBund = '');
+  }
+
+  Widget _endeWahl(TextTheme t) {
+    final b = Bummel.instanz;
+    final haeuser = [for (final k in Korporationen.instanz.liste) k.name]..sort();
+    final bund = _f.endeBund.isNotEmpty;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('Ende der Runde („Ende“ führt direkt hin, „Zurück“ bummelt dorthin)', style: t.bodyMedium),
+      const SizedBox(height: 6),
+      SegmentedButton<bool>(
+        segments: const [
+          ButtonSegment(value: false, label: Text('Zuhause'), icon: Icon(Icons.home_outlined)),
+          ButtonSegment(value: true, label: Text('Bund'), icon: Icon(Icons.flag_outlined)),
+        ],
+        selected: {bund},
+        onSelectionChanged: (s) => setState(() => _f.endeBund = s.first ? (haeuser.isEmpty ? '' : haeuser.first) : ''),
+      ),
+      if (!bund)
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.home_outlined),
+          title: Text(b.zuhause?.name ?? 'Zuhause festlegen'),
+          subtitle: b.zuhause == null ? const Text('nötig für die Runde') : const Text('antippen zum Ändern'),
+          onTap: _zuhauseWaehlen,
+        )
+      else
+        Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: DropdownButtonFormField<String>(
+            key: ValueKey('ende${_f.endeBund}'),
+            initialValue: haeuser.contains(_f.endeBund) ? _f.endeBund : null,
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Bund am Ende', border: OutlineInputBorder(), isDense: true),
+            items: [for (final h in haeuser) DropdownMenuItem(value: h, child: Text(h, overflow: TextOverflow.ellipsis))],
+            onChanged: (v) => setState(() => _f.endeBund = v ?? ''),
+          ),
+        ),
+      const SizedBox(height: 8),
+    ]);
+  }
 
   @override
   void initState() {
@@ -511,6 +619,7 @@ class _BummelStartState extends State<BummelStart> {
                 onChanged: (v) => setState(() => _f.gast = v ?? ''),
               ),
               const SizedBox(height: 16),
+              _endeWahl(t),
               Text('Reinkommen mindestens ${_f.reinMin} %', style: t.bodyMedium),
               Slider(
                 value: _f.reinMin.toDouble(),
@@ -568,13 +677,15 @@ class _BummelStartState extends State<BummelStart> {
                   child: const Text('Als Standard speichern'),
                 ),
                 TextButton(
-                  onPressed: () => setState(() => _f = BummelFilter(gast: _f.gast)),
+                  onPressed: () => setState(() => _f = BummelFilter(gast: _f.gast, endeBund: _f.endeBund)),
                   child: const Text('Zurücksetzen'),
                 ),
               ]),
               const SizedBox(height: 8),
               FilledButton.icon(
-                onPressed: () async {
+                onPressed: Bummel.instanz.endeVon(_f) == null
+                    ? null
+                    : () async {
                   await Bummel.instanz.starten(_f.kopie());
                   if (context.mounted) Navigator.pop(context, true);
                 },
@@ -588,27 +699,36 @@ class _BummelStartState extends State<BummelStart> {
 
 /// Leiste über der Liste, solange eine Runde läuft.
 class BummelLeiste extends StatelessWidget {
-  final VoidCallback? onWeiter;
+  final VoidCallback? onWeiter, onZurueck;
   final VoidCallback onEnde;
-  const BummelLeiste({super.key, required this.onWeiter, required this.onEnde});
+  const BummelLeiste({super.key, required this.onWeiter, required this.onZurueck, required this.onEnde});
 
   @override
   Widget build(BuildContext context) {
     final farbe = Theme.of(context).colorScheme;
-    final n = Bummel.instanz.besucht.length;
+    final b = Bummel.instanz;
+    final n = b.besucht.length;
+    const eng = ButtonStyle(
+      visualDensity: VisualDensity.compact,
+      padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 12)),
+    );
     return Container(
       color: farbe.secondaryContainer,
-      padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
+      padding: const EdgeInsets.fromLTRB(12, 2, 8, 2),
       child: Row(children: [
-        Icon(Icons.sports_bar_outlined, color: farbe.onSecondaryContainer),
-        const SizedBox(width: 8),
+        Icon(b.zurueckPhase ? Icons.u_turn_left : Icons.sports_bar_outlined, color: farbe.onSecondaryContainer),
+        const SizedBox(width: 6),
         Expanded(
-          child: Text('Bummelrunde · $n besucht',
+          child: Text(b.zurueckPhase ? 'zurück · $n' : '$n besucht',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(fontWeight: FontWeight.w600, color: farbe.onSecondaryContainer)),
         ),
-        FilledButton(onPressed: onWeiter, child: const Text('Weiter')),
-        const SizedBox(width: 6),
-        OutlinedButton(onPressed: onEnde, child: const Text('Ende')),
+        FilledButton(style: eng, onPressed: onWeiter, child: const Text('Weiter')),
+        const SizedBox(width: 4),
+        OutlinedButton(style: eng, onPressed: onZurueck, child: const Text('Zurück')),
+        const SizedBox(width: 4),
+        OutlinedButton(style: eng, onPressed: onEnde, child: const Text('Ende')),
       ]),
     );
   }
