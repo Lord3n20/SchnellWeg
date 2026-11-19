@@ -322,7 +322,7 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
   Future<void> _startWaehlen() async {
     if (_api == null || _db == null) return;
     final o = await Navigator.of(context).push<Ort>(MaterialPageRoute(
-        builder: (_) => ZielSuche(api: _api!, db: _db!, nahe: _pos, hinweis: 'Start: Haltestelle, Adresse, Ort …')));
+        builder: (_) => ZielSuche(api: _api!, db: _db!, nahe: _pos, hinweis: 'Start: Haltestelle, Adresse, Ort …', mitBummel: false)));
     if (o != null) await _startSetzen(o);
   }
 
@@ -415,24 +415,46 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     }
   }
 
-  /// „Weiter“: aktuelles Haus abhaken, bewerten (freiwillig), die nächsten drei vorschlagen.
-  Future<void> _bummelWeiter() async {
+  /// Ist das Ziel ein Haus der Runde: abhaken und (freiwillig) bewerten.
+  Future<void> _hausAbhaken() async {
     final z = _ziel;
-    if (z == null || z.art != artKorporation) return;
+    if (z == null || z.art != artKorporation || Bummel.instanz.besucht.contains(z.name)) return;
     final k = Korporationen.instanz.liste.where((x) => x.name == z.name).firstOrNull;
     await Bummel.instanz.abhaken(z.name);
     if (k != null && mounted) await bummelBewerten(context, k);
+  }
+
+  /// „Weiter“: aktuelles Haus abhaken, die nächsten drei vorschlagen.
+  Future<void> _bummelWeiter() async {
+    await _hausAbhaken();
     if (!mounted) return;
     _zielWeg();
     _vorschlaege = null;
     await _vorschlaegeLaden();
   }
 
-  Future<void> _bummelEnde() async {
-    await Bummel.instanz.beenden();
+  /// „Zurück“: ab jetzt über andere Häuser zum Ende der Runde.
+  Future<void> _bummelZurueck() async {
+    await _hausAbhaken();
+    await Bummel.instanz.zurueck();
     if (!mounted) return;
     _zielWeg();
     _vorschlaege = null;
+    await _vorschlaegeLaden();
+  }
+
+  /// „Ende“: Runde beenden und direkt nach Hause bzw. zum gewählten Bund.
+  Future<void> _bummelEnde() async {
+    final ende = Bummel.instanz.endeOrt;
+    await _hausAbhaken();
+    await Bummel.instanz.beenden();
+    if (!mounted) return;
+    _vorschlaege = null;
+    _start = null;
+    _zeit = null;
+    _ankunft = false;
+    if (ende == null) return _zielWeg();
+    await _zielSetzen(ende);
   }
 
   Widget _bummelListe() {
@@ -448,9 +470,11 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
           child: Text(
               _pos == null
                   ? 'Kein Standort (Berechtigung oder GPS aus?)'
-                  : Bummel.instanz.besucht.isEmpty
-                      ? 'Kein Haus im Umkreis von 15 km passt zum Filter.'
-                      : 'Keine weiteren Häuser – Zeit für „Ende“?',
+                  : Bummel.instanz.zurueckPhase
+                      ? 'Kein passendes Haus mehr auf dem Weg – „Ende“ führt direkt hin.'
+                      : Bummel.instanz.besucht.isEmpty
+                          ? 'Kein Haus im Umkreis von 15 km passt zum Filter.'
+                          : 'Keine weiteren Häuser – „Zurück“ oder „Ende“?',
               textAlign: TextAlign.center),
         ),
       );
@@ -974,7 +998,10 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
         ),
         if (Bummel.instanz.aktiv) ...[
           const UeberSperrbildschirm(child: SizedBox.shrink()), // Runde auch bei gesperrtem Handy sichtbar
-          BummelLeiste(onWeiter: _ziel?.art == artKorporation ? _bummelWeiter : null, onEnde: _bummelEnde),
+          BummelLeiste(
+              onWeiter: _ziel?.art == artKorporation ? _bummelWeiter : null,
+              onZurueck: Bummel.instanz.zurueckPhase && _ziel?.art != artKorporation ? null : _bummelZurueck,
+              onEnde: _bummelEnde),
         ],
         if (halt != null) ...[
           Padding(
@@ -1003,7 +1030,12 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Row(children: [
-              Text(_ziel == null ? (Bummel.instanz.aktiv ? 'Nächste Häuser' : 'Haltestellen in der Nähe') : 'Verbindungen',
+              Text(
+                  _ziel == null
+                      ? (Bummel.instanz.aktiv
+                          ? (Bummel.instanz.zurueckPhase ? 'Auf dem Weg zurück' : 'Nächste Häuser')
+                          : 'Haltestellen in der Nähe')
+                      : 'Verbindungen',
                   style: Theme.of(context).textTheme.titleSmall),
               const Spacer(),
               if (_ziel != null && _ziel!.art != artHier) FavoritStern(_ziel!, klein: true),
