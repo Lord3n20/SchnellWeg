@@ -20,6 +20,7 @@ import 'favoriten.dart';
 import 'halte_db.dart';
 import 'karte.dart';
 import 'kartenlager.dart';
+import 'korporationen.dart';
 import 'lernen.dart';
 import 'losgehen.dart';
 import 'messung.dart';
@@ -123,6 +124,9 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     });
     Kurzbefehle.beiNeu(_kurzbefehlAbholen);
     Losgehen.instanz.laden();
+    Korporationen.instanz.laden().then((_) {
+      if (mounted) setState(() {});
+    });
     WidgetsBinding.instance.addObserver(this);
     _starten();
     _aufzeichnungPruefen();
@@ -356,6 +360,13 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
     if (!mounted) return;
     setState(() => _halt = _GewaehlterHalt(halteOrt(h, bahnsteige), [for (final x in bahnsteige) x.id]));
     await _aktualisieren();
+  }
+
+  /// Studentenverbindung (Karte oder Liste): Angaben mit „Hierhin“.
+  void _korporationOeffnen(Korporation k) {
+    final p = _pos;
+    korporationZeigen(context, k,
+        hierhin: _zielSetzen, meter: p == null ? null : meterZwischen(p.lat, p.lon, k.lat, k.lon));
   }
 
   void _haltZu() {
@@ -851,6 +862,8 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
             meldungen: _strecken.isEmpty || _gewaehlt >= (_verbindungen?.length ?? 0) ? const [] : _verbindungen![_gewaehlt].verkehr,
             markiert: halt == null ? null : LatLng(halt.ort.lat, halt.ort.lon),
             onAntippen: _karteAngetippt,
+            korporationen: Korporationen.instanz.liste,
+            onKorporation: _korporationOeffnen,
           ),
         ),
         if (halt != null) ...[
@@ -904,9 +917,25 @@ class _StartState extends State<Start> with WidgetsBindingObserver, RouteAware {
             builder: (context, _) => ListView(children: [
               if (Losgehen.instanz.plan case final p?) _TerminZeile(p, onTap: () => _terminAlsZiel(p)),
               for (final g in _gruppen) _HaltZeile(g, onTap: () => _haltOeffnen(g.naechster)),
+              ..._korporationenListe(),
             ]),
           ),
         );
+
+  /// Die vier nächsten Studentenverbindungen unter den Haltestellen (D-50), nur mit bekanntem Standort.
+  List<Widget> _korporationenListe() {
+    final p = _pos;
+    if (p == null) return const [];
+    final nah = Korporationen.instanz.naechste(p.lat, p.lon);
+    if (nah.isEmpty) return const [];
+    return [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 2),
+        child: Text('Studentenverbindungen in der Nähe', style: Theme.of(context).textTheme.titleSmall),
+      ),
+      for (final (k, m) in nah) KorporationZeile(k, m, onTap: () => _korporationOeffnen(k)),
+    ];
+  }
 
   /// Nächster Termin des Losgeh-Weckers als Ziel, mit Ankunft bis Beginn − Puffer.
   void _terminAlsZiel(Losgehplan p) {

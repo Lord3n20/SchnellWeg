@@ -24,6 +24,7 @@ Status: ✅ freigegeben · ⏳ in Prüfung · ❓ Rückfrage an den Betreiber ·
 | Mobilithek / Straßen.NRW DATEX II | BMDV, öffentlich | je Angebot | **ja** | Account, IP | ❓ (Phase 7) |
 | RWTH Maps (maps.rwth-aachen.de), `getBuildings.asp` | RWTH, öffentlich, interne Schnittstelle | **keine Lizenz/Schnittstelle genannt**, Karte auf Google Maps API | nein | Server: IP, 1×/Tag; App: IP + Suchtext (kein Standort) | ⚠️ Abweichung D-18 (vom Betreiber gewollt) |
 | RWTH-Gebäude aus OSM | OSM | ODbL | nein | – (im OSM-Extrakt) | ✅ teilweise: 57 Objekte mit Uni-Bezug im Zentrum, 54 mit Name, keine Gebäudenummern |
+| Couleurbummel-Liste V9 (github.com/heinstalator/couleurbummel_database_failback, aus Wikipedia-Listen) | Community, ungeprüft | Wikipedia-Inhalte **CC BY-SA 4.0** (Namensnennung in der App beim Haus); Repo selbst ohne eigene Datenlizenz für die CSV | nein | einmalig beim Bauen: Anschriften an den eigenen Server, Lücken an Nominatim | ⚠️ Betreiber 19.11. gewollt (D-50), Lizenz der Aufbereitung offen |
 | NDW Open Data (NL) | Rijkswaterstaat/NDW, öffentlich | CC0 erwartet | nein | IP | ⏳ (Phase 7) |
 
 ## Detailnotizen
