@@ -10,6 +10,7 @@ import 'favoriten.dart';
 import 'karte.dart' show groesse;
 import 'kartenlager.dart';
 import 'losgehen.dart';
+import 'plattform.dart';
 import 'tempo.dart';
 import 'tempo_messen.dart';
 import 'zugang.dart';
@@ -83,7 +84,7 @@ class _EinstellungenSeiteState extends State<EinstellungenSeite> with _LagerBeob
             onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DarstellungSeite())),
           ),
         ),
-        ListenableBuilder(
+        if (!aufIos) ListenableBuilder(
           listenable: Losgehen.instanz,
           builder: (context, _) => _Punkt(
             icon: Icons.alarm,
@@ -104,7 +105,7 @@ class _EinstellungenSeiteState extends State<EinstellungenSeite> with _LagerBeob
           unter: _zugang?.basis.host ?? 'nicht eingerichtet',
           onTap: _zugangAendern,
         ),
-        ListenableBuilder(
+        if (!aufIos) ListenableBuilder(
           listenable: Aktualisieren.instanz,
           builder: (context, _) => _Punkt(
             icon: Icons.system_update,

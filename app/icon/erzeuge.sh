@@ -41,3 +41,22 @@ SVG
 for d in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
   rsvg-convert -w "${d#*:}" -h "${d#*:}" -f png "$VOLL" -o "$RES/mipmap-${d%:*}/ic_launcher.png"
 done
+
+# iPhone (D-53): ein Bild 1024 x 1024 ohne eigene Ecken (iOS rundet selbst) und ohne Transparenz.
+IOS=../ios/Runner/Assets.xcassets/AppIcon.appiconset
+cat > "$VOLL" <<SVG
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="18 18 72 72">
+  <rect x="18" y="18" width="72" height="72" fill="$HINTERGRUND"/>
+  <path fill="#FFFFFF" fill-rule="evenodd" d="$PFAD"/>
+</svg>
+SVG
+rm -f "$IOS"/*.png
+rsvg-convert -w 1024 -h 1024 -b "$HINTERGRUND" -f png "$VOLL" -o "$IOS/icon-1024.png"
+cat > "$IOS/Contents.json" <<JSON
+{
+  "images" : [
+    { "filename" : "icon-1024.png", "idiom" : "universal", "platform" : "ios", "size" : "1024x1024" }
+  ],
+  "info" : { "author" : "xcode", "version" : 1 }
+}
+JSON
